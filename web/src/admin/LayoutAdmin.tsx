@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { api } from "../api/cliente";
 import type { FilaHandoffs } from "../api/tipos";
 import { useRecurso } from "../ui/useRecurso";
+import { Casca } from "../ui/Casca";
 import { useEventos } from "./useEventos";
 
 const ABAS = [
@@ -39,41 +40,52 @@ export function LayoutAdmin({ rota, children }: { rota: string; children?: React
 
   const pendentes = fila.dado?.pendentes ?? 0;
 
-  return (
-    <div className="admin">
-      <header className="admin__barra">
-        <p className="admin__marca">AutoSeguro</p>
-        {/* Navegação, não deep link: leva à conversa do próprio navegador. */}
-        <a className="admin__voltar" href="/chat">
-          ← Ir para o chat
-        </a>
-        <nav className="admin__nav" aria-label="Telas de operação">
-          {ABAS.map((aba) => (
-            <a
-              key={aba.href}
-              href={aba.href}
-              aria-current={rota.startsWith(aba.href) ? "page" : undefined}
-            >
-              {aba.nome}
-            </a>
-          ))}
-        </nav>
-        {pendentes > 0 ? (
-          <span className="badge-pendentes" data-testid="badge-pendentes">
-            {pendentes}
-            <span className="so-leitor"> handoffs pendentes</span>
-          </span>
-        ) : null}
-        <span
-          className={
-            conexao === "conectado" ? "admin__conexao pilula" : "admin__conexao pilula pilula--atencao"
-          }
-          data-testid="conexao-eventos"
-        >
-          {conexao === "conectado" ? "recebendo em tempo real" : "sem conexão em tempo real"}
+  const separadores = (
+    <nav className="separadores" aria-label="Seções da operação">
+      {ABAS.map((aba) => {
+        const atual = rota.startsWith(aba.href);
+        return (
+          <a
+            key={aba.href}
+            className="separador"
+            href={aba.href}
+            aria-current={atual ? "page" : undefined}
+            data-atual={atual ? "sim" : "nao"}
+          >
+            {aba.nome}
+            {aba.href === "/admin/handoffs" && pendentes > 0 ? (
+              <span className="separador__contagem">{pendentes}</span>
+            ) : null}
+          </a>
+        );
+      })}
+    </nav>
+  );
+
+  const estado = (
+    <>
+      {pendentes > 0 ? (
+        <span className="badge-pendentes" data-testid="badge-pendentes">
+          {pendentes}
+          <span className="so-leitor"> handoffs pendentes</span>
         </span>
-      </header>
+      ) : null}
+      <span
+        className={
+          conexao === "conectado"
+            ? "admin__conexao pilula"
+            : "admin__conexao pilula pilula--atencao"
+        }
+        data-testid="conexao-eventos"
+      >
+        {conexao === "conectado" ? "recebendo em tempo real" : "sem conexão em tempo real"}
+      </span>
+    </>
+  );
+
+  return (
+    <Casca via="admin" separadores={separadores} estado={estado}>
       <div className="admin__conteudo">{children}</div>
-    </div>
+    </Casca>
   );
 }

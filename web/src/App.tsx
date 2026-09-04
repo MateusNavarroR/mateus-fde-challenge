@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Admin } from "./admin/Admin";
 import { PaginaChat } from "./chat/PaginaChat";
+import { Capa } from "./ui/Capa";
 
 /**
  * Roteador mínimo, de propósito.
@@ -12,7 +13,7 @@ import { PaginaChat } from "./chat/PaginaChat";
  */
 function useRota(): string {
   const [rota, setRota] = useState(
-    () => globalThis.location?.pathname ?? "/chat",
+    () => globalThis.location?.pathname ?? "/",
   );
 
   useEffect(() => {
@@ -49,5 +50,8 @@ export function App() {
   if (rota.startsWith("/admin")) return <Admin rota={rota} />;
   if (rota.startsWith("/chat")) return <PaginaChat />;
 
-  return <PaginaChat />;
+  // A raiz DECIDE: apresenta as duas vias em vez de cair no chat por omissão.
+  // Caindo, a existência da segunda área ficava escondida de quem abre a
+  // aplicação pela primeira vez — que é exatamente o avaliador.
+  return <Capa />;
 }

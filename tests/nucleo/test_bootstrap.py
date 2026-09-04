@@ -12,6 +12,21 @@ import pytest
 from app.bootstrap import CredencialAusente, carregar_env, exigir_credenciais
 
 
+@pytest.fixture(autouse=True)
+def ambiente_isolado():
+    """`carregar_env` escreve em `os.environ`, e o `monkeypatch` não desfaz o que
+    não existia antes — o valor vazaria para os outros módulos da suíte.
+
+    Foi o que aconteceu: o teste do `ADMIN_TOKEN` deixou `APP_ADMIN_TOKEN` no
+    ambiente e dois testes de `test_config.py` passaram a falhar, num arquivo que
+    ninguém tinha tocado.
+    """
+    antes = dict(os.environ)
+    yield
+    os.environ.clear()
+    os.environ.update(antes)
+
+
 def test_carrega_variavel_sem_prefixo(tmp_path, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     env = tmp_path / ".env"

@@ -1072,3 +1072,238 @@ code {
   color: var(--tinta);
   text-decoration: underline;
 }
+
+/* ===========================================================================
+ * A CASCA — quatro naturezas, quatro tratamentos
+ *
+ * O erro anterior foi tratar como iguais coisas de naturezas diferentes: marca,
+ * troca de área, troca de seção e estado operacional numa fileira só. Aqui cada
+ * uma tem peso, posição e linguagem próprios, e as duas navegações são
+ * deliberadamente DIFERENTES — se "ir para o admin" e "ir para status"
+ * parecessem a mesma coisa, o leitor não saberia que uma troca de contexto.
+ * =========================================================================== */
+
+.casca {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--fundo);
+}
+
+.casca__cabecalho {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.9rem 1.5rem 0;
+  background: var(--fundo);
+}
+
+/* 1 · TIMBRE — identidade. Discreto de propósito: ela não compete, situa. */
+.casca__timbre {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.casca__marca {
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+}
+.casca__formulario {
+  font-family: "Courier Prime", monospace;
+  font-size: 0.68rem;
+  color: var(--tinta-tenue);
+  letter-spacing: 0.04em;
+}
+
+/* 2 · VIAS — navegação entre ÁREAS. O elemento mais forte da casca.
+ * A via inativa fica lavada, como a cópia carbono de um bloco de formulário:
+ * está ali, é legível, e é obviamente a que você NÃO está usando. */
+.casca__vias {
+  display: flex;
+  gap: 0;
+  justify-self: center;
+  border: 1px solid var(--filete);
+  background: var(--linha-par);
+}
+.via {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  padding: 0.4rem 1.1rem;
+  text-decoration: none;
+  color: var(--tinta-tenue);
+  border-right: 1px solid var(--filete);
+  transition: background 120ms ease, color 120ms ease;
+}
+.via:last-child { border-right: 0; }
+.via__ordinal {
+  font-family: "Courier Prime", monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.via__nome {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.via:hover, .via:focus-visible { background: var(--folha); color: var(--tinta); }
+
+/* A via atual: papel branco e tinta do carimbo. Nunca ambígua. */
+.via[data-atual="sim"] {
+  background: var(--folha);
+  color: var(--carimbo-forte);
+  box-shadow: inset 0 2px 0 var(--carimbo);
+}
+.via[data-atual="sim"] .via__nome { font-weight: 700; }
+.via[data-atual="sim"] .via__ordinal { color: var(--carimbo); }
+
+/* 4 · ESTADO — operação. Zona própria, à direita, voz de documento. */
+.casca__estado {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  justify-self: end;
+  font-family: "Courier Prime", monospace;
+}
+
+/* 3 · SEPARADORES — navegação entre SEÇÕES. Abas de pasta: a ativa PERDE o
+ * filete inferior e encosta na folha, que é o que a torna óbvia ao olho.
+ * `aria-current` resolve para leitor de tela; isto resolve para quem enxerga. */
+.casca__separadores {
+  padding: 0.75rem 1.5rem 0;
+  border-bottom: 1px solid var(--filete);
+}
+.separadores { display: flex; gap: 0.25rem; }
+.separador {
+  position: relative;
+  bottom: -1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1rem;
+  font-size: 0.88rem;
+  text-decoration: none;
+  color: var(--tinta-fraca);
+  background: var(--linha-par);
+  border: 1px solid var(--filete);
+  border-bottom-color: var(--filete);
+}
+.separador:hover, .separador:focus-visible { color: var(--tinta); background: var(--folha); }
+.separador[data-atual="sim"] {
+  background: var(--folha);
+  color: var(--tinta);
+  font-weight: 600;
+  border-bottom-color: var(--folha);   /* encosta na folha */
+}
+.separador__contagem {
+  font-family: "Courier Prime", monospace;
+  font-size: 0.7rem;
+  padding: 0.05rem 0.35rem;
+  color: var(--folha);
+  background: var(--alarme, #a3232b);
+}
+
+.casca__folha { flex: 1; min-height: 0; background: var(--folha); }
+
+/* Sem separadores (o chat), a folha encosta no cabeçalho. */
+.casca__cabecalho + .casca__folha { border-top: 1px solid var(--filete); }
+
+@media (max-width: 720px) {
+  .casca__cabecalho {
+    grid-template-columns: 1fr auto;
+    row-gap: 0.6rem;
+    padding-inline: 0.9rem;
+  }
+  .casca__vias { grid-column: 1 / -1; justify-self: stretch; }
+  .via { flex: 1; align-items: center; }
+  .casca__separadores { padding-inline: 0.9rem; overflow-x: auto; }
+}
+
+/* ===========================================================================
+ * A CAPA — a rota `/` decide em vez de cair no chat por omissão
+ * =========================================================================== */
+
+.capa {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.25rem;
+  background: var(--fundo);
+}
+.capa__folha {
+  max-width: 46rem;
+  background: var(--folha);
+  border: 1px solid var(--filete);
+  border-top: 3px double var(--filete-forte);
+  padding: 2.5rem 2.25rem;
+}
+.capa__formulario {
+  font-family: "Courier Prime", monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tinta-tenue);
+  margin: 0;
+}
+.capa__marca {
+  font-size: 1.9rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0.15rem 0 0.75rem;
+}
+.capa__linha { color: var(--tinta-fraca); margin: 0 0 1.75rem; max-width: 34rem; }
+.capa__vias { display: grid; gap: 0.75rem; grid-template-columns: 1fr 1fr; }
+.capa__via {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1.1rem 1.15rem;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid var(--filete);
+  background: var(--fundo);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.capa__via:hover, .capa__via:focus-visible {
+  border-color: var(--carimbo);
+  background: var(--carimbo-lavado);
+}
+.capa__ordinal {
+  font-family: "Courier Prime", monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--carimbo);
+}
+.capa__nome { font-size: 1.05rem; font-weight: 600; }
+.capa__quem { font-size: 0.83rem; color: var(--tinta-tenue); line-height: 1.45; }
+.capa__rodape {
+  margin: 1.5rem 0 0;
+  font-size: 0.83rem;
+  color: var(--tinta-tenue);
+  border-top: 1px solid var(--filete);
+  padding-top: 0.9rem;
+}
+
+@media (max-width: 620px) {
+  .capa__vias { grid-template-columns: 1fr; }
+  .capa__folha { padding: 1.75rem 1.25rem; }
+}
+
+/* Markdown dentro da bolha. O agente escreve negrito e listas para explicar os
+ * planos; o espaçamento aqui é apertado de propósito — é mensagem, não artigo. */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 0.5rem; }
+.md ul, .md ol { margin: 0.35rem 0 0.6rem; padding-inline-start: 1.15rem; }
+.md li { margin-bottom: 0.2rem; }
+.md li::marker { color: var(--tinta-tenue); }
+.md strong { font-weight: 700; }
+.md code {
+  font-family: "Courier Prime", monospace;
+  font-size: 0.92em;
+  padding: 0.05em 0.3em;
+  background: var(--linha-par);
+}

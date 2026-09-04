@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { LayoutAdmin } from "../../../web/src/admin/LayoutAdmin";
 import { montarBackendFalso } from "../fakes/backend-falso";
@@ -15,7 +15,7 @@ it("o badge de pendentes aparece nas três telas", async () => {
 it("o badge some quando não há pendente — zero não é informação, é ruído", async () => {
   montarBackendFalso({ handoffs: { items: [], pendentes: 0 } });
   render(<LayoutAdmin rota="/admin/status" />);
-  expect(await screen.findByRole("navigation")).toBeVisible();
+  expect(await screen.findByRole("navigation", { name: /seções/i })).toBeVisible();
   expect(screen.queryByTestId("badge-pendentes")).toBeNull();
 });
 
@@ -31,15 +31,45 @@ it("o badge sobe no push, sem recarregar", async () => {
 it("as três telas se ligam entre si", () => {
   montarBackendFalso({});
   render(<LayoutAdmin rota="/admin/status" />);
-  const nav = screen.getByRole("navigation");
+  // Duas navegações, de propósito: "Áreas" troca de contexto (chat ↔ admin) e
+  // "Seções da operação" troca de tela dentro do admin. Consultar por papel sem
+  // nomear qual seria ambíguo — e a ambiguidade é a confusão que a casca resolve.
+  const secoes = screen.getByRole("navigation", { name: /seções/i });
   for (const [nome, href] of [
     [/convers/i, "/admin/conversas"],
     [/status/i, "/admin/status"],
     [/handoff/i, "/admin/handoffs"],
   ] as const) {
-    expect(screen.getByRole("link", { name: nome })).toHaveAttribute("href", href);
+    expect(within(secoes).getByRole("link", { name: nome })).toHaveAttribute("href", href);
   }
-  expect(nav).toBeVisible();
+});
+
+it("a seção atual se anuncia ao olho, não só ao leitor de tela", () => {
+  // `aria-current` resolve para leitor de tela e não resolve para quem enxerga.
+  // A aba ativa perde o filete inferior e encosta na folha — o `data-atual` é o
+  // que o CSS usa, e é o que este teste trava.
+  montarBackendFalso({});
+  render(<LayoutAdmin rota="/admin/status" />);
+  const secoes = screen.getByRole("navigation", { name: /seções/i });
+  const ativa = within(secoes).getByRole("link", { name: /status/i });
+  expect(ativa).toHaveAttribute("data-atual", "sim");
+  expect(ativa).toHaveAttribute("aria-current", "page");
+  expect(within(secoes).getByRole("link", { name: /convers/i })).toHaveAttribute(
+    "data-atual",
+    "nao",
+  );
+});
+
+it("a via atual é a do admin, e a do chat fica disponível", () => {
+  montarBackendFalso({});
+  render(<LayoutAdmin rota="/admin/conversas" />);
+  const areas = screen.getByRole("navigation", { name: /áreas/i });
+  const links = within(areas).getAllByRole("link");
+  expect(links).toHaveLength(2);
+  const admin = links.find((a) => a.getAttribute("href")?.startsWith("/admin"));
+  const chat = links.find((a) => a.getAttribute("href") === "/chat");
+  expect(admin).toHaveAttribute("data-atual", "sim");
+  expect(chat).toHaveAttribute("data-atual", "nao");
 });
 
 it("existe navegação para o chat — o admin não é beco sem saída", () => {

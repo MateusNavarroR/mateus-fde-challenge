@@ -1,3 +1,4 @@
+import { Casca } from "../ui/Casca";
 import { useEffect, useRef, useState } from "react";
 import type { ConversationDetail, Message } from "../api/tipos";
 import { Bolha } from "./Bolha";
@@ -72,17 +73,15 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
       .catch(() => setFalhaAoAbrir(true));
   };
 
-  return (
-    <div className="chat">
-      <header className="chat__topo">
-        <h1 className="chat__marca">AutoSeguro</h1>
-        <div className="chat__meta">
-          <span className="pilula" data-testid="estado-conversa">
-            {ESTADO_LEGIVEL[estado.state] ?? estado.state}
-          </span>
-        </div>
-      </header>
+  const estadoDaConversa = (
+    <span className="pilula" data-testid="estado-conversa">
+      {ESTADO_LEGIVEL[estado.state] ?? estado.state}
+    </span>
+  );
 
+  return (
+    <Casca via="chat" estado={estadoDaConversa}>
+      <div className="chat">
       <div className="chat__acoes">
         <button type="button" className="botao-fantasma" onClick={trocarDeConversa}>
           Nova conversa
@@ -189,6 +188,7 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
           </button>
         </form>
       </footer>
-    </div>
+      </div>
+    </Casca>
   );
 }
