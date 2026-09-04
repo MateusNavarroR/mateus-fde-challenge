@@ -1292,6 +1292,125 @@ code {
   .capa__folha { padding: 1.75rem 1.25rem; }
 }
 
+/* --- o balcão da 2ª via ---------------------------------------------------- */
+/*
+ * A tela de login é a MESMA folha da capa, com uma folha mais estreita e uma única
+ * marca nova. Não é economia: quem clicou na 2ª via não trocou de aplicação,
+ * encontrou um balcão — e um segundo sistema visual aqui diria o contrário.
+ *
+ * O PICOTE é o elemento da tela, e é uma linha. Ele representa a perfuração por
+ * onde a 1ª via foi destacada, e comunica "você está na segunda folha" sem uma
+ * palavra. Vale como desenho porque é literal: um formulário de seguro em papel
+ * carbono é exatamente assim.
+ *
+ * Nada aqui gira nem cresce. A aplicação inteira reserva escala e rotação a UM
+ * elemento — o carimbo do disjuntor em /admin/status —, e é essa exclusividade que
+ * o torna achável em dois segundos. Um segundo carimbo o gastaria.
+ */
+.login {
+  max-width: 30rem;
+}
+
+.login__picote {
+  height: 1px;
+  margin: 1.4rem -2.25rem 1.3rem;
+  /* Perfuração: traço curto e claro sobre o vinco. O `repeating-linear-gradient`
+     desenha os dois de uma vez e não custa um pseudo-elemento. */
+  background: repeating-linear-gradient(
+    to right,
+    var(--filete-forte) 0 5px,
+    transparent 5px 11px
+  );
+  opacity: 0.75;
+}
+
+.login__ordinal {
+  margin: 0;
+}
+
+.login__titulo {
+  margin: 0.1rem 0 0.7rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.login__form {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1.4rem;
+}
+
+/* Campo em largura de folha, e não o `.campo` apertado dos filtros do admin: aqui
+   ele é o assunto da tela, não um controle de canto. */
+.login__form .campo input {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  background: var(--folha);
+  border: 1px solid var(--filete-forte);
+  /* A linha de baixo mais grossa: é a pauta do formulário, o lugar onde se escreve. */
+  border-bottom-width: 2px;
+  font-size: 0.95rem;
+}
+
+.login__form .campo input:focus-visible {
+  border-color: var(--carimbo);
+  outline: 2px solid var(--carimbo);
+  outline-offset: 1px;
+}
+
+.login__entrar {
+  justify-self: start;
+  margin-top: 0.35rem;
+  padding: 0.45rem 1.4rem;
+}
+
+.login__entrar:disabled {
+  cursor: progress;
+  background: var(--filete-forte);
+  border-color: var(--filete-forte);
+}
+
+.login__recusa {
+  margin: 1rem 0 0;
+  color: var(--vigencia);
+  font-weight: 600;
+}
+
+/* O selo da capa: aparece SÓ quando a instalação exige credencial, e some por
+   completo no caminho padrão — um aviso sobre senha numa instalação aberta só
+   criaria a suspeita de que falta um passo. */
+.capa__selo {
+  margin-top: 0.55rem;
+  align-self: start;
+  padding: 0.08rem 0.4rem;
+  font-family: var(--doc);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: var(--carimbo);
+  background: var(--carimbo-lavado);
+  border: 1px solid var(--carimbo);
+  border-radius: 2px;
+}
+
+@media (max-width: 620px) {
+  .login__picote { margin-inline: -1.25rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Uma revelação só, e curta: a folha assenta. Mais que isso numa tela de senha
+     é atraso disfarçado de polimento. */
+  .login {
+    animation: assentar 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@keyframes assentar {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
 /* Markdown dentro da bolha. O agente escreve negrito e listas para explicar os
  * planos; o espaçamento aqui é apertado de propósito — é mensagem, não artigo. */
 .md > :first-child { margin-top: 0; }

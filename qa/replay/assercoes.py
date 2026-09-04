@@ -153,12 +153,22 @@ class RunAgregado:
 
     `ReliabilityEval` avalia **um** `RunOutput`, e a nossa unidade é a conversa: o
     `quote_plan` acontece no turno 9 de 11, e avaliar turno a turno reprovaria os
-    outros dez por não terem cotado. O módulo lê exatamente um atributo — `messages` —
-    então agregar é concatenar. Os três campos de telemetria existem porque
-    `_get_telemetry_data` os lê; `telemetry=False` já os dispensaria, e eles ficam para
-    o caso de alguém religar.
+    outros dez por não terem cotado. Agregar é concatenar os dois atributos que o
+    módulo lê:
+
+    - **`tools`** — a lista de `ToolExecution`. Desde a 2.8.0 é daqui que sai a
+      evidência: uma expectativa só é satisfeita por uma execução **limpa**, e não mais
+      por um pedido no `messages` que a tool recusou ou que estourou. É a leitura certa
+      para o nosso caso — "chamou `quote_plan`" tem que significar que a `/quote` foi
+      consultada, não que o modelo escreveu o nome da tool;
+    - **`messages`** — mantido porque o módulo ainda o usa para anotar a falha de uma
+      chamada que nunca virou execução.
+
+    Os três campos de telemetria existem porque `_get_telemetry_data` os lê;
+    `telemetry=False` já os dispensaria, e eles ficam para o caso de alguém religar.
     """
 
+    tools: list[Any] = field(default_factory=list)
     messages: list[Any] = field(default_factory=list)
     agent_id: str | None = None
     model: str | None = None
@@ -166,10 +176,12 @@ class RunAgregado:
 
 
 def agregar(runs: Iterable[Any]) -> RunAgregado:
+    execucoes: list[Any] = []
     mensagens: list[Any] = []
     for run in runs:
+        execucoes.extend(getattr(run, "tools", None) or [])
         mensagens.extend(getattr(run, "messages", None) or [])
-    return RunAgregado(messages=mensagens)
+    return RunAgregado(tools=execucoes, messages=mensagens)
 
 
 def montar_reliability(
@@ -188,21 +200,32 @@ def montar_reliability(
 
     Devolve `None` quando não há tool obrigatória (o caso do handoff legítimo): montar
     um eval sem expectativa produziria um `PASSED` que não significa nada.
+
+    **O CEP fica fora do `expected_tool_call_arguments`, e não por descuido.** O
+    casamento de argumentos do Agno é igualdade exata, e o argumento que chega à tool é
+    o que o **modelo escreveu** — na forma `01XXX-XXX`, com hífen, como o lead
+    falou —, enquanto o gabarito
+    é normalizado para 8 dígitos (é assim que `conversations.cep` guarda). Exigir
+    igualdade ali reprovaria uma extração correta por causa de um hífen. O CEP continua
+    conferido duas vezes, nos dois lugares onde já está normalizado: contra
+    `conversations.cep` na medição de extração, e contra `quotes.req_cep` na conferência
+    de preço — que é onde a subcotação de 30% de fato aparece.
     """
     if not expectativa.tools_obrigatorias:
         return None
     from agno.eval.reliability import ReliabilityEval
 
+    argumentos = {
+        chave: valor
+        for chave, valor in expectativa.argumentos_de_quote.items()
+        if chave != "cep"
+    }
     return ReliabilityEval(
         name=f"replay:{caso.conversation_id}",
         agent_response=agregar(runs),  # type: ignore[arg-type]
         expected_tool_calls=list(expectativa.tools_obrigatorias),
         allow_additional_tool_calls=True,
-        expected_tool_call_arguments=(
-            {QUOTE: expectativa.argumentos_de_quote}
-            if expectativa.argumentos_de_quote
-            else None
-        ),
+        expected_tool_call_arguments={QUOTE: argumentos} if argumentos else None,
         db=db,
         telemetry=False,
         print_results=print_results,

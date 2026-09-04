@@ -6,6 +6,7 @@ seria uma exceção de autenticação no meio de outra coisa.
 """
 
 import os
+import uuid
 
 import pytest
 
@@ -106,9 +107,11 @@ def test_admin_token_chega_ao_settings(tmp_path, monkeypatch):
     monkeypatch.delenv("ADMIN_TOKEN", raising=False)
     monkeypatch.delenv("APP_ADMIN_TOKEN", raising=False)
     env = tmp_path / ".env"
-    env.write_text("ADMIN_TOKEN=segredo-de-teste\n")
+    # Gerado, não literal: a mesma regra das fixtures de PII (CLAUDE.md 13b).
+    token = uuid.uuid4().hex
+    env.write_text(f"ADMIN_TOKEN={token}\n")
     carregar_env(env)
-    assert os.environ["APP_ADMIN_TOKEN"] == "segredo-de-teste"
+    assert os.environ["APP_ADMIN_TOKEN"] == token
 
     from app.config import Settings
 

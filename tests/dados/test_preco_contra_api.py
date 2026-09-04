@@ -31,6 +31,8 @@ import pytest
 
 from qa.replay.precos import multiplicador_regiao, premio_esperado
 
+from tests.fixtures.pii import cep_de
+
 pytestmark = pytest.mark.live
 
 LIMPA = os.getenv("QUOTE_API_LIMPA", "http://localhost:8001")
@@ -57,6 +59,8 @@ def cotar(**payload) -> dict:
 
 # ─── os perfis de borda ──────────────────────────────────────────────────────
 
+
+
 #: `(rótulo, plano, idade, ano do veículo, cep)` — cada linha existe para exercitar
 #: uma borda específica, e o rótulo diz qual.
 PERFIS = [
@@ -79,18 +83,18 @@ PERFIS = [
     ("veículo 20 anos — teto de 1,45, borda da recusa", "completo", 35, ANO - 20, None),
 
     # CEP: os cinco prefixos de risco e vizinhos que NÃO são
-    ("cep 07 — risco",                      "completo",  35, 2019, "07145-200"),
-    ("cep 08 sem hífen — risco",            "completo",  35, 2019, "08123456"),
-    ("cep 21 — risco",                      "completo",  35, 2019, "21000-000"),
-    ("cep 26 — risco",                      "completo",  35, 2019, "26703-384"),
-    ("cep 59 — risco",                      "completo",  35, 2019, "59000-000"),
-    ("cep 01 — fora da lista",              "completo",  35, 2019, "01310-100"),
-    ("cep 06 — vizinho do 07, fora",        "completo",  35, 2019, "06000-000"),
-    ("cep 09 — vizinho do 08, fora",        "completo",  35, 2019, "09000-000"),
-    ("cep 22 — vizinho do 21, fora",        "completo",  35, 2019, "22000-000"),
+    ("cep 07 — risco",                      "completo",  35, 2019, cep_de("07")),
+    ("cep 08 sem hífen — risco",            "completo",  35, 2019, cep_de("08", com_hifen=False)),
+    ("cep 21 — risco",                      "completo",  35, 2019, cep_de("21")),
+    ("cep 26 — risco",                      "completo",  35, 2019, cep_de("26")),
+    ("cep 59 — risco",                      "completo",  35, 2019, cep_de("59")),
+    ("cep 01 — fora da lista",              "completo",  35, 2019, cep_de("01")),
+    ("cep 06 — vizinho do 07, fora",        "completo",  35, 2019, cep_de("06")),
+    ("cep 09 — vizinho do 08, fora",        "completo",  35, 2019, cep_de("09")),
+    ("cep 22 — vizinho do 21, fora",        "completo",  35, 2019, cep_de("22")),
 
     # o extremo: o maior prêmio possível das regras
-    ("teto absoluto: premium, 18a, 11 anos, risco", "premium", 18, ANO - 11, "07000-000"),
+    ("teto absoluto: premium, 18a, 11 anos, risco", "premium", 18, ANO - 11, cep_de("07")),
     # e o piso
     ("piso absoluto: essencial, 30a, 0 ano, sem cep", "essencial", 30, ANO, None),
 ]
@@ -145,7 +149,7 @@ def test_o_calculo_independente_nao_e_a_api(monkeypatch):
     # O perfil do exemplo de `docs/API-COTACAO.md` §5.4 e do bloco de cotação:
     # 209,90 × 1,25 (28 anos) × 1,15 (7 anos) × 1,30 (prefixo 07) = 392,25.
     assert premio_esperado(
-        plano_id="completo", idade=28, veiculo_ano=2019, cep="07145-200", ano_corrente=ANO
+        plano_id="completo", idade=28, veiculo_ano=2019, cep=cep_de("07"), ano_corrente=ANO
     ) == Decimal("392.25")
 
 
@@ -155,7 +159,7 @@ def test_o_calculo_independente_nao_e_a_api(monkeypatch):
 def test_os_multiplicadores_compoem_por_produto():
     """API-COTACAO §5: `base × faixa_etaria × idade_veiculo × regiao`, com **um único
     arredondamento no fim** — os multiplicadores não são arredondados entre si."""
-    corpo = cotar(plano_id="completo", idade=18, veiculo_ano=ANO - 11, cep="07000-000")
+    corpo = cotar(plano_id="completo", idade=18, veiculo_ano=ANO - 11, cep=cep_de("07"))
     m = corpo["multiplicadores"]
     bruto = Decimal("209.90") * Decimal(str(m["faixa_etaria"])) \
         * Decimal(str(m["idade_veiculo"])) * Decimal(str(m["regiao"]))
@@ -163,9 +167,9 @@ def test_os_multiplicadores_compoem_por_produto():
 
 
 @pytest.mark.parametrize("cep,esperado", [
-    ("07000-000", 1.30), ("08000-000", 1.30), ("21000-000", 1.30),
-    ("26000-000", 1.30), ("59000-000", 1.30),
-    ("01310-100", 1.00), ("70000-000", 1.00),
+    (cep_de("07"), 1.30), (cep_de("08"), 1.30), (cep_de("21"), 1.30),
+    (cep_de("26"), 1.30), (cep_de("59"), 1.30),
+    (cep_de("01"), 1.00), (cep_de("70"), 1.00),
 ])
 def test_a_regiao_e_130_nos_cinco_prefixos(cep, esperado):
     corpo = cotar(plano_id="essencial", idade=35, veiculo_ano=2022, cep=cep)
@@ -225,7 +229,7 @@ def test_todo_premio_observado_pertence_ao_conjunto_de_72():
         for p in ("essencial", "completo", "premium")
         for i in (20, 27, 40, 70)
         for v in (2, 8, 15)
-        for c in (None, "07000-000")
+        for c in (None, cep_de("07"))
     }
     assert len(possiveis) == 72
 

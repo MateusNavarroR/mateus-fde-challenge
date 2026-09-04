@@ -125,8 +125,8 @@ def extrair_cep(falas: Iterable[Fala]) -> str | None:
     """O primeiro CEP que o lead pronuncia, normalizado para 8 dígitos.
 
     Normalizar aqui é o que torna a comparação justa: `conversations.cep` é
-    `String(8)`, gravado pelo validador da `QuoteRequest`. Comparar `"01310-100"` com
-    `"01310100"` reprovaria uma extração correta.
+    `String(8)`, gravado pelo validador da `QuoteRequest`. Comparar a forma com hífen
+    (`01XXX-XXX`) com a de 8 dígitos corridos reprovaria uma extração correta.
     """
     for fala in falas:
         achado = _CEP.search(fala.texto or "")

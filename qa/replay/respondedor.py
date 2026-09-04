@@ -60,7 +60,10 @@ _PADROES: tuple[tuple[Intencao, re.Pattern[str]], ...] = (
     (
         Intencao.PLANO_ID,
         re.compile(
-            r"\b(plano|essencial|completo|premium|cobertura|franquia|"
+            # `cobertura` NÃO entra: "quando a cobertura deve começar?" é pergunta de
+            # data, e incluí-la fazia o respondedor responder plano para ela — um erro
+            # que só apareceu porque o teste cobre as duas formas de perguntar a data.
+            r"\b(plano|essencial|completo|premium|franquia|"
             r"qual dos tr[êe]s|op[çc][ãa]o)\w*",
             re.IGNORECASE,
         ),

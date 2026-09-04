@@ -15,7 +15,7 @@ import pytest
 
 from app.privacy.mascarar import contem_pii, mascarar
 from qa.replay import casos as construtor
-from tests.fixtures.pii import frase_do_lead
+from tests.fixtures.pii import cep_de, frase_do_lead
 
 
 def _linha(conv, idx, corpo, *, papel="lead", tipo="text", idade=35,
@@ -115,7 +115,7 @@ def test_cep_e_extraido_pelo_mesmo_padrao_do_mascaramento():
 
 
 def test_cep_normalizado_para_oito_digitos():
-    """`conversations.cep` é `String(8)`: comparar "01310-100" com "01310100"
+    """`conversations.cep` é `String(8)`: comparar cep_de("01") com cep_de("01", com_hifen=False)
     reprovaria uma extração correta."""
     fala, pii = frase_do_lead(seed=7)
     [caso] = construtor.montar([_linha("c1", 0, fala)], ano_corrente=2026)

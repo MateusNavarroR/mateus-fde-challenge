@@ -12,6 +12,8 @@ from qa.replay import amostra as amostragem
 from qa.replay.casos import CasoReplay, Fala, Gabarito
 from qa.dataset.elegibilidade import Elegibilidade
 
+from tests.fixtures.pii import cep_de
+
 OUTCOMES = ("em_negociacao", "ganho", "perdido", "sem_resposta")
 
 
@@ -21,7 +23,7 @@ def _caso(cid: str, *, idade=False, veiculo=False, outcome="ganho", midia=False,
         conversation_id=cid,
         outcome=outcome,
         falas=tuple(Fala(i, "audio" if (midia and i == 0) else "text", "oi") for i in range(falas)),
-        gabarito=Gabarito(idade=35, veiculo_ano=2018, cep="01310100"),
+        gabarito=Gabarito(idade=35, veiculo_ano=2018, cep=cep_de("01", com_hifen=False)),
         elegibilidade=Elegibilidade(
             cotavel=not (idade or veiculo),
             por_idade=idade,

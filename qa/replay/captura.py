@@ -46,36 +46,40 @@ class Coletor:
     def ultimo_run(self) -> Any | None:
         return self.runs[-1] if self.runs else None
 
-    def chamadas_de_tool(self, desde: int = 0) -> list[str]:
-        """Os nomes das tools chamadas, na ordem, a partir do `desde`-ésimo run.
+    def execucoes(self, desde: int = 0) -> list[tuple[str, dict[str, Any], bool]]:
+        """`(nome, argumentos, houve_erro)` de cada tool executada, na ordem.
 
-        Achatar aqui — em vez de deixar cada asserção reabrir o `RunOutput` — é o que
-        mantém a forma do objeto do Agno em **um** lugar. Quando ela mudar de versão,
-        muda aqui.
-        """
-        nomes: list[str] = []
-        for run in self.runs[desde:]:
-            for mensagem in getattr(run, "messages", None) or []:
-                for chamada in getattr(mensagem, "tool_calls", None) or []:
-                    nome = _nome_da_chamada(chamada)
-                    if nome:
-                        nomes.append(nome)
-        return nomes
+        **A evidência é a execução, não o pedido** — é o que o `ReliabilityEval` passou
+        a exigir na 2.8.0, e a mudança está certa: uma chamada recusada pelo limite de
+        tools, ou que estourou dentro da tool, aparecia como pedido no `messages` e
+        satisfazia a expectativa sem a tool ter feito trabalho nenhum. `RunOutput.tools`
+        é uma lista de `ToolExecution`, com os argumentos **já decodificados**.
 
-    def argumentos_de(self, tool: str, desde: int = 0) -> list[dict[str, Any]]:
-        """Os argumentos de cada chamada a `tool`, já decodificados.
-
-        O Agno entrega os argumentos como **string JSON** dentro de
-        `function.arguments`. Decodificar em cada asserção seria repetir o mesmo
-        `json.loads` com o mesmo `try` em cinco lugares.
+        O caminho por `messages` fica como plano B para versões que não populam `tools`.
+        Achatar tudo aqui — em vez de deixar cada asserção reabrir o `RunOutput` — é o
+        que mantém a forma do objeto do Agno em **um** lugar.
         """
         import json
 
-        saida: list[dict[str, Any]] = []
+        saida: list[tuple[str, dict[str, Any], bool]] = []
         for run in self.runs[desde:]:
+            execucoes = getattr(run, "tools", None)
+            if execucoes:
+                for execucao in execucoes:
+                    nome = getattr(execucao, "tool_name", None)
+                    if not nome:
+                        continue
+                    args = getattr(execucao, "tool_args", None) or {}
+                    erro = bool(getattr(execucao, "tool_call_error", False)) or bool(
+                        getattr(execucao, "is_paused", False)
+                    )
+                    saida.append((nome, dict(args), erro))
+                continue
+
             for mensagem in getattr(run, "messages", None) or []:
                 for chamada in getattr(mensagem, "tool_calls", None) or []:
-                    if _nome_da_chamada(chamada) != tool:
+                    nome = _nome_da_chamada(chamada)
+                    if not nome:
                         continue
                     brutos = _argumentos_da_chamada(chamada)
                     if isinstance(brutos, str):
@@ -83,8 +87,21 @@ class Coletor:
                             brutos = json.loads(brutos)
                         except (ValueError, TypeError):
                             brutos = {}
-                    saida.append(brutos if isinstance(brutos, dict) else {})
+                    saida.append((nome, brutos if isinstance(brutos, dict) else {}, False))
         return saida
+
+    def chamadas_de_tool(self, desde: int = 0) -> list[str]:
+        """Os nomes das tools que **executaram limpo**, na ordem.
+
+        Uma chamada que errou não conta como chamada: `quote_plan` que estourou não
+        cotou, e contá-la faria a asserção "o lead incotável foi recusado pela API"
+        passar sem a API ter sido consultada.
+        """
+        return [nome for nome, _, erro in self.execucoes(desde) if not erro]
+
+    def argumentos_de(self, tool: str, desde: int = 0) -> list[dict[str, Any]]:
+        """Os argumentos de cada execução limpa de `tool`."""
+        return [args for nome, args, erro in self.execucoes(desde) if nome == tool and not erro]
 
 
 def _nome_da_chamada(chamada: Any) -> str | None:

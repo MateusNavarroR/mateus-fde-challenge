@@ -23,9 +23,11 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.api import consultas
@@ -209,6 +211,44 @@ registrar_websockets(app)
 registrar_autenticacao(app)
 
 
-@app.get("/", include_in_schema=False)
-def raiz() -> Response:
-    return Response(status_code=204)
+# ─── o frontend ──────────────────────────────────────────────────────────────
+#
+# Servido pela MESMA origem da API, e não por um segundo serviço. Três razões, e a
+# primeira é a que decide:
+#
+# 1. `docker compose up` precisa subir **o produto inteiro** com um comando. Um
+#    frontend em outra porta transformaria "abra 8080" em "abra 8080 e 5173", e o
+#    critério nº 1 do desafio é justamente que funcione;
+# 2. mesma origem significa **sem CORS** — nada de `allow_origins` para configurar
+#    errado, e o cookie de sessão do admin é `SameSite=Strict` sem exceção;
+# 3. o WebSocket usa o mesmo host, então não há um segundo endereço para acertar.
+#
+# As rotas do SPA (`/chat`, `/admin/...`) são resolvidas no cliente: qualquer caminho
+# que não seja `/api` nem um arquivo existente devolve o `index.html`, e o roteador
+# do React decide. Sem isso, um F5 em `/admin/status` daria 404 — que é o defeito
+# clássico de SPA servido por servidor estático ingênuo.
+
+_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
+
+if _DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/{caminho:path}", include_in_schema=False)
+    def spa(caminho: str) -> Response:
+        # `/api` NUNCA cai no SPA. Sem esta guarda, um endpoint inexistente
+        # devolveria `index.html` com 200 — e o cliente receberia HTML onde espera
+        # JSON, com o erro aparecendo como "unexpected token <" três camadas adiante.
+        # O mesmo vale para as rotas de documentação, que ficam desligadas fora de
+        # dev e não podem voltar a existir por acidente de roteamento.
+        if caminho.startswith("api/") or caminho in {"docs", "redoc", "openapi.json"}:
+            return JSONResponse(status_code=404,
+                                content={"error": "nao_encontrado", "message": caminho})
+        arquivo = _DIST / caminho
+        if caminho and arquivo.is_file() and _DIST in arquivo.resolve().parents:
+            return FileResponse(arquivo)
+        return FileResponse(_DIST / "index.html")
+
+else:  # pragma: no cover - só em desenvolvimento, com o Vite em outra porta
+    @app.get("/", include_in_schema=False)
+    def raiz() -> Response:
+        return Response(status_code=204)

@@ -3,6 +3,7 @@ import { api } from "../api/cliente";
 import type { FilaHandoffs } from "../api/tipos";
 import { useRecurso } from "../ui/useRecurso";
 import { Casca } from "../ui/Casca";
+import { useAutenticacao, useSair } from "../ui/useAutenticacao";
 import { useEventos } from "./useEventos";
 
 const ABAS = [
@@ -28,9 +29,16 @@ const ABAS = [
  *    `/chat` retoma a sessão do próprio navegador, então leva o avaliador de volta
  *    à conversa **dele**, nunca à de outro lead.
  * 3. **Zero não vira badge.** Um "0" ali é ruído, não informação.
+ *
+ * O **encerrar** entra na mesma zona de estado, e só existe quando há sessão para
+ * encerrar. Numa instalação aberta ele seria um botão que promete um controle
+ * inexistente — e, pior, sugeriria que houve um login que ninguém fez.
  */
 export function LayoutAdmin({ rota, children }: { rota: string; children?: ReactNode }) {
   const fila = useRecurso<FilaHandoffs>(() => api.handoffs({ limit: 1 }), []);
+  const auth = useAutenticacao();
+  const sair = useSair();
+  const comSessao = auth.situacao === "conhecido" && auth.exigido && auth.autenticado;
 
   // Um admin que perdeu o push e não avisa é pior que um admin sem push: o
   // operador passa a confiar numa fila parada.
@@ -80,6 +88,11 @@ export function LayoutAdmin({ rota, children }: { rota: string; children?: React
       >
         {conexao === "conectado" ? "recebendo em tempo real" : "sem conexão em tempo real"}
       </span>
+      {comSessao ? (
+        <button type="button" className="botao-fantasma" onClick={() => void sair()}>
+          Encerrar sessão
+        </button>
+      ) : null}
     </>
   );
 

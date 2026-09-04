@@ -160,12 +160,14 @@ def amostrar(
 
     rng = random.Random(seed)
     tabela = _celulas(casos)
-    for grupo in tabela.values():
-        # Ordenar por id antes de embaralhar tira a dependência da ordem física do
-        # parquet: dois arquivos com as mesmas conversas em ordem diferente produzem
-        # a mesma amostra para a mesma seed.
-        grupo.sort(key=lambda c: c.conversation_id)
-        rng.shuffle(grupo)
+    # Duas normalizações, e **as duas** são necessárias para que a ordem física do
+    # parquet não mude a amostra: ordenar cada grupo por id, e percorrer as células numa
+    # ordem canônica. Sem a segunda, o mesmo `rng` seria consumido em ordem diferente e
+    # dois arquivos com as mesmas conversas produziriam amostras diferentes — o tipo de
+    # não determinismo que passa despercebido até alguém comparar duas execuções.
+    for chave in sorted(tabela):
+        tabela[chave].sort(key=lambda c: c.conversation_id)
+        rng.shuffle(tabela[chave])
 
     ordem = _ordem_das_celulas(tabela)
     cotas = {chave: 0 for chave in ordem}

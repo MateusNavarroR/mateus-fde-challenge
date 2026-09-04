@@ -61,11 +61,25 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       # Opcional. Definido ⇒ exigido; ausente ⇒ a aplicação sobe e avisa no log.
       APP_ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
+      # Login da área de operação, também opcional e também sem default. Sem as
+      # duas, o /admin abre direto — que é o caminho de um comando, e o que a
+      # proteção efetiva cobre é o bind em 127.0.0.1 acima.
+      ADMIN_USER: "${ADMIN_USER:-}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
     depends_on:
       db:
         condition: service_healthy
       quote-api:
         condition: service_healthy
+    # Sem isto, `docker compose up --wait` retorna quando o contêiner está RODANDO,
+    # não quando está SERVINDO — e quem seguir o README recebe conexão recusada por
+    # alguns segundos, sem saber se é lentidão ou defeito.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8080/api/health')\""]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
 
   # ─── perfil `debug`: as portas de depuração, para quem optar ────────────────
   # `docker compose --profile debug up` publica banco e quote-api no host. Fora

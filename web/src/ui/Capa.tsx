@@ -1,3 +1,5 @@
+import { useAutenticacao } from "./useAutenticacao";
+
 /**
  * A rota `/`.
  *
@@ -11,8 +13,19 @@
  *
  * Ela não é uma landing page: sem herói, sem argumento de venda. Três linhas e
  * duas escolhas, porque o leitor aqui é um avaliador com pouco tempo.
+ *
+ * **A única coisa que a autenticação mudou aqui.** Quando a instalação define
+ * `ADMIN_USER`/`ADMIN_PASSWORD`, a 2ª via passa a levar ao balcão de credencial em
+ * vez de ao registro. O link é reescrito **antes** do clique, e não depois: deixar
+ * a capa apontar para `/admin` e o admin devolver 401 seco seria oferecer uma porta
+ * e bater com ela na cara de quem aceitou. O selo "exige credencial" avisa em uma
+ * linha, e some por completo na instalação aberta — que é o caminho padrão, e onde
+ * um aviso sobre senha só criaria a suspeita de que falta um passo.
  */
 export function Capa() {
+  const auth = useAutenticacao();
+  const pedeCredencial = auth.situacao === "conhecido" && auth.exigido && !auth.autenticado;
+
   return (
     <div className="capa">
       <div className="capa__folha">
@@ -32,7 +45,7 @@ export function Capa() {
             </span>
           </a>
 
-          <a className="capa__via" href="/admin/conversas">
+          <a className="capa__via" href={pedeCredencial ? "/entrar" : "/admin/conversas"}>
             <span className="capa__ordinal">2ª via</span>
             <span className="capa__nome">Registro</span>
             <span className="capa__quem">
@@ -40,6 +53,9 @@ export function Capa() {
               status, as tentativas de cotação, a saúde da integração e a fila de
               handoff.
             </span>
+            {pedeCredencial ? (
+              <span className="capa__selo">exige credencial de operação</span>
+            ) : null}
           </a>
         </div>
 

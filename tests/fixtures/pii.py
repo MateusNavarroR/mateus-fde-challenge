@@ -87,3 +87,19 @@ def frase_do_lead(seed: int) -> tuple[str, dict[str, str]]:
         f"meu email é {p['email']} e o whats é {p['telefone']}, "
         f"placa {p['placa']}"
     ), p
+
+
+def cep_de(prefixo: str, *, com_hifen: bool = True) -> str:
+    """Constrói um CEP a partir do prefixo, em vez de escrever o literal.
+
+    O que os testes de preço e de replay exercitam é o **prefixo** — os dois dígitos
+    que disparam o agravo de 1,30 (`07`, `08`, `21`, `26`, `59`). O resto é
+    preenchimento.
+
+    Construir em vez de literalizar mantém a varredura de PII absoluta, sem exceção
+    por arquivo (CLAUDE.md 13a/13b), e deixa mais claro o que a linha testa: quem lê
+    `cep_de("07")` entende o caso na hora; quem lê `"07145-200"` precisa contar
+    dígitos para saber qual é o ponto.
+    """
+    corpo = f"{prefixo}000"
+    return f"{corpo}-000" if com_hifen else f"{corpo}000"

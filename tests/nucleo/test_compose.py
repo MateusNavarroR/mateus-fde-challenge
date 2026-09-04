@@ -118,10 +118,19 @@ def test_sobe_com_5432_e_8000_ocupadas_no_host():
         assert r.returncode == 0, (
             "o compose não subiu com 5432 e 8000 ocupadas no host:\n" + r.stderr[-2000:]
         )
+        # `--wait` já espera o healthcheck do serviço `app`, então uma leitura basta.
+        # Se voltar a precisar de laço aqui, é sinal de que o healthcheck sumiu.
+        import json
         import urllib.request
 
         with urllib.request.urlopen("http://127.0.0.1:8080/api/health", timeout=10) as resp:
             assert resp.status == 200
+            assert json.load(resp)["db"] == "ok"
+
+        # E o produto inteiro, não só a API: o SPA é servido pela mesma origem.
+        with urllib.request.urlopen("http://127.0.0.1:8080/chat", timeout=10) as resp:
+            assert resp.status == 200
+            assert "text/html" in resp.headers["content-type"]
     finally:
         subprocess.run(["docker", "compose", "down", "-v"], cwd=RAIZ, capture_output=True)
         for s in bloqueios:

@@ -17,6 +17,8 @@ import pytest
 from qa.dataset import caminhos
 from qa.replay import precos
 
+from tests.fixtures.pii import cep_de
+
 pytestmark = pytest.mark.skipif(
     not caminhos.plans_json().is_file(),
     reason=f"plans.json do desafio não encontrado em {caminhos.plans_json()}",
@@ -24,11 +26,11 @@ pytestmark = pytest.mark.skipif(
 
 #: `docs/API-COTACAO.md` §5.4 — calculados à mão e conferidos contra a resposta da API.
 CONFERENCIA_A_MAO = [
-    ("premium", 22, 2015, "08123-456", "1025.14"),
-    ("essencial", 65, 2018, "01310-100", "193.04"),
-    ("completo", 28, 2012, "21041-010", "494.58"),
+    ("premium", 22, 2015, cep_de("08"), "1025.14"),
+    ("essencial", 65, 2018, cep_de("01"), "193.04"),
+    ("completo", 28, 2012, cep_de("21"), "494.58"),
     ("premium", 30, 2026, None, "339.90"),
-    ("essencial", 75, 2006, "59015-000", "316.42"),
+    ("essencial", 75, 2006, cep_de("59"), "316.42"),
 ]
 
 #: §8.2 — os 8 preços que o gerador do dataset sorteia, independentes do perfil.
@@ -79,7 +81,7 @@ def test_cep_de_sete_digitos_subcota_sem_sinal_de_erro():
     """
     correto = precos.premio_esperado(
         plano_id="essencial", idade=30, veiculo_ano=2024,
-        cep="07000-000", ano_corrente=2026,
+        cep=cep_de("07"), ano_corrente=2026,
     )
     subcotado = precos.premio_esperado(
         plano_id="essencial", idade=30, veiculo_ano=2024,
@@ -90,7 +92,7 @@ def test_cep_de_sete_digitos_subcota_sem_sinal_de_erro():
 
     conferencia = precos.conferir(
         premio=subcotado, plano_id="essencial", idade=30, veiculo_ano=2024,
-        cep="07000-000", ano_corrente=2026,
+        cep=cep_de("07"), ano_corrente=2026,
     )
     assert conferencia.alcancavel  # ...e mesmo assim
     assert not conferencia.exato   # é reprovado pela forte.
@@ -100,7 +102,7 @@ def test_cep_de_sete_digitos_subcota_sem_sinal_de_erro():
 def test_cep_ausente_tambem_subcota():
     """"A omissão do CEP subcota em até 30%" (§5.3), em número."""
     com = precos.premio_esperado(
-        plano_id="premium", idade=30, veiculo_ano=2024, cep="21041-010",
+        plano_id="premium", idade=30, veiculo_ano=2024, cep=cep_de("21"),
         ano_corrente=2026,
     )
     sem = precos.premio_esperado(

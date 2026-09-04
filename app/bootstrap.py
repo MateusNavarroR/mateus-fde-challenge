@@ -29,7 +29,14 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 
 #: Variáveis que o SDK ou o legado leem direto do ambiente, sem passar por `Settings`.
-SEM_PREFIXO = ("ANTHROPIC_API_KEY", "OLLAMA_API_KEY", "ADMIN_TOKEN")
+SEM_PREFIXO = (
+    "ANTHROPIC_API_KEY",
+    "OLLAMA_API_KEY",
+    "ADMIN_TOKEN",
+    # Lidas por `app/auth.py` direto do ambiente, sem passar por `Settings`.
+    "ADMIN_USER",
+    "ADMIN_PASSWORD",
+)
 
 #: Nomes que o `.env` usa sem prefixo e que o `Settings` espera com `APP_`.
 #:

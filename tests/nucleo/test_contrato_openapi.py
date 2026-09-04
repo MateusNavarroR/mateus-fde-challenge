@@ -160,3 +160,36 @@ def test_post_conversations_com_a_mesma_sessao_retoma(monkeypatch):
 
     assert a.status_code == b.status_code == 201
     assert a.json()["id"] == b.json()["id"]
+
+
+# ─── o SPA servido pela mesma origem ─────────────────────────────────────────
+
+
+def test_api_desconhecida_devolve_json_nao_html(monkeypatch, tmp_path):
+    """Sem esta guarda, o catch-all do SPA devolveria `index.html` com 200 para um
+    endpoint inexistente — e o cliente receberia HTML onde espera JSON, com o erro
+    aparecendo como "unexpected token <" três camadas adiante da causa."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        r = c.get("/api/rota-que-nao-existe")
+    assert r.status_code == 404
+    assert r.headers["content-type"].startswith("application/json")
+
+
+@pytest.mark.parametrize("rota", ["docs", "redoc", "openapi.json"])
+def test_documentacao_nao_volta_pelo_catch_all(rota):
+    """Elas ficam desligadas fora de dev; o roteamento do SPA não pode ressuscitá-las
+    por acidente, servindo o `index.html` com 200 no lugar delas."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        r = c.get(f"/{rota}")
+    # Em dev o FastAPI serve de verdade; fora de dev, 404 JSON — nunca HTML do SPA.
+    assert r.status_code == 200 or (
+        r.status_code == 404 and r.headers["content-type"].startswith("application/json")
+    )

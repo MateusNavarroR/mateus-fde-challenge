@@ -1,0 +1,14 @@
+.git
+.venv
+web/node_modules
+web/dist
+qa/_saida
+tests
+ai-logs
+docs
+artifacts
+.env
+*.md
+__pycache__
+.pytest_cache
+.ruff_cache
