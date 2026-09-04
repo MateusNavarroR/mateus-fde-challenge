@@ -16,10 +16,38 @@ chegar.
 
 | | |
 |---|---|
-| gatilho do aviso | **tempo real de espera > 6 s**, seja qual for a causa |
-| reforço | aos ~20 s, uma segunda mensagem |
+| gatilho do aviso | 6 s **contados da chegada da mensagem do lead**, despachado de dentro da tool de cotação |
+| reforço | aos ~20 s do mesmo relógio |
 | desfecho | o preço renderizado, ou handoff se o job terminar `failed` |
 | handoff | só em `failed` — 0,8 % em produção, 100 % no cenário degradado |
+
+### O relógio é o do lead; o disparo é da tool
+
+Duas coisas separadas, e é fácil confundi-las.
+
+**O relógio é o do lead.** Ele começa quando o lead aperta enviar, não quando a nossa
+tool começa a esperar. Um turno gasta tempo antes da cotação — a latência do modelo — e
+medir a partir do job faria o aviso chegar depois de o lead já ter ficado 8 s no escuro.
+O ajuste é um parâmetro: o timestamp de chegada da mensagem entra na tool, e a contagem
+sai de lá.
+
+**O disparo é de dentro da tool**, pelo `ChannelAdapter`. Um watchdog genérico na camada
+de conversa pareceria mais simples e seria pior: ele dispararia **durante a geração do
+modelo**, e uma pergunta que levasse 6,5 s para ser respondida receberia "só um instante"
+seguido da resposta 0,2 s depois. É exatamente o atrito inventado que descartamos no
+gatilho por tentativa, só que em outro lugar. Dentro da tool, o aviso só existe quando há
+de fato uma cotação em voo — que é o único caso em que a espera é longa por construção.
+
+Fora do caminho da cotação há um **segundo relógio**, na camada de conversa, com
+limiar de **10 s** e texto próprio (`docs/TEXTOS.md` ①b). O limiar mais alto é o que
+evita o ruído: a demora da cotação é projetada — 8 s de sono, por construção — e 6 s a
+pega antes; a do modelo é anômala, e 6,5 s ainda é latência plausível, enquanto 10 s já
+é sintoma.
+
+Os nove textos aprovados vivem em **`docs/TEXTOS.md`**, que é a origem única de onde a
+implementação copia. O handoff é sempre **um prefixo opcional mais a despedida**, numa
+tabela de quatro linhas — o que mantém o descarte do texto do modelo sem exceção em
+todo caminho de encaminhamento.
 
 ### Por que por tempo, e não por tentativa
 
@@ -39,11 +67,14 @@ silêncio de 6 s é curto o bastante para não parecer queda.
 ### A sequência do cenário degradado
 
 ```
-0 s     lead pede a cotação
-6 s     "tô confirmando o valor com o sistema, já te trago"
-20 s    "ainda estou tentando aqui, não te abandonei"
-~37 s   handoff — o job terminou failed
++0.0s    lead pede a cotação
++6.0s    aviso de espera                                         ← da tool, relógio do lead
++20.0s   reforço                                                 ← da tool
++37.1s   handoff — o job terminou failed
 ```
+
+O transcript entregue marca **tempo relativo por linha** (`[+6.2s]`), para o avaliador
+ler a política funcionando com número em vez de acreditar na descrição.
 
 São duas mensagens em 37 s: o ritmo de quem está realmente tentando. Sem elas, o
 transcript degradado — que é o que o avaliador vai olhar — teria uma frase e um buraco
@@ -89,6 +120,24 @@ para a seguradora e um prejuízo para o lead.
 Registrar um fato que o lead trouxe é uma coisa; sugerir o caminho é outra. A diferença
 não é de resultado — é de quem originou a informação, e é ela que separa qualificação
 de instrução para fraudar.
+
+### A oferta vem dentro do template, e o reenquadramento leva dois turnos
+
+O template da recusa por veículo **já carrega a oferta**; os outros dois não. O modelo
+não escreve nada no turno da recusa — vale a mesma regra de descarte que vale para a
+cotação, sem exceção.
+
+Isso não é rigidez gratuita. O risco de soltar o modelo num turno de recusa não é
+alucinar preço — não há preço ali. É **promessa falsa**: "vou ver com o setor de
+exceções", "consigo uma autorização especial". É o mesmo erro que já cortamos no
+reenquadramento por condutor, e abrir uma exceção no descarte para acomodá-lo seria a
+primeira entrada numa lista de exceções — que é onde guardrail morre.
+
+O custo é pequeno porque o espaço é pequeno: são três textos, e só um ganha oferta.
+
+O turno seguinte é livre. O lead reage à oferta, aquele turno **não tem resultado de
+tool**, o modelo conversa normalmente e pode chamar `quote_plan` de novo com o outro
+veículo. O reenquadramento acontece em dois turnos, sem nenhuma exceção na regra.
 
 ### O texto do motivo vem de um mapa fixo
 

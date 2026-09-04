@@ -109,10 +109,18 @@ Paralelismo quebra o determinismo.
 
 ## Comportamento fechado (contrato: `docs/DECISOES-FECHADAS.md`)
 
-19. **`/quote` lenta ou falhando:** avisa e continua em background. Aviso disparado por
-    **tempo real de espera > 6 s** (nunca por falha de tentativa — a falha rápida
-    resolve em ~250 ms e o aviso viraria ruído). Reforço aos ~20 s. Handoff só quando o
-    job termina `failed`. As três mensagens são **template**, não geradas.
+19. **`/quote` lenta ou falhando:** avisa e continua em background. O aviso é
+    despachado **de dentro da tool de cotação**, pelo `ChannelAdapter` — nunca por um
+    watchdog na camada de conversa, que dispararia durante a geração do modelo e
+    produziria "só um instante" seguido da resposta. Mas o **relógio é o do lead**:
+    conta a partir do timestamp de chegada da mensagem dele, passado para dentro da
+    tool, não de quando a tool começou. Aviso aos 6 s, reforço aos ~20 s. Fora do
+    caminho da cotação há um segundo relógio, na camada de conversa, aos **10 s** —
+    limiar mais alto porque a demora do modelo é anômala, não projetada. Nunca
+    disparar por falha de tentativa: a falha rápida resolve em ~250 ms. Handoff só
+    quando o job termina `failed`. **Todo texto de espera, falha, recusa e
+    encaminhamento sai de `docs/TEXTOS.md`, literalmente** — é a origem única que
+    torna possível a comparação byte a byte do guardrail.
 20. **Recusa não vira handoff.** Motivo real de um mapa fixo de três textos nossos —
     nunca o texto cru da API, nunca o modelo parafraseando. Registro do lead no admin,
     **sem prometer contato** que ninguém fará.

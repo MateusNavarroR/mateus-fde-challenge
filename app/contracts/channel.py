@@ -45,11 +45,15 @@ class InboundMessage(Protocol):
 class ChannelAdapter(Protocol):
     """Porta de canal.
 
-    Três operações, e só três. `typing` está aqui — e não é enfeite — porque é o que
-    torna a degradação da `/quote` **visível** ao lead: quando a cotação demora, o
-    "digitando…" e o aviso de espera acontecem no canal enquanto o job continua.
-    Um canal que não sabe sinalizar espera não consegue expressar o comportamento que
-    o desafio avalia.
+    Três operações, e só três.
+
+    `typing` é sinalização opcional do canal, não o mecanismo de degradação: o que
+    prova o comportamento sob falha são as mensagens reais de aviso, reforço e
+    encaminhamento, despachadas de dentro da tool de cotação por esta porta. O
+    adaptador `web` implementa `typing` de verdade, porque ali ele é visível; o
+    `console` implementa como no-op, e o transcript marca **tempo relativo por linha**
+    (`[+6.2s]`), que é informação — um `[digitando...]` escrito num log seria
+    decoração.
     """
 
     name: str
