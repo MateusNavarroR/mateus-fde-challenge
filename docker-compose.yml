@@ -1,0 +1,62 @@
+# Um comando sobe tudo: `docker compose up`.
+#
+# Uma única variável de ambiente OBRIGATÓRIA: ANTHROPIC_API_KEY.
+# ADMIN_TOKEN é opcional — sem ele a aplicação sobe e avisa no log.
+#
+# Todas as portas publicam em 127.0.0.1, NUNCA em 0.0.0.0. É uma linha, e é o que
+# torna a superfície administrativa inalcançável da rede independente de
+# autenticação. O compose do desafio publica em 0.0.0.0; este não repete isso.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: autoseguro
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d autoseguro"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  quote-api:
+    build: ./quote-service
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # A instabilidade simulada do legado, nos valores do desafio.
+      QUOTE_FAILURE_RATE: "${QUOTE_FAILURE_RATE:-0.20}"
+      QUOTE_SLOW_RATE: "${QUOTE_SLOW_RATE:-0.10}"
+      QUOTE_SLOW_SECONDS: "${QUOTE_SLOW_SECONDS:-8}"
+      QUOTE_SEED: "${QUOTE_SEED:-}"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      APP_DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/autoseguro
+      APP_QUOTE_API_URL: http://quote-api:8000
+      APP_LLM_MODEL: "${APP_LLM_MODEL:-anthropic:claude-opus-5}"
+      # Sem default: quem não exportar, não sobe o caminho Anthropic.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      # Opcional. Definido ⇒ exigido; ausente ⇒ a aplicação sobe e avisa no log.
+      APP_ADMIN_TOKEN: "${ADMIN_TOKEN:-}"
+    depends_on:
+      db:
+        condition: service_healthy
+      quote-api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
