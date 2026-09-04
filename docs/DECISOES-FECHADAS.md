@@ -393,3 +393,79 @@ tem handoff, e isso não tem resposta boa.
 **`/chat` retoma a sessão corrente ao carregar.** Sessão em cookie ou `localStorage`,
 mais um botão explícito de **nova conversa**. Sempre-nova é o comportamento certo do
 botão, não do carregamento: um F5 no meio da conversa destruiria a demonstração.
+
+---
+
+## 9 · Decisões da frente de Dados/QA
+
+### A asserção do replay estava invertida
+
+A formulação original — *"lead incotável chamou `escalate_to_human` e não chamou
+`quote_plan`"* — é incorreta por dois motivos, ambos consequência de decisões desta
+mesma página:
+
+1. **Recusa não cria handoff** (§2). Chamar `escalate_to_human` num lead incotável é o
+   defeito, não o acerto.
+2. **O agente não tem como saber que o lead é incotável.** O catálogo no system prompt
+   tem nomes e coberturas e **nenhuma regra** — nem limite de idade, nem de ano do
+   veículo, nem valor monetário. Quem decide elegibilidade é a `/quote`, exatamente
+   como quem decide preço.
+
+| Lead | Deve chamar | Desfecho | Não deve |
+|---|---|---|---|
+| incotável | **`quote_plan`** — obrigatório, é a API que decide | `refused` com o motivo certo | `escalate_to_human` |
+| cotável | `quote_plan` com idade e ano corretos | `ok` | `escalate_to_human` |
+
+Vale no README com estas palavras: **não perguntamos ao modelo se o lead é elegível, do
+mesmo jeito que não perguntamos o preço.**
+
+### Replay literal, com script em dois buracos
+
+As falas do lead são reproduzidas **cruas, do parquet, em ordem de `message_index`**.
+Determinístico, grátis, e exercita a linguagem bagunçada de verdade — que é o que o
+dataset oferece e que nenhum roteiro nosso imitaria bem.
+
+O lead do dataset nunca informa **`data_inicio`** nem **`plano_id`**, e são justamente
+os dois que a nossa qualificação exige. Só esses dois recebem respondedor roteirizado,
+com casamento por intenção e um **contador de "não entendi a pergunta"** que reprova a
+suíte acima de um limiar — fragilidade visível em vez de silenciosa, o mesmo princípio
+do teste negativo do cache.
+
+Script cobrindo dois buracos conhecidos, não a conversa inteira: menos superfície frágil
+e mais fidelidade.
+
+### Três campos medidos: idade, `veiculo_ano` e CEP
+
+Marca e modelo ficam de fora, e o motivo merece uma linha no README porque é uma
+observação sobre o dataset: **`veiculo_texto` contém informação que o lead nunca disse.**
+A coluna diz "Renault Sandero 2022" e a fala diz "e um Sandero 2022" — penalizar o
+agente por não extrair uma marca que ninguém pronunciou é medir o ruído do gabarito.
+
+O CEP entra junto com os outros dois. Ele aparece em 100 % das conversas, está na fala
+do lead, e errar nele **subcota em 30 %** nos prefixos de risco. Depois da idade e do ano
+do veículo, é o erro de extração de maior consequência que existe.
+
+### `eval_runs` fica fora do dump de exemplo
+
+O dump existe para o avaliador ver o admin populado sem rodar nada, e **nenhuma das
+quatro telas mostra `eval_runs`**. Linha que ninguém vê não justifica o risco de alguém
+ler um juízo de LLM como métrica de produto.
+
+O lugar da avaliação é **`docs/EVALS.md`**: metodologia, rubrica, e a ressalva de qual
+modelo produziu qual número. No relatório o contexto vem junto; numa tabela sem UI, não.
+
+### O volume do replay é um custo de relógio, não de dinheiro
+
+Medido no parquet: **16.470 mensagens do lead** em 2.500 conversas. O replay turno a
+turno faz uma inferência por mensagem, então o volume completo é
+
+| Escopo | Inferências | Parede a 3 s |
+|---|---|---|
+| 2.500 conversas | 16.470 | **~14 h** |
+| 150 conversas | 991 | ~50 min |
+| 50 conversas | 342 | ~17 min |
+| **30 conversas (default)** | **203** | **~10 min** |
+
+O default é a amostra de 30. O volume completo fica atrás de flag explícita, para ser
+uma decisão consciente e de preferência noturna — não algo que trave a fatia 9 no meio
+da tarde. E não comprime com nada: inferência local não paraleliza sem GPU sobrando.
