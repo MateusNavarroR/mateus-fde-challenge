@@ -31,6 +31,14 @@ RAIZ = Path(__file__).resolve().parent.parent
 #: Variáveis que o SDK ou o legado leem direto do ambiente, sem passar por `Settings`.
 SEM_PREFIXO = ("ANTHROPIC_API_KEY", "OLLAMA_API_KEY", "ADMIN_TOKEN")
 
+#: Nomes que o `.env` usa sem prefixo e que o `Settings` espera com `APP_`.
+#:
+#: A mesma armadilha da chave da Anthropic, num segundo lugar: o `docker-compose.yml`
+#: faz `APP_ADMIN_TOKEN: ${ADMIN_TOKEN:-}` e resolve sozinho, então o caminho que
+#: quebra é o local — e quebra em silêncio, com o `/admin` subindo sem autenticação
+#: apesar de o token estar no arquivo.
+ESPELHADAS = {"ADMIN_TOKEN": "APP_ADMIN_TOKEN"}
+
 
 class CredencialAusente(RuntimeError):
     """Erra no boot, não no meio da conversa."""
@@ -57,6 +65,10 @@ def carregar_env(caminho: Path | None = None) -> list[str]:
         if chave in SEM_PREFIXO or chave.startswith("QUOTE_"):
             os.environ[chave] = valor
             carregadas.append(chave)
+            espelho = ESPELHADAS.get(chave)
+            if espelho and espelho not in os.environ:
+                os.environ[espelho] = valor
+                carregadas.append(espelho)
     return carregadas
 
 
