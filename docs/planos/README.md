@@ -134,3 +134,34 @@ O motivo de estar aqui e não numa lista mental: a navegação foi justamente o 
 usuário apontou como não comunicando as seções, e uma vistoria feita percorrendo as
 telas é o único jeito de saber se a correção pegou. Componente que passa em teste de
 unidade e confunde quem navega continua sendo um problema.
+
+#### O percurso, clicando — exatamente como o avaliador vai fazer
+
+```
+/  →  escolher a via  →  /chat  →  conversar até SAIR UMA COTAÇÃO
+   →  voltar  →  /admin  →  ENCONTRAR aquela conversa  →  abrir o detalhe
+   →  /admin/status  →  /admin/handoffs  →  voltar ao /chat
+```
+
+Sem pular etapa e sem navegar por URL: **clicando**.
+
+#### As quatro perguntas que a vistoria responde
+
+Nenhuma delas é sobre estética:
+
+1. Em **qualquer ponto** do percurso dá para saber **onde você está**?
+2. Em qualquer ponto dá para saber **como sair dali**? Alguma tela é beco sem saída?
+3. Algum **estado vazio** deixa de explicar o que fazer?
+4. Algum **erro** aparece sem dizer o próximo passo?
+
+#### Por que isto vale mais que captura bonita
+
+Os três defeitos encontrados no dia — `external_ref` colidindo no segundo uso, o stub
+no lugar do agente, e a navegação sem seções — **nenhum apareceu em teste**. Os três
+apareceram usando. A vistoria por Playwright é a versão automatizável disso.
+
+#### Regra de execução
+
+**Registrar o que encontrar como achado, e não consertar calado.** A lista vai para o
+usuário **antes** das correções. Conserto silencioso esconde o tamanho do problema, e é
+justamente o tamanho que decide o que entra e o que fica como limitação declarada.
