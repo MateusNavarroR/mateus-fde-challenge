@@ -98,6 +98,20 @@ class ContextoDoTurno:
     #: Write-back: o backend lê daqui depois do turno.
     handoffs: list = field(default_factory=list)
 
+    #: `(texto, quote_id) -> None`, **síncrono**. Quem monta o contexto decide como a
+    #: mensagem chega ao canal: o console imprime, o web empurra pelo socket. A tool
+    #: é síncrona (é o Agno que a chama), então marshalar para o laço de eventos é
+    #: responsabilidade de quem constrói — e agendar sem esperar quebraria a ordem
+    #: das mensagens no socket.
+    enviar: Callable[[str, str | None], None] | None = None
+
+    #: `time.monotonic()` de quando a mensagem do lead chegou. É o **relógio do lead**:
+    #: contar do início da tool faria o aviso sair depois de ele já ter esperado 8 s.
+    chegada_do_lead: float | None = None
+
+    #: A tool já falou com o lead neste turno ⇒ o texto do modelo é descartado.
+    ja_enviou: bool = False
+
 
 def make_qualify_lead(ctx: ContextoDoTurno) -> Callable[..., str]:
     def qualify_lead(
@@ -198,7 +212,7 @@ def _gravar_perfil(ctx: ContextoDoTurno, perfil: LeadProfile) -> None:
 # ─── quote_plan: a fronteira do modelo ───────────────────────────────────────
 
 
-def make_quote_plan(ctx: ContextoDoTurno, adaptador=None) -> Callable[..., str]:
+def make_quote_plan(ctx: ContextoDoTurno) -> Callable[..., str]:
     """`quote_plan` embrulha o **cliente resiliente**, não o HTTP.
 
     O modelo nunca vê status, tentativa, latência ou estado do breaker: 500, 502, 503,
@@ -262,21 +276,20 @@ def make_quote_plan(ctx: ContextoDoTurno, adaptador=None) -> Callable[..., str]:
         conv.state = "cotando"
         ctx.sessao.flush()
 
-        q = executar_job(ctx.sessao, ctx.conversation_id, req)
+        q = executar_job(
+            ctx.sessao, ctx.conversation_id, req,
+            chegada_do_lead=ctx.chegada_do_lead,
+            # O aviso e o reforço saem por aqui, de dentro da tool, com o relógio do
+            # lead — nunca por um watchdog na camada de conversa, que dispararia
+            # durante a geração do modelo.
+            avisar=(lambda t: enviar(t)) if ctx.enviar else None,
+        )
         ctx.sessao.commit()
 
         def enviar(texto: str, quote_id: str | None = None) -> None:
-            m = repo.gravar_mensagem(
-                ctx.sessao, ctx.conversation_id, autor="sistema",
-                conteudo=texto, status="pending", quote_id=quote_id,
-            )
-            ctx.sessao.commit()
-            if adaptador is not None:
-                _rodar(adaptador.send(ctx.conversation_id, m.conteudo,
-                                      message_id=m.id, quote_id=m.quote_id,
-                                      autor="sistema"))
-            repo.atualizar_status_mensagem(ctx.sessao, m.id, "sent")
-            ctx.sessao.commit()
+            ctx.ja_enviou = True
+            if ctx.enviar is not None:
+                ctx.enviar(texto, quote_id)
 
         if q.status == str(QuoteJobStatus.OK):
             enviar(render_de_payload(q.payload), quote_id=q.id)
@@ -305,17 +318,6 @@ def make_quote_plan(ctx: ContextoDoTurno, adaptador=None) -> Callable[..., str]:
                 "Encerre o turno.")
 
     return quote_plan
-
-
-def _rodar(coro):
-    """A tool do Agno é síncrona; o `ChannelAdapter` é assíncrono."""
-    import asyncio
-
-    try:
-        laco = asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-    return asyncio.ensure_future(coro, loop=laco)
 
 
 def _campo_do_erro(e: Exception) -> str:

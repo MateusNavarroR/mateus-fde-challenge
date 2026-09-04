@@ -67,15 +67,29 @@ def main() -> None:
         )
         s.commit()
         ctx = ContextoDoTurno(sessao=s, conversation_id=conv.id)
-        agente = construir_agente(ctx, canal)
+        import asyncio
+
+        def enviar(texto, quote_id=None, autor="sistema"):
+            print(f"[+{time.monotonic() - t0:5.1f}s] {autor:<7} │ {texto}\n")
+
+        ctx.enviar = enviar
+        ctx.chegada_do_lead = time.monotonic()
+        agente = construir_agente(ctx)
 
         for fala in FALAS:
             ctx.texto_do_lead = fala
+            ctx.chegada_do_lead = time.monotonic()
+            ctx.ja_enviou = False
             print(f"[+{time.monotonic() - t0:5.1f}s] LEAD    │ {fala}\n")
             r = agente.run(fala)
             texto = (r.content or "").strip()
-            print(f"[+{time.monotonic() - t0:5.1f}s] agente  │ "
-                  f"{texto if texto else '(silêncio)'}\n")
+            if ctx.ja_enviou:
+                # A tool já falou: o texto do modelo é descartado, sem exceção.
+                print(f"[+{time.monotonic() - t0:5.1f}s] agente  │ "
+                      "(descartado — a tool já respondeu ao lead)\n")
+            else:
+                print(f"[+{time.monotonic() - t0:5.1f}s] agente  │ "
+                      f"{texto if texto else '(silêncio)'}\n")
             m = getattr(r, "metrics", None)
             if m:
                 print(f"          ↳ in={m.input_tokens} out={m.output_tokens} "

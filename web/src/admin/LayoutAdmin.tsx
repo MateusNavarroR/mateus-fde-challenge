@@ -15,14 +15,18 @@ const ABAS = [
  * visível de **qualquer** tela — é o que faz a fila ser operada em vez de
  * consultada.
  *
- * Duas ausências deliberadas:
+ * Sobre a assimetria com o chat (`DECISOES-FECHADAS.md` §8), há uma distinção que
+ * custou um bug de usabilidade para ficar clara:
  *
- * 1. **Não existe link `admin → chat`** (`DECISOES-FECHADAS.md` §8). Por ele o
- *    avaliador assumiria o lugar do lead numa conversa que já tem handoff, e
- *    isso não tem resposta boa. O inverso existe e é a demonstração inteira da
- *    rastreabilidade. Há um teste negativo para isto, porque é o tipo de link
- *    que alguém adiciona "por simetria" seis meses depois.
- * 2. **Zero não vira badge.** Um "0" ali é ruído, não informação.
+ * 1. **Não existe deep link de uma CONVERSA para o chat.** Por ele o avaliador
+ *    assumiria o lugar do lead numa conversa que já tem handoff, e isso não tem
+ *    resposta boa. Há um teste negativo, porque é o tipo de link que alguém
+ *    adiciona "por simetria" seis meses depois.
+ * 2. **Existe navegação para o chat**, aqui na barra. Sem ela o admin é um beco
+ *    sem saída — quem entra não volta. E ela não recria o problema do item 1: o
+ *    `/chat` retoma a sessão do próprio navegador, então leva o avaliador de volta
+ *    à conversa **dele**, nunca à de outro lead.
+ * 3. **Zero não vira badge.** Um "0" ali é ruído, não informação.
  */
 export function LayoutAdmin({ rota, children }: { rota: string; children?: ReactNode }) {
   const fila = useRecurso<FilaHandoffs>(() => api.handoffs({ limit: 1 }), []);
@@ -39,6 +43,10 @@ export function LayoutAdmin({ rota, children }: { rota: string; children?: React
     <div className="admin">
       <header className="admin__barra">
         <p className="admin__marca">AutoSeguro</p>
+        {/* Navegação, não deep link: leva à conversa do próprio navegador. */}
+        <a className="admin__voltar" href="/chat">
+          ← Ir para o chat
+        </a>
         <nav className="admin__nav" aria-label="Telas de operação">
           {ABAS.map((aba) => (
             <a

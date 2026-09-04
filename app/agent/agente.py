@@ -60,10 +60,10 @@ def _perfil(ctx: ContextoDoTurno) -> LeadProfile:
                        data_inicio=c.data_inicio, plano_id=c.plano_id)
 
 
-def construir_agente(ctx: ContextoDoTurno, adaptador=None, historico=None) -> Agent:
+def construir_agente(ctx: ContextoDoTurno) -> Agent:
     cfg = get_settings()
     system = construir_system(catalogo_do_processo())
-    tools = [make_qualify_lead(ctx), make_quote_plan(ctx, adaptador)]
+    tools = [make_qualify_lead(ctx), make_quote_plan(ctx)]
 
     if cfg.llm_model.startswith("anthropic:"):
         from agno.models.anthropic import Claude, SystemPromptBlock

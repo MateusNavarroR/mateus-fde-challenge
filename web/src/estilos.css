@@ -1059,3 +1059,16 @@ code {
     border-inline: none;
   }
 }
+
+/* Navegação de volta ao chat. Discreta: é saída, não destino. */
+.admin__voltar {
+  color: var(--tinta-fraca);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  margin-inline-start: auto;
+}
+.admin__voltar:hover,
+.admin__voltar:focus-visible {
+  color: var(--tinta);
+  text-decoration: underline;
+}

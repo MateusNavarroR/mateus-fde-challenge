@@ -38,18 +38,30 @@ def api_limpa(monkeypatch):
 
 
 @pytest.fixture
-def ctx(sessao, conversa):
-    return ContextoDoTurno(sessao=sessao, conversation_id=conversa.id)
+def canal(sessao, conversa):
+    return CanalFalso(sessao, conversa.id)
+
+
+@pytest.fixture
+def ctx(sessao, conversa, canal):
+    return ContextoDoTurno(sessao=sessao, conversation_id=conversa.id, enviar=canal)
 
 
 class CanalFalso:
-    def __init__(self):
+    """Recebe o que a tool manda ao lead. Síncrono, como `ContextoDoTurno.enviar`."""
+
+    def __init__(self, sessao, conversation_id):
+        self.sessao, self.conversation_id = sessao, conversation_id
         self.enviadas = []
 
-    async def send(self, conversation_id, text, *, message_id, quote_id=None,
-                   autor="agente", **kw):
-        self.enviadas.append({"text": text, "quote_id": quote_id, "autor": autor})
-        return "fake"
+    def __call__(self, texto, quote_id=None, autor="sistema"):
+        # Passa pelo mesmo ponto de estrangulamento que a produção usa: assim o
+        # guardrail é exercitado no teste, não contornado por ele.
+        m = repo.gravar_mensagem(
+            self.sessao, self.conversation_id, autor=autor, conteudo=texto,
+            status="sent", quote_id=quote_id,
+        )
+        self.enviadas.append({"text": m.conteudo, "quote_id": m.quote_id, "autor": autor})
 
 
 # ─── o job e a persistência ──────────────────────────────────────────────────
@@ -103,13 +115,26 @@ def test_retorno_nao_expoe_status_http_nem_tentativa(ctx):
         assert vazamento not in r.lower()
 
 
-def test_a_tool_envia_o_bloco_ela_mesma(ctx, sessao):
-    canal = CanalFalso()
-    make_quote_plan(ctx, canal)("completo", 28, 2019, "07145-200", "2026-10-17")
+def test_a_tool_envia_o_bloco_ela_mesma(ctx, sessao, canal):
+    make_quote_plan(ctx)("completo", 28, 2019, "07145-200", "2026-10-17")
     msg = sessao.query(Message).filter(Message.quote_id.isnot(None)).one()
     assert msg.autor == "sistema"
     assert "R$ 392,25" in msg.conteudo
     assert canal.enviadas[-1]["quote_id"] == msg.quote_id
+
+
+def test_texto_do_modelo_e_descartado_apos_a_tool_falar(ctx):
+    """Tudo que o lead precisava já foi dito deterministicamente; o que o modelo
+    acrescentar é texto não verificado sobre uma cotação."""
+    assert ctx.ja_enviou is False
+    make_quote_plan(ctx)("completo", 28, 2019, "07145-200", "2026-10-17")
+    assert ctx.ja_enviou is True
+
+
+def test_descarte_vale_tambem_na_recusa(ctx):
+    """Sem exceção: na recusa o risco não é preço alucinado, é promessa falsa."""
+    make_quote_plan(ctx)("completo", 80, 2022)
+    assert ctx.ja_enviou is True
 
 
 def test_mensagem_de_preco_bate_byte_a_byte_com_o_render(ctx, sessao):
