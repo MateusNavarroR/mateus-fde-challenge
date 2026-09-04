@@ -112,6 +112,16 @@ class ContextoDoTurno:
     #: A tool já falou com o lead neste turno ⇒ o texto do modelo é descartado.
     ja_enviou: bool = False
 
+    #: Contadores que os gatilhos de handoff leem. Por CAMPO, não global: falhar uma
+    #: vez no CEP e uma na idade não é "falhou duas vezes".
+    tentativas_extracao: dict[str, int] = field(default_factory=dict)
+    objecoes_de_preco: int = 0
+
+    #: Contadores que os gatilhos de handoff leem. Por CAMPO, não global: falhar uma
+    #: vez no CEP e uma na idade não é "falhou duas vezes".
+    tentativas_extracao: dict[str, int] = field(default_factory=dict)
+    objecoes_de_preco: int = 0
+
 
 def make_qualify_lead(ctx: ContextoDoTurno) -> Callable[..., str]:
     def qualify_lead(
@@ -167,6 +177,8 @@ def make_qualify_lead(ctx: ContextoDoTurno) -> Callable[..., str]:
 
         for campo in rejeitados:
             perfil.tentativas_extracao[campo] = perfil.tentativas_extracao.get(campo, 0) + 1
+            ctx.tentativas_extracao[campo] = ctx.tentativas_extracao.get(campo, 0) + 1
+            ctx.tentativas_extracao[campo] = ctx.tentativas_extracao.get(campo, 0) + 1
 
         _gravar_perfil(ctx, perfil)
 
@@ -311,9 +323,13 @@ def make_quote_plan(ctx: ContextoDoTurno) -> Callable[..., str]:
 
         # `failed`: o handoff é criado pela fatia 5; aqui a mensagem já sai.
         enviar(textos.compor_handoff("cotacao_indisponivel"))
-        ctx.handoffs.append({"trigger": "cotacao_indisponivel",
-                             "reason": "job de cotação terminou failed",
-                             "quote_id": q.id})
+        from app.contracts.conversa import HandoffTrigger
+
+        ctx.handoffs.append({
+            "trigger": HandoffTrigger.COTACAO_INDISPONIVEL,
+            "reason": "a cotação não respondeu depois de esgotadas as tentativas",
+            "quote_id": q.id, "disparado_por": "regra", "assunto": None,
+        })
         return ("indisponivel. O lead JÁ FOI avisado e um atendente foi acionado. "
                 "Encerre o turno.")
 
@@ -326,3 +342,50 @@ def _campo_do_erro(e: Exception) -> str:
     if isinstance(e, DataAmbigua):
         return "data_inicio"
     return "desconhecido"
+
+
+# ─── escalate_to_human: write-back ───────────────────────────────────────────
+
+
+def make_escalate_to_human(ctx: ContextoDoTurno) -> Callable[..., str]:
+    """Padrão **write-back**: a tool só registra a intenção; quem executa é o backend.
+
+    Isso mantém o comportamento testável e impede o modelo de causar efeito colateral
+    direto. E é o que faz um gatilho determinístico — breaker aberto, job `failed` —
+    produzir **exatamente o mesmo sinal** que uma decisão do modelo, distinguidos só
+    por `disparado_por`.
+    """
+
+    def escalate_to_human(trigger: str, reason: str, summary: str = "") -> str:
+        """Passa a conversa para um atendente humano.
+
+        Use quando o lead pedir uma pessoa, quando o assunto for sensível (sinistro,
+        jurídico, saúde, reclamação formal), ou quando você não conseguir ajudar.
+
+        Args:
+            trigger: um de `assunto_sensivel`, `lead_pediu_atendente`,
+                `objecao_fora_da_alcada`, `midia_sem_texto`, `extracao_falhou`.
+            reason: por que, em uma frase, para o atendente.
+            summary: resumo curto da conversa até aqui.
+
+        Returns:
+            str: confirmação interna. **Não repasse ao lead** — a mensagem de
+            encaminhamento já foi enviada pelo sistema. Encerre o turno.
+        """
+        from app.contracts.conversa import HandoffTrigger
+
+        try:
+            t = HandoffTrigger(trigger)
+        except ValueError:
+            return (f"trigger inválido: {trigger!r}. Use um de "
+                    f"{', '.join(str(x) for x in HandoffTrigger)}.")
+
+        ctx.handoffs.append({
+            "trigger": t, "reason": reason or "decisão do agente",
+            "summary": summary.strip() or None, "disparado_por": "modelo",
+            "assunto": None,
+        })
+        return ("encaminhado. A mensagem JÁ FOI ENVIADA ao lead pelo sistema. "
+                "Não repita nem prometa prazo — encerre o turno.")
+
+    return escalate_to_human

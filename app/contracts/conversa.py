@@ -158,22 +158,36 @@ class ConversationState(StrEnum):
 
 
 class HandoffTrigger(StrEnum):
-    """Gatilhos de handoff, como dados e não como `if` espalhado.
+    """Os sete gatilhos de handoff, como dados e não como `if` espalhado.
 
-    ⚠️ **Conjunto provisório.** A tabela definitiva — quais gatilhos, qual precedência
-    e o que o bot diz em cada um — é uma das quatro decisões abertas do usuário
-    (`docs/DECISOES-ABERTAS.md`). Este enum existe para que as outras frentes tenham
-    contra o que compilar; ele é substituído pela decisão fechada.
+    **A ordem da declaração É a precedência.** Quando dois disparam no mesmo turno,
+    o primeiro vence e os demais são gravados como secundários — a fila mostra um
+    gatilho, o operador vê o quadro completo.
+
+    O critério é **o custo de o agente errar ali**: custo alto encaminha na hora e
+    sem tentar; custo baixo tenta e encaminha na segunda vez.
+
+    ⚠️ `COTACAO_RECUSADA` **foi removido**. Ele existia na Fase 0, antes de a decisão
+    3 fechar, e é justamente o que `DECISOES-FECHADAS.md` §3 lista sob "não são
+    gatilhos": recusa não cria handoff, porque um humano releria a mesma regra fixa
+    em `plans.json` e daria o mesmo "não". Encaminhar 30% do tráfego para isso
+    encheria a fila com casos sem saída.
     """
 
-    LEAD_PEDIU = "lead_pediu_atendente"
-    COTACAO_INDISPONIVEL = "cotacao_indisponivel"
-    COTACAO_RECUSADA = "cotacao_recusada"
-    EXTRACAO_FALHOU = "extracao_falhou"
+    #: custo alto — encaminha imediato, sem tentar responder
     ASSUNTO_SENSIVEL = "assunto_sensivel"
-    OBJECAO_FORA_DA_ALCADA = "objecao_fora_da_alcada"
-    MIDIA_SEM_TEXTO = "midia_sem_texto"
+    #: custo alto — encerra e registra
     GUARDRAIL = "guardrail"
+    #: pedido explícito
+    LEAD_PEDIU = "lead_pediu_atendente"
+    #: custo alto — o job de cotação terminou `failed`
+    COTACAO_INDISPONIVEL = "cotacao_indisponivel"
+    #: custo médio — 2ª falha de extração no MESMO campo
+    EXTRACAO_FALHOU = "extracao_falhou"
+    #: custo baixo — o lead REPETE a objeção de preço
+    OBJECAO_FORA_DA_ALCADA = "objecao_fora_da_alcada"
+    #: custo baixo — o lead INSISTE em mídia depois de pedirmos texto
+    MIDIA_SEM_TEXTO = "midia_sem_texto"
 
 
 class HandoffStatus(StrEnum):

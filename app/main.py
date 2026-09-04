@@ -9,9 +9,11 @@ Três decisões de exposição, todas de `CLAUDE.md` 14b/14c:
 
 - o compose publica em `127.0.0.1`, nunca em `0.0.0.0`. É o controle que de fato
   protege, e independe de autenticação;
-- `ADMIN_TOKEN` é opcional: definido ⇒ exigido; ausente ⇒ sobe e avisa no log. Existe
-  para que o achado do passe de segurança tenha resposta em código, desligada por
-  padrão, em vez de "risco aceito" em prosa;
+- a autenticação é opcional e vive em `app/auth.py`: `ADMIN_USER`/`ADMIN_PASSWORD`
+  ligam o login com sessão em cookie, `ADMIN_TOKEN` liga o cabeçalho para máquina, e
+  sem nenhum dos dois o serviço sobe e avisa no log. Existe para que o achado do
+  passe de segurança tenha resposta em código, desligada por padrão, em vez de
+  "risco aceito" em prosa;
 - `/docs`, `/redoc` e `/openapi.json` ficam **desligados** fora de desenvolvimento. O
   legado do desafio os expõe abertos; este serviço não repete esse default.
 """
@@ -22,11 +24,12 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api import consultas
+from app.auth import aviso_de_boot, exigir_admin, redefinir_credenciais, registrar_autenticacao
 from app.api.schemas import (
     Conversation,
     ConversationDetail,
@@ -36,7 +39,6 @@ from app.api.schemas import (
     QuoteHealth,
     Usage,
 )
-from app.config import get_settings
 from app.persistence import repo
 from app.persistence.db import sessao_factory
 
@@ -53,13 +55,12 @@ async def lifespan(app: FastAPI):
     # tem que doer aqui, não no meio de uma conversa.
     bootstrap()
 
-    s = get_settings()
-    if not s.admin_exigido:
-        log.warning(
-            "ADMIN_TOKEN não definido: /api/* está sem autenticação. "
-            "A proteção efetiva é o bind em 127.0.0.1 do docker-compose.yml. "
-            "Defina ADMIN_TOKEN para exigir o cabeçalho X-Admin-Token."
-        )
+    # Deriva o hash da senha e apaga o texto puro do processo. Antes do primeiro
+    # request, para que nenhuma rota veja o ambiente com a senha ainda nele.
+    redefinir_credenciais()
+    aviso = aviso_de_boot()
+    if aviso:
+        log.warning(aviso)
     yield
 
 
@@ -83,11 +84,9 @@ def sessao() -> Session:
         s.close()
 
 
-def exigir_admin(x_admin_token: str | None = Header(default=None)) -> None:
-    """Exigido **apenas** quando `ADMIN_TOKEN` está definido."""
-    cfg = get_settings()
-    if cfg.admin_exigido and x_admin_token != cfg.admin_token:
-        raise HTTPException(status_code=401, detail="token de admin inválido ou ausente")
+# `exigir_admin` mora em `app/auth.py` — a decisão de "quem pode ler a operação" é
+# de lá, e aqui só se declara a dependência. As três rotas de login são montadas no
+# fim do arquivo, junto dos WebSockets, pelo mesmo motivo: são montagem, não contrato.
 
 
 # ─── saúde ───────────────────────────────────────────────────────────────────
@@ -207,6 +206,7 @@ def atualizar_handoff(handoff_id: str, corpo: dict, s: Session = Depends(sessao)
 from app.channels.web import registrar_websockets  # noqa: E402
 
 registrar_websockets(app)
+registrar_autenticacao(app)
 
 
 @app.get("/", include_in_schema=False)

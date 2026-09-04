@@ -177,6 +177,10 @@ class Handoff(Base):
     status: Mapped[str] = mapped_column(
         _enum("handoff_status", "pendente", "assumido", "resolvido"), default="pendente"
     )
+    #: Os demais gatilhos que casaram no mesmo turno (migração 0003).
+    gatilhos_secundarios: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, server_default="{}"
+    )
     criado_em: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True),
                                                    server_default=func.now())
     assumido_em: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True),
@@ -210,5 +214,3 @@ class TurnUsage(Base):
                                                    server_default=func.now())
 
 
-# `gatilhos_secundarios` chega na migração 0003, com a fatia 5.
-_ = ARRAY  # mantém o import explícito para quando a coluna for mapeada

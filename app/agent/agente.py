@@ -22,7 +22,12 @@ from agno.db.postgres import PostgresDb
 
 from app.agent.catalogo import carregar_catalogo
 from app.agent.prompt import construir_bloco_volatil, construir_system
-from app.agent.tools import ContextoDoTurno, make_qualify_lead, make_quote_plan
+from app.agent.tools import (
+    ContextoDoTurno,
+    make_escalate_to_human,
+    make_qualify_lead,
+    make_quote_plan,
+)
 from app.config import get_settings
 from app.contracts.conversa import LeadProfile
 from app.persistence import repo
@@ -63,7 +68,11 @@ def _perfil(ctx: ContextoDoTurno) -> LeadProfile:
 def construir_agente(ctx: ContextoDoTurno) -> Agent:
     cfg = get_settings()
     system = construir_system(catalogo_do_processo())
-    tools = [make_qualify_lead(ctx), make_quote_plan(ctx)]
+    tools = [
+        make_qualify_lead(ctx),
+        make_quote_plan(ctx),
+        make_escalate_to_human(ctx),
+    ]
 
     if cfg.llm_model.startswith("anthropic:"):
         from agno.models.anthropic import Claude, SystemPromptBlock
