@@ -41,6 +41,36 @@ def criar_conversa(s: Session, *, channel: str, external_ref: str) -> Conversati
     return c
 
 
+def criar_ou_retomar_conversa(
+    s: Session, *, channel: str, external_ref: str | None = None
+) -> tuple[Conversation, bool]:
+    """Cria, ou devolve a que já existe para aquele `external_ref`.
+
+    `external_ref` é o identificador do lead **no canal** — o `wamid` no WhatsApp, o
+    id de sessão do navegador no web. A migração tem `UNIQUE (channel, external_ref)`,
+    e é essa restrição que dá sentido ao campo: **mesma sessão, mesma conversa**.
+
+    Quando o canal não manda referência, geramos uma única. Nunca um literal fixo:
+    um literal faz a primeira conversa gravar e **todas as seguintes colidirem para
+    sempre naquele banco** — e o sintoma é um 500 no segundo uso, que nenhum teste
+    unitário pega, porque cada teste cria uma conversa num banco limpo.
+
+    Devolve `(conversa, criada)`.
+    """
+    if external_ref:
+        existente = s.execute(
+            select(Conversation).where(
+                Conversation.channel == channel,
+                Conversation.external_ref == external_ref,
+            )
+        ).scalar_one_or_none()
+        if existente is not None:
+            return existente, False
+    else:
+        external_ref = f"{channel}:{uuid.uuid4().hex}"
+    return criar_conversa(s, channel=channel, external_ref=external_ref), True
+
+
 def obter_conversa(s: Session, conversation_id: str) -> Conversation | None:
     return s.get(Conversation, conversation_id)
 

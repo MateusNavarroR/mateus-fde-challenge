@@ -44,11 +44,49 @@ function esquecer(): void {
   }
 }
 
+const CHAVE_SESSAO = "autoseguro:sessao";
+
 /**
- * `external_ref` **nunca** é enviado daqui. O contrato avisa que ele não carrega
- * telefone real, e este repositório é público: o jeito de garantir isso é não ter
- * o campo, não confiar em quem preenche.
+ * Identificador desta sessão de navegador. Aleatório, gerado localmente, sem nenhum
+ * dado do lead.
+ *
+ * O instinto original — não mandar `external_ref` de jeito nenhum, para que ele não
+ * possa carregar telefone — estava certo sobre o risco e errado sobre a solução: o
+ * backend caía num literal fixo, e a `UNIQUE (channel, external_ref)` fazia a segunda
+ * conversa daquele banco falhar com 500, para sempre.
+ *
+ * Mandar um id de sessão aleatório mantém a garantia (não há dado do lead aqui) e
+ * ainda dá semântica ao campo: **mesma sessão de navegador, mesma conversa**, que é
+ * exatamente a retomada. "Nova conversa" gera sessão nova, logo conversa nova.
  */
+function idDeSessao(): string {
+  try {
+    const gravado = localStorage.getItem(CHAVE_SESSAO);
+    if (gravado !== null && gravado !== "") return gravado;
+  } catch {
+    /* localStorage indisponível: o id vira efêmero, e o backend gera o dele */
+  }
+  const novo =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `s-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  try {
+    localStorage.setItem(CHAVE_SESSAO, novo);
+  } catch {
+    /* idem */
+  }
+  return novo;
+}
+
+function novaSessao(): string {
+  try {
+    localStorage.removeItem(CHAVE_SESSAO);
+  } catch {
+    /* idem */
+  }
+  return idDeSessao();
+}
+
 export async function abrirOuRetomar(deps: Deps): Promise<string> {
   const gravado = ler();
   if (gravado !== null && deps.getConversa) {
@@ -56,14 +94,21 @@ export async function abrirOuRetomar(deps: Deps): Promise<string> {
     // Se a gravada já não existe no backend (banco recriado), cria outra.
     if (existente !== null && existente !== undefined) return gravado;
   }
-  const criada = await deps.post(ROTAS.conversas(), { channel: "web" });
+  const criada = await deps.post(ROTAS.conversas(), {
+    channel: "web",
+    external_ref: idDeSessao(),
+  });
   gravar(criada.id);
   return criada.id;
 }
 
 export async function novaConversa(deps: Pick<Deps, "post">): Promise<string> {
   esquecer();
-  const criada = await deps.post(ROTAS.conversas(), { channel: "web" });
+  // Sessão nova ⇒ `external_ref` novo ⇒ conversa nova, sem colidir com a anterior.
+  const criada = await deps.post(ROTAS.conversas(), {
+    channel: "web",
+    external_ref: novaSessao(),
+  });
   gravar(criada.id);
   return criada.id;
 }

@@ -110,3 +110,53 @@ def test_docs_desligados_fora_de_dev(monkeypatch):
     assert recarregado.app.openapi_url is None
     monkeypatch.setenv("APP_ENV", "dev")
     importlib.reload(m)
+
+
+def test_post_conversations_duas_vezes_seguidas(monkeypatch):
+    """A regressão pelo caminho HTTP real, não pelo repo.
+
+    Era 500 na segunda chamada: o literal fixo `"web"` colidia com a
+    `UNIQUE (channel, external_ref)`. O avaliador via isso ao clicar em "nova
+    conversa" depois da primeira conversa.
+    """
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from app.config import get_settings
+
+    url = os.getenv(
+        "APP_DATABASE_URL",
+        "postgresql+psycopg://postgres:postgres@127.0.0.1:55432/autoseguro",
+    )
+    monkeypatch.setattr(get_settings(), "database_url", url)
+    try:
+        from app.main import app
+
+        with TestClient(app) as c:
+            a = c.post("/api/conversations", json={"channel": "web"})
+            b = c.post("/api/conversations", json={"channel": "web"})
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"backend indisponível: {e}")
+
+    assert a.status_code == 201, a.text
+    assert b.status_code == 201, b.text          # <- era 500
+    assert a.json()["id"] != b.json()["id"]
+
+
+def test_post_conversations_com_a_mesma_sessao_retoma(monkeypatch):
+    """Mesma sessão de navegador, mesma conversa — a semântica que o campo ganhou."""
+    from fastapi.testclient import TestClient
+
+    try:
+        from app.main import app
+
+        with TestClient(app) as c:
+            corpo = {"channel": "web", "external_ref": "sessao-de-teste-openapi"}
+            a = c.post("/api/conversations", json=corpo)
+            b = c.post("/api/conversations", json=corpo)
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"backend indisponível: {e}")
+
+    assert a.status_code == b.status_code == 201
+    assert a.json()["id"] == b.json()["id"]

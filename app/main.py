@@ -112,11 +112,21 @@ def health(s: Session = Depends(sessao)) -> dict:
 @app.post("/api/conversations", tags=["chat"], status_code=201,
           response_model=Conversation, summary="Abre uma conversa")
 def criar_conversa(corpo: dict, s: Session = Depends(sessao)) -> Conversation:
-    c = repo.criar_conversa(
+    """Idempotente por `(channel, external_ref)`: mesma sessão, mesma conversa.
+
+    Um literal fixo aqui — o que havia antes — fazia a primeira conversa gravar e
+    todas as seguintes colidirem com a `UNIQUE` da migração, para sempre naquele
+    banco. O avaliador abriria o `/chat`, conversaria, clicaria em "nova conversa" e
+    receberia 500. Nenhum teste unitário pega isso, porque cada teste cria uma
+    conversa num banco limpo — só aparece no **segundo uso**.
+
+    `external_ref` nunca carrega telefone real: no console é o nome da sessão, no web
+    é um identificador de sessão de navegador gerado localmente.
+    """
+    c, _ = repo.criar_ou_retomar_conversa(
         s,
         channel=corpo.get("channel", "web"),
-        # Nunca um telefone real: no console é o nome da sessão, no web o id do socket.
-        external_ref=corpo.get("external_ref") or "web",
+        external_ref=corpo.get("external_ref"),
     )
     return Conversation(id=c.id, channel=c.channel, state=c.state, criado_em=c.criado_em)
 

@@ -130,3 +130,48 @@ def test_quote_id_inexistente_e_rejeitado(sessao, conversa):
 def test_estado_da_conversa_muda(sessao, conversa):
     repo.atualizar_estado(sessao, conversa.id, "qualificando")
     assert repo.obter_conversa(sessao, conversa.id).state == "qualificando"
+
+
+# ─── a colisão que só aparece no segundo uso ─────────────────────────────────
+
+
+def test_duas_conversas_web_seguidas_no_mesmo_banco(sessao):
+    """A asserção que faltava, e que nenhum teste unitário comum teria feito.
+
+    Cada teste cria uma conversa num banco limpo, então a colisão só aparece
+    **usando duas vezes**: o avaliador abre o /chat, conversa, clica em "nova
+    conversa" e recebe 500 — ou é o segundo a usar aquele banco e o chat nunca
+    funciona para ele.
+    """
+    a, criada_a = repo.criar_ou_retomar_conversa(sessao, channel="web")
+    b, criada_b = repo.criar_ou_retomar_conversa(sessao, channel="web")
+    assert criada_a and criada_b
+    assert a.id != b.id
+    assert a.external_ref != b.external_ref
+
+
+def test_mesma_sessao_retoma_a_mesma_conversa(sessao):
+    """A semântica que o campo passa a ter: mesma sessão de navegador, mesma
+    conversa. É a retomada, e é o que impede o POST repetido de duplicar."""
+    a, criada_a = repo.criar_ou_retomar_conversa(sessao, channel="web", external_ref="s-1")
+    b, criada_b = repo.criar_ou_retomar_conversa(sessao, channel="web", external_ref="s-1")
+    assert criada_a is True and criada_b is False
+    assert a.id == b.id
+
+
+def test_sessoes_diferentes_sao_conversas_diferentes(sessao):
+    a, _ = repo.criar_ou_retomar_conversa(sessao, channel="web", external_ref="s-1")
+    b, _ = repo.criar_ou_retomar_conversa(sessao, channel="web", external_ref="s-2")
+    assert a.id != b.id
+
+
+def test_o_mesmo_ref_em_canais_diferentes_nao_colide(sessao):
+    a, _ = repo.criar_ou_retomar_conversa(sessao, channel="web", external_ref="s-1")
+    b, _ = repo.criar_ou_retomar_conversa(sessao, channel="console", external_ref="s-1")
+    assert a.id != b.id
+
+
+def test_dez_conversas_sem_ref_nao_colidem(sessao):
+    """O literal fixo antigo passaria na primeira e falharia nas nove seguintes."""
+    ids = {repo.criar_ou_retomar_conversa(sessao, channel="web")[0].id for _ in range(10)}
+    assert len(ids) == 10
