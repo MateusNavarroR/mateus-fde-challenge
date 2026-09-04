@@ -38,6 +38,7 @@ markers = [
     "serial: depende de QUOTE_SEED — roda em serie, com restart do container antes",
     "db: exige Postgres (APP_DATABASE_URL)",
     "integracao: sobe o compose de verdade; minutos, roda no portao final",
+    "modelo: chama o LLM de verdade; custa dinheiro e roda sob demanda",
 ]
 
 [tool.uv]
