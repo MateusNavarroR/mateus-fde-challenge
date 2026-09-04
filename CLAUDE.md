@@ -63,7 +63,14 @@ a API — se algo aqui divergir dele, ele vence.
     cliente ou caminho local em código, teste, fixture, log, screenshot ou `ai-logs/`.
     O histórico do Git também — remover num commit posterior não desfaz.
 14. **Sobe em um comando**: `docker compose up`, com no máximo uma variável de ambiente
-    documentada (`ANTHROPIC_API_KEY`). Sem passo manual escondido.
+    **obrigatória** (`ANTHROPIC_API_KEY`). Sem passo manual escondido.
+14b. **Todo serviço publica em `127.0.0.1`, nunca em `0.0.0.0`.** É uma linha no compose
+    e é o que torna a superfície administrativa inalcançável da rede, independente de
+    autenticação. O compose do desafio publica em `0.0.0.0`; o nosso não repete isso.
+14c. **`ADMIN_TOKEN` é opcional e exigido quando definido.** Sem ele a aplicação sobe,
+    avisa no log e o README declara. Não contradiz o item 14 porque não é obrigatória —
+    o caminho de um comando não muda. Existe para que o achado do passe de segurança
+    tenha resposta em código, desligada por padrão, em vez de "risco aceito" em prosa.
 15. **Só Anthropic e Ollama são validados.** Outros providers funcionam pela mesma
     model-string mas **não foram testados** — o README diz isso com essas palavras.
     Nunca escrever "suporta X" sem um smoke test que prove.

@@ -366,3 +366,30 @@ O Frontend usa `/frontend-design` na criação das telas e `/impeccable` na revi
 **Nunca cortar:** `QuoteClient` inteiro · tabela de handoff com um teste por gatilho ·
 persistência com id e status · README de decisões · o transcript reproduzível ·
 `ai-logs/`.
+
+---
+
+## 8 · Decisões da frente de Frontend
+
+**Painel de custo: seção de `/admin/status`, não quinta tela.** São seis números, e uma
+rota nova para seis números é escopo por escopo. O leitor é um só — o avaliador — e ele
+já vai a `/admin/status`, porque é lá que o circuit breaker aparece. Custo sentado ali é
+visto sem procurar. Duas condições: **bloco com título próprio e âncora**, não um rodapé;
+e **nomeado no README**, porque é a parte que quase ninguém faz num take-home e não pode
+depender de o avaliador tropeçar nela.
+
+**Exposição: `127.0.0.1` mais `ADMIN_TOKEN` opcional.** O controle que de fato importa é
+o bind — uma linha no compose, e a superfície administrativa fica inalcançável da rede
+independente de autenticação. Sobre ele, um token exigido quando definido e ausente por
+padrão. Não é uma coisa ou outra: o bind é a segurança, o token é a resposta pronta ao
+achado do passe de segurança da fatia 10.
+
+**Navegação assimétrica: `chat → admin` sim, `admin → chat` não.** O link de "ver esta
+conversa no admin" é a demonstração inteira da rastreabilidade, e chegar lá no segundo
+seguinte, enquanto o avaliador ainda lembra o que digitou, é o que a torna vívida. O
+inverso não existe: por ele o avaliador assumiria o lugar do lead numa conversa que já
+tem handoff, e isso não tem resposta boa.
+
+**`/chat` retoma a sessão corrente ao carregar.** Sessão em cookie ou `localStorage`,
+mais um botão explícito de **nova conversa**. Sempre-nova é o comportamento certo do
+botão, não do carregamento: um F5 no meio da conversa destruiria a demonstração.
