@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.contracts.conversa import CAMPOS_QUALIFICACAO, LeadProfile
+from app.contracts.quote import QuoteRequest
 from app.persistence import repo
 from app.privacy.mascarar import mascarar
 
@@ -167,8 +168,6 @@ def make_qualify_lead(ctx: ContextoDoTurno) -> Callable[..., str]:
 def _normalizar(campo: str, valor):
     """Passa pelo mesmo validador que a `QuoteRequest` usa, para que o perfil nunca
     guarde algo que a API aceitaria errado sem devolver erro."""
-    from app.contracts.quote import QuoteRequest
-
     base = {"plano_id": "essencial", "idade": 30, "veiculo_ano": 2020}
     base[campo] = valor
     r = QuoteRequest(**base)
@@ -194,3 +193,134 @@ def _gravar_perfil(ctx: ContextoDoTurno, perfil: LeadProfile) -> None:
     if conv.state == "novo":
         conv.state = "qualificando"
     ctx.sessao.flush()
+
+
+# ─── quote_plan: a fronteira do modelo ───────────────────────────────────────
+
+
+def make_quote_plan(ctx: ContextoDoTurno, adaptador=None) -> Callable[..., str]:
+    """`quote_plan` embrulha o **cliente resiliente**, não o HTTP.
+
+    O modelo nunca vê status, tentativa, latência ou estado do breaker: 500, 502, 503,
+    timeout, backoff, jitter e semáforo vivem inteiramente abaixo desta fronteira. Um
+    modelo exposto a "recebi 503" improvisa, e improvisar aí é a falha que a
+    arquitetura existe para impedir.
+
+    Ela devolve **um entre quatro desfechos, sem número nenhum**. Três deles a tool já
+    resolveu sozinha — ela renderizou e enviou o texto pelo canal — e o texto do modelo
+    naquele turno é descartado. Só `dados_invalidos` devolve a palavra ao modelo,
+    porque reperguntar um campo depende do contexto e não tem texto único certo.
+    """
+
+    def quote_plan(
+        plano_id: str,
+        idade: int,
+        veiculo_ano: int,
+        cep: str | None = None,
+        data_inicio: str | None = None,
+    ) -> str:
+        """Cota o plano para este lead. Chame quando tiver os cinco campos.
+
+        Args:
+            plano_id: essencial, completo ou premium.
+            idade: idade do condutor principal.
+            veiculo_ano: ano de fabricação do veículo.
+            cep: CEP de onde o carro dorme.
+            data_inicio: início da vigência.
+
+        Returns:
+            str: o desfecho. Se disser que a mensagem já foi enviada, **não repita
+            nada** — nem valor, nem resumo. Apenas encerre o turno.
+        """
+        from app import textos
+        from app.contracts.quote import QuoteJobStatus
+        from app.quote.job import executar_job
+        from app.quote.renderer import render_de_payload
+
+        # Normaliza pela mesma porta da QuoteRequest: é impossível montar uma
+        # requisição que a API aceitaria errado sem devolver erro.
+        try:
+            req = QuoteRequest(
+                plano_id=plano_id, idade=idade, veiculo_ano=veiculo_ano,
+                cep=cep,
+                data_inicio=normalizar_data(data_inicio) if data_inicio else None,
+            )
+        except (ValidationError, DataAmbigua, ValueError) as e:
+            campo = _campo_do_erro(e)
+            return (f"dados_invalidos: não consegui montar a cotação com o campo "
+                    f"{campo}. Pergunte esse campo de novo, com as suas palavras.")
+
+        # Checagem cruzada: se o argumento diverge do que `qualify_lead` gravou, isso
+        # é bug de extração nosso, não uma cotação válida.
+        conv = repo.obter_conversa(ctx.sessao, ctx.conversation_id)
+        for campo, valor in (("idade", req.idade), ("veiculo_ano", req.veiculo_ano)):
+            registrado = getattr(conv, campo)
+            if registrado is not None and registrado != valor:
+                return (f"dados_invalidos: o {campo} que você passou ({valor}) não bate "
+                        f"com o que foi registrado ({registrado}). Confirme com o lead.")
+
+        conv.state = "cotando"
+        ctx.sessao.flush()
+
+        q = executar_job(ctx.sessao, ctx.conversation_id, req)
+        ctx.sessao.commit()
+
+        def enviar(texto: str, quote_id: str | None = None) -> None:
+            m = repo.gravar_mensagem(
+                ctx.sessao, ctx.conversation_id, autor="sistema",
+                conteudo=texto, status="pending", quote_id=quote_id,
+            )
+            ctx.sessao.commit()
+            if adaptador is not None:
+                _rodar(adaptador.send(ctx.conversation_id, m.conteudo,
+                                      message_id=m.id, quote_id=m.quote_id,
+                                      autor="sistema"))
+            repo.atualizar_status_mensagem(ctx.sessao, m.id, "sent")
+            ctx.sessao.commit()
+
+        if q.status == str(QuoteJobStatus.OK):
+            enviar(render_de_payload(q.payload), quote_id=q.id)
+            conv.state = "cotado"
+            ctx.sessao.commit()
+            return (f"cotado: {q.id}. A mensagem com o valor JÁ FOI ENVIADA ao lead "
+                    "pelo sistema. Não repita o valor nem resuma — encerre o turno.")
+
+        if q.status == str(QuoteJobStatus.REFUSED):
+            enviar(textos.POR_MOTIVO[q.motivo_recusa])
+            conv.state = "cotado"
+            ctx.sessao.commit()
+            return (f"recusado: {q.motivo_recusa}. A explicação JÁ FOI ENVIADA ao lead. "
+                    "Não repita nem ofereça exceção — encerre o turno.")
+
+        if q.erro_outcome == "bad_request":
+            return ("dados_invalidos: a cotação não aceitou os dados. Peça ao lead para "
+                    "confirmar o ano do veículo e a data de início, com as suas palavras.")
+
+        # `failed`: o handoff é criado pela fatia 5; aqui a mensagem já sai.
+        enviar(textos.compor_handoff("cotacao_indisponivel"))
+        ctx.handoffs.append({"trigger": "cotacao_indisponivel",
+                             "reason": "job de cotação terminou failed",
+                             "quote_id": q.id})
+        return ("indisponivel. O lead JÁ FOI avisado e um atendente foi acionado. "
+                "Encerre o turno.")
+
+    return quote_plan
+
+
+def _rodar(coro):
+    """A tool do Agno é síncrona; o `ChannelAdapter` é assíncrono."""
+    import asyncio
+
+    try:
+        laco = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    return asyncio.ensure_future(coro, loop=laco)
+
+
+def _campo_do_erro(e: Exception) -> str:
+    if isinstance(e, ValidationError) and e.errors():
+        return str(e.errors()[0]["loc"][0])
+    if isinstance(e, DataAmbigua):
+        return "data_inicio"
+    return "desconhecido"
