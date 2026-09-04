@@ -1,0 +1,633 @@
+openapi: 3.1.0
+
+info:
+  title: AutoSeguro — backend do agente
+  version: "0.1.0"
+  description: |
+    Contrato congelado na Fase 0. O frontend é construído contra este documento, não
+    contra a implementação — é o que permite que a frente de UI e a de backend rodem
+    sem se pisarem.
+
+    **Como ler.** São quatro superfícies, uma por tela, e elas se ligam por id:
+
+    | Superfície | Tela | Critério |
+    |---|---|---|
+    | conversa (WS `/api/chat`) | `/chat` | E1 · C2 |
+    | histórico (`/api/conversations`) | `/admin/conversas` | C4 |
+    | saúde da `/quote` (`/api/quote-health`) | `/admin/status` | C2 · C4 |
+    | fila de handoff (`/api/handoffs`) | `/admin/handoffs` | C3 · C4 |
+
+    De um handoff se salta para a conversa que o gerou; de uma tentativa falha se
+    entende o estado do breaker. É a navegação que demonstra rastreabilidade.
+
+    **Duas invariantes atravessam o documento:**
+
+    1. Toda mensagem que apresenta um valor monetário tem `quote_id` não-nulo,
+       apontando para uma cotação com `status: ok`. Uma mensagem com preço e
+       `quote_id: null` é bug, e a UI a marca como tal.
+    2. Todo texto que sai daqui já passou pelo mascaramento de PII. Não existe
+       endpoint que devolva a versão crua — inclusive porque a tela precisa mostrar
+       o comportamento correto, não uma versão especial para screenshot.
+
+    Autenticação não faz parte do escopo: o backend só é exposto em rede local pelo
+    `docker compose`. Ver `docs/ARQUITETURA.md` para o que isso implica se for ao ar.
+
+servers:
+  - url: http://localhost:8080
+    description: backend local (docker compose)
+
+tags:
+  - name: chat
+    description: o canal do lead — adaptador `web` da porta ChannelAdapter
+  - name: rastreabilidade
+    description: conversas, mensagens e tentativas de cotação
+  - name: operacao
+    description: saúde da /quote e fila de handoff
+
+paths:
+
+  /api/health:
+    get:
+      tags: [operacao]
+      summary: Saúde do backend
+      description: |
+        Saúde **deste** serviço. Deliberadamente não reflete a saúde da `/quote`: o
+        `/health` do legado responde 200 mesmo com 100% das cotações falhando, e
+        confundir os dois é como se produz um monitor que mente. Para a saúde real da
+        cotação, use `/api/quote-health`.
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, db]
+                properties:
+                  status: { type: string, enum: [ok] }
+                  db: { type: string, enum: [ok, degraded] }
+
+  /api/conversations:
+    post:
+      tags: [chat]
+      summary: Abre uma conversa
+      description: Chamado pela tela `/chat` antes de conectar o WebSocket.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel]
+              properties:
+                channel: { type: string, enum: [console, web] }
+                external_ref:
+                  type: string
+                  description: |
+                    Identificador do lead no canal. Nunca um telefone real — no console
+                    é o nome da sessão, no web o id do socket. Repositório público.
+      responses:
+        "201":
+          description: criada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+
+    get:
+      tags: [rastreabilidade]
+      summary: Lista conversas
+      parameters:
+        - { name: state, in: query, schema: { $ref: "#/components/schemas/ConversationState" } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: página de conversas
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ConversationSummary" }
+                  next_cursor: { type: [string, "null"] }
+
+  /api/conversations/{conversation_id}:
+    get:
+      tags: [rastreabilidade]
+      summary: Detalhe da conversa — mensagens e linha do tempo das cotações
+      description: |
+        É a resposta ao critério C4 numa chamada só: cada mensagem com id e status, e
+        cada cotação com todas as suas tentativas (`attempt`, `http_status`,
+        `latency_ms`, `outcome`).
+
+        `messages` vem ordenado por `index`, **nunca por timestamp**.
+      parameters:
+        - { name: conversation_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: conversa completa
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationDetail" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /api/quote-health:
+    get:
+      tags: [operacao]
+      summary: Saúde real da /quote
+      description: |
+        Alimenta `/admin/status`. Mostra mais que verde/vermelho, porque verde/vermelho
+        não prova que a instabilidade foi tratada:
+
+        - `upstream_health`: o `/health` do legado — que sempre diz ok;
+        - `janela`: taxa de sucesso e latências das últimas N tentativas **reais**;
+        - `breaker`: fechado / aberto / meia-abertura, com quando reabre;
+        - `ultimas_tentativas`: as N últimas, com desfecho e a conversa de origem.
+
+        `p95` inclui as chamadas lentas de 8s — é justamente o que se quer ver.
+      parameters:
+        - { name: janela, in: query, schema: { type: integer, default: 50, maximum: 500 } }
+      responses:
+        "200":
+          description: estado da integração
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QuoteHealth" }
+
+  /api/usage:
+    get:
+      tags: [operacao]
+      summary: Custo e uso de tokens
+      description: |
+        Alimenta o painel de custo do admin, a partir da tabela `turn_usage`.
+
+        Substitui o Langfuse (`docs/DECISOES-FECHADAS.md` §5): a informação fica na
+        própria base da aplicação, disponível para quem rodar `docker compose up`, em
+        vez de exigir seis containers e ~5,6 GB de imagens para ser conferida.
+
+        Prova duas coisas com número, não com frase: que o prompt caching funciona
+        (`cache_read` > 0 a partir do segundo turno) e quanto custa uma conversa.
+      parameters:
+        - { name: conversation_id, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        "200":
+          description: uso agregado e por conversa
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Usage" }
+
+  /api/handoffs:
+    get:
+      tags: [operacao]
+      summary: Fila de handoff
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/HandoffStatus" } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        "200":
+          description: fila
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, pendentes]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Handoff" }
+                  pendentes:
+                    type: integer
+                    description: Alimenta o badge visível de qualquer tela.
+
+  /api/handoffs/{handoff_id}:
+    patch:
+      tags: [operacao]
+      summary: Assume ou resolve um handoff
+      description: |
+        Sem isto a fila não é operável — é só uma lista que cresce. As transições
+        válidas são `pendente → assumido → resolvido` e `pendente → resolvido`.
+      parameters:
+        - { name: handoff_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: "#/components/schemas/HandoffStatus" }
+      responses:
+        "200":
+          description: atualizado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Handoff" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409":
+          description: transição de estado inválida
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
+  /api/chat/{conversation_id}:
+    get:
+      tags: [chat]
+      summary: "WebSocket: o canal do lead"
+      description: |
+        **Upgrade para WebSocket.** É a implementação `web` da porta `ChannelAdapter`,
+        e é onde a degradação da `/quote` fica visível: quando a cotação demora, o
+        servidor emite `typing` e o aviso de espera, e o valor chega depois como
+        `message` nova — não como um texto que apareceu por mágica no lugar do "…".
+
+        Cliente → servidor: `{"type":"message","text":"..."}`
+        Servidor → cliente: `MessageEvent` | `TypingEvent` | `StateEvent`
+
+        Um `MessageEvent` com valor monetário sempre traz `quote_id`.
+      parameters:
+        - { name: conversation_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "101": { description: protocolos trocados }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+
+  /api/events:
+    get:
+      tags: [operacao]
+      summary: "WebSocket: push para o admin"
+      description: |
+        Empurra `handoff.created`, `handoff.updated` e `quote.attempt` para as telas de
+        administração. É o que faz um handoff criado no backend aparecer na fila **sem
+        recarregar a página** — comportamento que a evidência de UI precisa provar.
+      responses:
+        "101": { description: protocolos trocados }
+
+components:
+
+  responses:
+    NaoEncontrado:
+      description: não encontrado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Erro" }
+
+  schemas:
+
+    Erro:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+
+    ConversationState:
+      type: string
+      enum: [novo, qualificando, cotando, cotado, fechado, encaminhado]
+      description: |
+        `encaminhado` é alcançável de qualquer estado — é a saída de todos os gatilhos
+        de handoff.
+
+    MessageStatus:
+      type: string
+      enum: [received, pending, sent, failed, discarded]
+
+    QuoteOutcome:
+      type: string
+      enum: [ok, transient, timeout, refused, bad_request]
+      description: |
+        Desfecho de **uma tentativa** HTTP. Cinco valores porque cada um implica uma
+        ação distinta: `transient` e `timeout` retentam; `refused` é um "não" do
+        negócio que o lead ouve com o motivo; `bad_request` é defeito nosso, que o
+        lead nunca vê. Ver `docs/API-COTACAO.md` §7.
+
+    QuoteJobStatus:
+      type: string
+      enum: [pending, ok, refused, failed]
+
+    HandoffStatus:
+      type: string
+      enum: [pendente, assumido, resolvido]
+
+    Conversation:
+      type: object
+      required: [id, channel, state, criado_em]
+      properties:
+        id: { type: string }
+        channel: { type: string, enum: [console, web] }
+        state: { $ref: "#/components/schemas/ConversationState" }
+        criado_em: { type: string, format: date-time }
+
+    LeadProfile:
+      type: object
+      description: |
+        Os cinco campos da qualificação. Todos anuláveis porque a conversa é
+        incremental; `campos_faltantes` é o que a UI mostra como progresso.
+      properties:
+        idade: { type: [integer, "null"] }
+        veiculo_ano: { type: [integer, "null"] }
+        cep:
+          type: [string, "null"]
+          description: 8 dígitos, sem máscara. Mascarado na exibição.
+        data_inicio: { type: [string, "null"], format: date }
+        plano_id: { type: [string, "null"], enum: [essencial, completo, premium, null] }
+        campos_faltantes:
+          type: array
+          items: { type: string }
+
+    ConversationSummary:
+      allOf:
+        - $ref: "#/components/schemas/Conversation"
+        - type: object
+          required: [total_mensagens, atualizado_em]
+          properties:
+            total_mensagens: { type: integer }
+            atualizado_em: { type: string, format: date-time }
+            ultima_mensagem: { type: [string, "null"] }
+            handoff_pendente: { type: boolean }
+            ultima_cotacao_status:
+              oneOf:
+                - $ref: "#/components/schemas/QuoteJobStatus"
+                - type: "null"
+
+    ConversationDetail:
+      allOf:
+        - $ref: "#/components/schemas/Conversation"
+        - type: object
+          required: [perfil, messages, quotes, handoffs]
+          properties:
+            perfil: { $ref: "#/components/schemas/LeadProfile" }
+            messages:
+              type: array
+              description: Ordenado por `index`. Nunca por timestamp.
+              items: { $ref: "#/components/schemas/Message" }
+            quotes:
+              type: array
+              items: { $ref: "#/components/schemas/Quote" }
+            handoffs:
+              type: array
+              items: { $ref: "#/components/schemas/Handoff" }
+
+    Message:
+      type: object
+      required: [id, index, autor, tipo, conteudo, status, criado_em]
+      properties:
+        id: { type: string }
+        index: { type: integer, minimum: 0 }
+        autor: { type: string, enum: [lead, agente, sistema, operador] }
+        tipo: { type: string, enum: [text, image, audio, document] }
+        conteudo:
+          type: string
+          description: Sempre a versão **mascarada**. Não existe endpoint com a crua.
+        status: { $ref: "#/components/schemas/MessageStatus" }
+        quote_id:
+          type: [string, "null"]
+          description: |
+            Não-nulo quando a mensagem apresenta uma cotação. É o guardrail auditável:
+            texto com valor monetário e `quote_id` nulo é bug.
+        criado_em: { type: string, format: date-time }
+
+    Quote:
+      type: object
+      required: [id, status, request, attempts, criado_em]
+      properties:
+        id: { type: string }
+        status: { $ref: "#/components/schemas/QuoteJobStatus" }
+        request:
+          type: object
+          description: A requisição exata enviada, já normalizada.
+          required: [plano_id, idade, veiculo_ano]
+          properties:
+            plano_id: { type: string, enum: [essencial, completo, premium] }
+            idade: { type: integer }
+            veiculo_ano: { type: integer }
+            cep: { type: [string, "null"] }
+            data_inicio: { type: [string, "null"], format: date }
+        resultado:
+          description: Presente **se e somente se** `status = ok`.
+          oneOf:
+            - $ref: "#/components/schemas/QuoteResultado"
+            - type: "null"
+        motivo_recusa:
+          type: [string, "null"]
+          enum: [idade_acima_do_limite, idade_abaixo_do_minimo, veiculo_acima_de_20_anos, null]
+          description: Presente se e somente se `status = refused`.
+        erro_outcome:
+          oneOf:
+            - $ref: "#/components/schemas/QuoteOutcome"
+            - type: "null"
+        circuito_aberto:
+          type: boolean
+          description: |
+            O breaker impediu a chamada. O job é `failed` **sem nenhuma tentativa** —
+            e a tela precisa distinguir isso de "tentamos 3 vezes e falhou".
+        total_latency_ms: { type: [integer, "null"] }
+        attempts:
+          type: array
+          items: { $ref: "#/components/schemas/QuoteAttempt" }
+        criado_em: { type: string, format: date-time }
+
+    QuoteResultado:
+      type: object
+      required: [premio_mensal, franquia, moeda, coberturas, carencia]
+      properties:
+        premio_mensal: { type: number }
+        franquia: { type: integer }
+        moeda: { type: string }
+        coberturas: { type: array, items: { type: string } }
+        carencia:
+          type: object
+          description: Vem em 100% das respostas 200. Nunca omitida ao lead.
+          required: [coberturas, dias]
+          properties:
+            coberturas: { type: array, items: { type: string } }
+            dias: { type: integer }
+        pro_rata:
+          description: |
+            Nulo quando a vigência começa no dia 1 — e a ausência é informação: a
+            mensagem diz que o primeiro mês já é integral, não silencia.
+          oneOf:
+            - type: object
+              required: [dias_no_mes, dias_cobrados, valor_primeiro_pagamento]
+              properties:
+                dias_no_mes: { type: integer }
+                dias_cobrados: { type: integer }
+                valor_primeiro_pagamento: { type: number }
+            - type: "null"
+
+    QuoteAttempt:
+      type: object
+      required: [id, attempt, latency_ms, outcome, criado_em]
+      properties:
+        id: { type: string }
+        attempt: { type: integer, minimum: 1 }
+        http_status:
+          type: [integer, "null"]
+          description: Nulo quando não houve resposta (timeout ou erro de conexão).
+        latency_ms: { type: integer }
+        outcome: { $ref: "#/components/schemas/QuoteOutcome" }
+        criado_em: { type: string, format: date-time }
+
+    QuoteHealth:
+      type: object
+      required: [upstream_health, janela, breaker, ultimas_tentativas]
+      properties:
+        upstream_health:
+          type: object
+          required: [status]
+          properties:
+            status: { type: string, enum: [ok, unreachable] }
+            latency_ms: { type: [integer, "null"] }
+            nota:
+              type: string
+              description: |
+                Lembrete exibido na tela: o `/health` do legado responde 200 mesmo com
+                100% das cotações falhando.
+        janela:
+          type: object
+          required: [total, sucesso, taxa_sucesso, p50_ms, p95_ms]
+          properties:
+            total: { type: integer }
+            sucesso: { type: integer }
+            taxa_sucesso: { type: number, minimum: 0, maximum: 1 }
+            p50_ms: { type: integer }
+            p95_ms:
+              type: integer
+              description: Inclui as chamadas lentas de 8s — é o que se quer ver.
+            por_outcome:
+              type: object
+              additionalProperties: { type: integer }
+        breaker:
+          type: object
+          required: [estado, falhas_consecutivas]
+          properties:
+            estado: { type: string, enum: [fechado, aberto, meia_abertura] }
+            falhas_consecutivas: { type: integer }
+            aberto_desde: { type: [string, "null"], format: date-time }
+            reabre_em: { type: [string, "null"], format: date-time }
+        ultimas_tentativas:
+          type: array
+          items:
+            allOf:
+              - $ref: "#/components/schemas/QuoteAttempt"
+              - type: object
+                properties:
+                  quote_id: { type: string }
+                  conversation_id:
+                    type: string
+                    description: Link para a conversa que originou a tentativa.
+
+    Handoff:
+      type: object
+      required: [id, conversation_id, trigger, reason, status, disparado_por, criado_em]
+      properties:
+        id: { type: string }
+        conversation_id: { type: string }
+        trigger:
+          type: string
+          description: |
+            Qual **regra** disparou. É o que torna o critério explícito e defensável:
+            a fila mostra o gatilho, não uma frase gerada. O conjunto de valores é
+            fechado pela decisão aberta nº1.
+        reason: { type: string }
+        summary: { type: [string, "null"] }
+        disparado_por:
+          type: string
+          enum: [regra, modelo]
+          description: |
+            Um gatilho determinístico (breaker aberto, 422 de recusa) e uma decisão do
+            modelo produzem o mesmo sinal — e a fila distingue os dois.
+        quote_id:
+          type: [string, "null"]
+          description: Última cotação tentada. É o que o operador vê primeiro ao assumir.
+        ultima_cotacao:
+          oneOf:
+            - $ref: "#/components/schemas/Quote"
+            - type: "null"
+        status: { $ref: "#/components/schemas/HandoffStatus" }
+        criado_em: { type: string, format: date-time }
+        assumido_em: { type: [string, "null"], format: date-time }
+        resolved_at: { type: [string, "null"], format: date-time }
+
+    Usage:
+      type: object
+      required: [total, por_provider, por_conversa]
+      properties:
+        total:
+          $ref: "#/components/schemas/UsageAgregado"
+        por_provider:
+          type: array
+          description: Anthropic e Ollama lado a lado.
+          items:
+            allOf:
+              - type: object
+                required: [provider]
+                properties:
+                  provider: { type: string }
+              - $ref: "#/components/schemas/UsageAgregado"
+        por_conversa:
+          type: array
+          items:
+            allOf:
+              - type: object
+                required: [conversation_id]
+                properties:
+                  conversation_id: { type: string }
+                  turnos: { type: integer }
+              - $ref: "#/components/schemas/UsageAgregado"
+
+    UsageAgregado:
+      type: object
+      required: [tokens_in, tokens_out]
+      properties:
+        tokens_in: { type: integer }
+        tokens_out: { type: integer }
+        cache_read:
+          type: [integer, "null"]
+          description: |
+            **Nulo, não zero**, quando o provider não reporta caching — o Ollama não
+            reporta. Um zero aqui diria "o cache não acertou" onde a verdade é "não
+            existe cache neste caminho".
+        cache_write: { type: [integer, "null"] }
+        taxa_acerto_cache:
+          type: [number, "null"]
+          description: Nula quando não há dado de cache na amostra. A UI mostra "n/a".
+        custo_usd:
+          type: [number, "null"]
+          description: |
+            Nulo para inferência local, que não tem preço por token. Calculado por nós
+            a partir de `config/model_pricing.yaml` — o Agno não popula `cost` para a
+            Anthropic.
+        pricing_vigencia:
+          type: [string, "null"]
+          format: date
+          description: Vigência da tabela de preço usada, para o custo ser auditável.
+        latency_p50_ms: { type: [integer, "null"] }
+
+    MessageEvent:
+      type: object
+      description: Servidor → cliente, no WebSocket de chat.
+      required: [type, message]
+      properties:
+        type: { type: string, enum: [message] }
+        message: { $ref: "#/components/schemas/Message" }
+
+    TypingEvent:
+      type: object
+      description: |
+        Servidor → cliente. Não é enfeite: é como a espera da `/quote` fica visível
+        para o lead enquanto o job continua.
+      required: [type, ativo]
+      properties:
+        type: { type: string, enum: [typing] }
+        ativo: { type: boolean }
+
+    StateEvent:
+      type: object
+      description: Servidor → cliente, na mudança de estado da conversa.
+      required: [type, state]
+      properties:
+        type: { type: string, enum: [state] }
+        state: { $ref: "#/components/schemas/ConversationState" }

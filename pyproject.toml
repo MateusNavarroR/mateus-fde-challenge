@@ -1,0 +1,23 @@
+[project]
+name = "autoseguro-agente"
+version = "0.1.0"
+description = "Agente de cotacao de seguro auto — desafio FDE Namastex"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "live: exige a /quote rodando (QUOTE_API_URL, default http://localhost:8001)",
+]
+
+[tool.uv]
+package = false

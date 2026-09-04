@@ -1,0 +1,66 @@
+# Tabela de preço por modelo — insumo de `turn_usage.cost_usd`.
+#
+# Por que este arquivo existe e o preço não está embutido no código:
+#
+#   1. Preço muda, e código com número mágico envelhece em silêncio. Aqui a mudança
+#      é uma linha nova com outra vigência, e o custo histórico continua auditável
+#      porque `turn_usage.pricing_vigencia` grava qual entrada foi usada.
+#   2. O Agno **não** preenche o campo `cost` para a Anthropic — a tabela de
+#      disponibilidade por provider da documentação oficial mostra `cost` populado
+#      apenas para OpenAI Chat e Meta Llama (OpenAI). Calcular do nosso lado não é
+#      preferência de design, é a única opção.
+#
+# ⚠️ Estes valores foram consultados em 2026-09-04 a partir de um snapshot de
+#    2026-06-24. Preço de API muda sem aviso. Antes de usar este número para
+#    qualquer decisão real, reconfirme em https://www.anthropic.com/pricing e
+#    acrescente uma entrada nova com a vigência da consulta — não edite as antigas.
+
+moeda: USD
+unidade: por 1.000.000 de tokens
+
+fonte:
+  url: https://www.anthropic.com/pricing
+  consultado_em: 2026-09-04
+  snapshot_em: 2026-06-24
+
+# Multiplicadores de cache da Anthropic, aplicados sobre o preço de entrada:
+#   leitura de cache  ≈ 0,10 ×  (é daí que vem a economia)
+#   escrita de cache  ≈ 1,25 ×  (TTL padrão de 5 min; TTL de 1 h custa ≈ 2,00 ×)
+# Os valores abaixo já estão expandidos para não deixar a conta implícita.
+
+modelos:
+
+  - id: anthropic:claude-opus-5
+    provider: anthropic
+    vigencia_a_partir_de: 2026-06-24
+    input: 5.00
+    output: 25.00
+    cache_read: 0.50    # 0,10 × input
+    cache_write: 6.25   # 1,25 × input, TTL de 5 min
+
+  - id: anthropic:claude-sonnet-5
+    provider: anthropic
+    vigencia_a_partir_de: 2026-06-24
+    input: 2.00
+    output: 10.00
+    cache_read: 0.20
+    cache_write: 2.50
+
+  - id: anthropic:claude-haiku-4-5
+    provider: anthropic
+    vigencia_a_partir_de: 2026-06-24
+    input: 1.00
+    output: 5.00
+    cache_read: 0.10
+    cache_write: 1.25
+
+  # Inferência local não tem preço por token. O custo existe — hardware e energia —
+  # mas não é atribuível por turno, e fingir que é daria um número falso.
+  # `cost_usd` fica NULL para estes turnos, e o painel mostra "n/a", não "R$ 0,00".
+  - id: ollama:*
+    provider: ollama
+    vigencia_a_partir_de: 2026-06-24
+    input: null
+    output: null
+    cache_read: null    # o Ollama não reporta cache; ver db/migrations/0002
+    cache_write: null

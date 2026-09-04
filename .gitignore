@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# env / segredos (NUNCA commitar — este repositorio e publico)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+
+# ferramentas locais do agente (carregam contexto interno — nao versionar)
+.claude/
+
+# OS / editores
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# ...mas os logs de IA sao entregavel — ver ai-logs/README.md
+!ai-logs/**
