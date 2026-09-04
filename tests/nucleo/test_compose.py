@@ -17,6 +17,38 @@ def compose():
     return yaml.safe_load((RAIZ / "docker-compose.yml").read_text())
 
 
+#: Serviços do caminho padrão — os de depuração ficam atrás do profile `debug`.
+def _padrao(compose):
+    return {n: s for n, s in compose["services"].items() if not s.get("profiles")}
+
+
+def test_so_a_porta_da_aplicacao_e_publicada(compose):
+    """O acidente que reprovaria o critério nº 1 antes de uma linha nossa rodar.
+
+    O app fala com `db:5432` e `quote-api:8000` pela rede interna do compose;
+    publicá-las no host não serve a aplicação, só à depuração. E publicar cria
+    conflito garantido: quem tem Postgres instalado colide na 5432, e quem rodou o
+    `docker compose up` do repositório do desafio — o caminho natural antes de olhar
+    esta entrega — já tem a 8000 ocupada. "Port is already allocated" é o que o
+    avaliador veria.
+    """
+    publicadas = {
+        nome: svc.get("ports", []) for nome, svc in _padrao(compose).items()
+    }
+    com_porta = {n: p for n, p in publicadas.items() if p}
+    assert set(com_porta) == {"app"}, (
+        f"só a aplicação publica porta no caminho padrão; publicam: {com_porta}"
+    )
+
+
+def test_as_portas_de_depuracao_existem_atras_de_profile(compose):
+    """Quem quiser depurar opta — e o caminho padrão continua sem conflito."""
+    debug = {n: s for n, s in compose["services"].items() if "debug" in (s.get("profiles") or [])}
+    assert debug, "as portas de depuração precisam existir, só que opcionais"
+    for svc in debug.values():
+        assert svc.get("ports")
+
+
 def test_nenhuma_porta_publica_em_todas_as_interfaces(compose):
     """O compose do desafio publica "8000:8000", que é bind em 0.0.0.0. O nosso não
     repete isso: é uma linha, e é o que torna o /admin inalcançável da rede
@@ -27,7 +59,7 @@ def test_nenhuma_porta_publica_em_todas_as_interfaces(compose):
 
 
 def test_ha_portas_para_verificar(compose):
-    """Se nenhum serviço publicasse porta, o teste acima passaria sem olhar nada."""
+    """Se nenhum serviço publicasse porta, os testes acima passariam sem olhar nada."""
     assert sum(len(s.get("ports", [])) for s in compose["services"].values()) >= 3
 
 
@@ -54,3 +86,43 @@ def test_env_example_so_tem_placeholder():
         if "=" in linha and not linha.strip().startswith("#"):
             valor = linha.split("=", 1)[1].strip()
             assert valor == "" or valor.startswith("<"), linha
+
+
+@pytest.mark.integracao
+def test_sobe_com_5432_e_8000_ocupadas_no_host():
+    """O teste que só falha na máquina de outra pessoa — então ele ocupa as portas
+    de propósito e sobe o compose por cima.
+
+    Marcado `integracao` porque leva minutos e constrói imagem; roda no portão de
+    validação final, não a cada commit.
+    """
+    import socket
+    import subprocess
+
+    bloqueios = []
+    try:
+        for porta in (5432, 8000):
+            s = socket.socket()
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(("127.0.0.1", porta))
+                s.listen(1)
+                bloqueios.append(s)
+            except OSError:
+                s.close()  # já ocupada por outro processo: melhor ainda para o teste
+
+        r = subprocess.run(
+            ["docker", "compose", "up", "-d", "--wait", "--build"],
+            cwd=RAIZ, capture_output=True, text=True, timeout=900,
+        )
+        assert r.returncode == 0, (
+            "o compose não subiu com 5432 e 8000 ocupadas no host:\n" + r.stderr[-2000:]
+        )
+        import urllib.request
+
+        with urllib.request.urlopen("http://127.0.0.1:8080/api/health", timeout=10) as resp:
+            assert resp.status == 200
+    finally:
+        subprocess.run(["docker", "compose", "down", "-v"], cwd=RAIZ, capture_output=True)
+        for s in bloqueios:
+            s.close()

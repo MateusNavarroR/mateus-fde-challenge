@@ -198,35 +198,45 @@ class _Avisos:
 
     def __init__(self, t0: float, avisar, cfg) -> None:
         self.avisar = avisar
+        self.cfg = cfg
+        self.t0 = t0
         self.enviados: list[str] = []
         self._timers: list[threading.Timer] = []
-        if avisar is None:
-            return
+        if avisar is not None:
+            self._agendar("aviso")
 
+    def _agendar(self, nome: str) -> None:
+        """Os dois avisos são **encadeados**, não paralelos.
+
+        A primeira versão agendava os dois de uma vez e o reforço checava se o aviso
+        já tinha saído, descartando-se em caso negativo. Isso é uma corrida: sob
+        carga, o temporizador de 6 s pode ser servido depois do de 20 s, e aí o
+        reforço se descarta e o lead recebe só um aviso — ou, pior, recebe "ainda tô
+        aqui" antes de "tô buscando".
+
+        Encadear resolve por construção: o reforço só é agendado quando o aviso sai.
+        """
         from app import textos
 
-        # O relógio é o do lead: se ele já esperou 3 s antes de a tool começar, o
+        limiar, texto = (
+            (self.cfg.aviso_espera_s, textos.AVISO_ESPERA) if nome == "aviso"
+            else (self.cfg.reforco_espera_s, textos.REFORCO)
+        )
+        # O relógio é o do LEAD: se ele já esperou 3 s antes de a tool começar, o
         # aviso sai 3 s depois daqui, não 6.
-        decorrido = time.monotonic() - t0
-        for nome, limiar, texto in (
-            ("aviso", cfg.aviso_espera_s, textos.AVISO_ESPERA),
-            ("reforco", cfg.reforco_espera_s, textos.REFORCO),
-        ):
-            atraso = max(0.0, limiar - decorrido)
-            t = threading.Timer(atraso, self._disparar, args=(nome, texto))
-            t.daemon = True
-            t.start()
-            self._timers.append(t)
+        atraso = max(0.0, limiar - (time.monotonic() - self.t0))
+        t = threading.Timer(atraso, self._disparar, args=(nome, texto))
+        t.daemon = True
+        t.start()
+        self._timers.append(t)
 
     def _disparar(self, nome: str, texto: str) -> None:
-        # O aviso sempre precede o reforço, mesmo se os dois vencerem juntos: receber
-        # "ainda tô aqui" antes de "tô buscando" confundiria o lead.
-        if nome == "reforco" and "aviso" not in self.enviados:
-            return
         if nome in self.enviados:
             return
         self.enviados.append(nome)
         self.avisar(texto)
+        if nome == "aviso":
+            self._agendar("reforco")
 
     def cancelar(self) -> None:
         """Chamado quando o job resolve: nada de aviso depois do preço."""

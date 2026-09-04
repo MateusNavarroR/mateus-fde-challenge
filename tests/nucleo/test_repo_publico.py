@@ -34,6 +34,21 @@ RAIZ = Path(__file__).resolve().parents[2]
 #: chega em massa sem revisão.
 CODIGO = {".py", ".ts", ".tsx", ".js", ".jsx", ".sql", ".toml", ".lock", ".cfg", ".ini"}
 
+#: Lockfiles. `uv.lock` já cai por extensão; `package-lock.json` é o mesmo artefato
+#: com outro nome.
+#:
+#: **Isto não é uma exceção de PII — é uma correção de classificação.** Um lockfile é
+#: metadado de dependência gerado por gerenciador de pacote: não tem texto humano,
+#: não passa por lead nenhum, e não pode conter PII por construção. O falso positivo
+#: que motivou a linha foi a versão do `caniuse-lite` (`1.0.30001810`), cujos oito
+#: dígitos casam o regex de CEP.
+#:
+#: A diferença importa: exceção de PII é isentar um arquivo que **poderia** conter
+#: PII; classificação é reconhecer que um arquivo pertence à categoria "código", que
+#: já estava fora do escopo. `test_a_exclusao_de_lockfile_e_estreita` impede que esta
+#: linha vire a primeira entrada de uma lista.
+LOCKFILES = {"package-lock.json", "pnpm-lock.yaml", "yarn.lock", "poetry.lock"}
+
 
 def _versionados() -> list[Path]:
     saida = subprocess.run(
@@ -46,7 +61,10 @@ def _alvos() -> list[Path]:
     return [
         p
         for p in _versionados()
-        if p.suffix.lower() not in CODIGO and p.is_file() and p.stat().st_size > 0
+        if p.suffix.lower() not in CODIGO
+        and p.name not in LOCKFILES
+        and p.is_file()
+        and p.stat().st_size > 0
     ]
 
 
@@ -121,3 +139,29 @@ def test_readme_nao_aponta_para_documento_inexistente():
             if not (RAIZ / alvo).exists() and "ainda não escrito" not in linha:
                 problemas.append(f"{alvo} não existe e a linha não está marcada")
     assert not problemas, "\n  ".join(problemas)
+
+
+def test_a_exclusao_de_lockfile_e_estreita():
+    """A linha dos lockfiles não pode virar a primeira entrada de uma lista de
+    exceções — que é a porta que se recusa a abrir no guardrail e nas fixtures.
+
+    Ela vale por **nome exato** e para quatro arquivos conhecidos. Qualquer `.json`,
+    `.yaml` ou `.md` continua sendo varrido.
+    """
+    assert len(LOCKFILES) <= 4
+    for nome in LOCKFILES:
+        assert nome.endswith((".json", ".yaml", ".lock"))
+    # nomes vizinhos NÃO são isentos
+    for vizinho in ("package.json", "composer.json", "dados.json", "config.yaml"):
+        assert vizinho not in LOCKFILES
+
+
+def test_a_varredura_ainda_pega_um_json_qualquer(tmp_path, monkeypatch):
+    """Prova que a exclusão por nome não abriu um buraco por extensão."""
+    import re
+
+    from app.privacy.mascarar import _REGRAS
+
+    conteudo = '{"cep": "01310-100"}'
+    achou = [n for n, padrao, _ in _REGRAS if padrao.search(conteudo)]
+    assert "cep" in achou

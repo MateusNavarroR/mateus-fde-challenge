@@ -37,6 +37,7 @@ markers = [
     "live: exige a /quote rodando (QUOTE_API_URL, default http://localhost:8001)",
     "serial: depende de QUOTE_SEED — roda em serie, com restart do container antes",
     "db: exige Postgres (APP_DATABASE_URL)",
+    "integracao: sobe o compose de verdade; minutos, roda no portao final",
 ]
 
 [tool.uv]
