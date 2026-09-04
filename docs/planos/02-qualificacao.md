@@ -127,9 +127,10 @@ def test_plano_invalido_nao_vira_essencial_calado(conv):
     assert perfil(conv).plano_id is None
 
 def test_origem_do_campo_e_guardada_mascarada(conv):
-    qualify_lead(idade=35)
+    frase, pii = frase_do_lead(seed=5)
+    qualify_lead(idade=35, origem=frase)
     assert perfil(conv).origem["idade"]        # existe
-    assert "111.111.111-11" not in str(perfil(conv).origem)
+    assert not any(v in str(perfil(conv).origem) for v in pii.values())
 ```
 
 - [ ] **Passo 2:** `pytest tests/nucleo/test_qualificacao.py -v` → FAIL
@@ -152,13 +153,19 @@ O dataset é gabarito legítimo **aqui** — `lead_idade_informada` e o ano em
 - [ ] **Passo 1: teste que falha**
 
 ```python
-@pytest.mark.parametrize("fala,esperado", [
-    ("Tenho 35 anos, cep 26703-384, cpf 111.111.111-11", {"idade": 35, "cep": "26703384"}),
-    ("e um Sandero 2022",                                {"veiculo_ano": 2022}),
-    ("Toyota Corolla, ano 2008",                         {"veiculo_ano": 2008}),
-    ("Cpf 111.111.111-11, tenho 62 anos, cep 08123-456", {"idade": 62, "cep": "08123456"}),
+@pytest.mark.parametrize("molde,esperado", [
+    ("Tenho 35 anos, cep {cep}, cpf {cpf}",   {"idade": 35}),
+    ("e um Sandero 2022",                     {"veiculo_ano": 2022}),
+    ("Toyota Corolla, ano 2008",              {"veiculo_ano": 2008}),
+    ("Cpf {cpf}, tenho 62 anos, cep {cep}",   {"idade": 62}),
 ])
-def test_extrai_de_texto_torto(fala, esperado):
+def test_extrai_de_texto_torto(molde, esperado):
+    """O CPF e o CEP vêm do gerador semeado — nenhum literal de PII no repositório
+    (docs/planos/00-fixtures-pii.md). O CEP esperado é derivado do gerado."""
+    pii = gerar_pii(seed=11)
+    fala = molde.format(**pii)
+    if "{cep}" in molde:
+        esperado["cep"] = re.sub(r"\D", "", pii["cep"])
     assert extraido(fala) | esperado == extraido(fala)
 ```
 

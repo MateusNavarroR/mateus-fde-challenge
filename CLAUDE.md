@@ -62,6 +62,12 @@ a API — se algo aqui divergir dele, ele vence.
 13. **Este repositório será público.** Nenhum segredo, credencial, PII real, nome de
     cliente ou caminho local em código, teste, fixture, log, screenshot ou `ai-logs/`.
     O histórico do Git também — remover num commit posterior não desfaz.
+13b. **Nenhum literal de PII, nem sintético.** Testes que exercitam mascaramento usam o
+    **gerador semeado** de `tests/fixtures/pii.py`, que produz valor válido em formato
+    em tempo de execução (`docs/planos/00-fixtures-pii.md`). O regex é exercitado no
+    formato real, a varredura de segurança não tem o que achar, e **não existe lista de
+    exceções** — que é a mesma porta perigosa que se recusa no guardrail. Nenhum golden
+    file com a saída do gerador, que traria o literal de volta pela porta dos fundos.
 14. **Sobe em um comando**: `docker compose up`, com no máximo uma variável de ambiente
     **obrigatória** (`ANTHROPIC_API_KEY`). Sem passo manual escondido.
 14b. **Todo serviço publica em `127.0.0.1`, nunca em `0.0.0.0`.** É uma linha no compose

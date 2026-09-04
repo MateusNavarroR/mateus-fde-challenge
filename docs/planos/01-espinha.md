@@ -56,44 +56,56 @@ def test_defaults_sao_os_da_politica():
 
 **Files:** Create `app/privacy/mascarar.py` · Test `tests/nucleo/test_pii.py`
 
-> ⚠️ **A fixture não pode conter PII com cara de real** — o repositório é público e o
-> checklist proíbe PII crua até em fixture. Use valores estruturalmente válidos e
-> comprovadamente sintéticos: CPF de dígitos repetidos (rejeitado pela Receita por
-> construção), e-mail em `example.com` (reservado pela RFC 2606), telefone em faixa não
-> alocada, CEP de logradouro público. Formato certo para o regex exercitar, conteúdo
-> que não pertence a ninguém.
+> ⚠️ **Nenhum literal de PII neste repositório.** Ver `docs/planos/00-fixtures-pii.md`:
+> a fixture é um **gerador semeado** que produz valor válido em formato no momento do
+> teste. O regex continua sendo exercitado no formato real, a varredura do portão de
+> segurança não tem o que achar, e não existe lista de exceções — que é a porta que não
+> se abre num repositório público.
 
-- [ ] **Passo 1: teste que falha**
+- [ ] **Passo 1: o gerador**
+
+Criar `tests/fixtures/pii.py` com `gerar_pii(seed)` e `frase_do_lead(seed)`, conforme
+`00-fixtures-pii.md`. Nenhum valor é literal: nascem em memória e morrem no fim da
+execução.
+
+- [ ] **Passo 2: teste que falha**
 
 ```python
-TEXTO = ("Tenho 35 anos, CPF 111.111.111-11, CEP 01310-100, "
-         "meu email é fulano@example.com e o whats é +55 11 90000-0000, "
-         "placa ABC1D23")
-
 def test_mascara_todas_as_classes():
-    saida = mascarar(TEXTO)
-    for cru in ("111.111.111-11", "01310-100", "fulano@example.com",
-                "+55 11 90000-0000", "ABC1D23"):
-        assert cru not in saida
+    frase, pii = frase_do_lead(seed=1)
+    saida = mascarar(frase)
+    for classe, valor in pii.items():
+        assert valor not in saida, classe
+
+def test_cem_amostras_nao_escapam():
+    """Um literal exercita um formato de CPF. O gerador exercita cem, de graça —
+    e é onde aparece o zero à esquerda e a variação que um exemplo a dedo esconde."""
+    for seed in range(100):
+        frase, pii = frase_do_lead(seed)
+        assert not any(v in mascarar(frase) for v in pii.values())
 
 def test_preserva_o_que_nao_e_pii():
     # a idade é dado de qualificação, não PII a mascarar — cotar depende dela
-    assert "35 anos" in mascarar(TEXTO)
+    frase, _ = frase_do_lead(seed=1)
+    assert "35 anos" in mascarar(frase)
 
 def test_e_idempotente():
-    assert mascarar(mascarar(TEXTO)) == mascarar(TEXTO)
+    frase, _ = frase_do_lead(seed=7)
+    assert mascarar(mascarar(frase)) == mascarar(frase)
 
 def test_cpf_sem_pontuacao_tambem_e_pego():
-    assert "11111111111" not in mascarar("cpf 11111111111")
+    _, pii = frase_do_lead(seed=3)
+    nu = pii["cpf"].replace(".", "").replace("-", "")
+    assert nu not in mascarar(f"cpf {nu}")
 ```
 
-- [ ] **Passo 2:** `pytest tests/nucleo/test_pii.py -v` → FAIL
-- [ ] **Passo 3:** implementar `mascarar(texto: str) -> str` com uma tabela de
+- [ ] **Passo 3:** `pytest tests/nucleo/test_pii.py -v` → FAIL
+- [ ] **Passo 4:** implementar `mascarar(texto: str) -> str` com uma tabela de
       `(nome, regex, substituto)`. Substitutos marcados: `[CPF]`, `[CEP]`, `[EMAIL]`,
       `[TELEFONE]`, `[PLACA]`. Idempotência sai de graça se os substitutos não casarem
       com os próprios regexes — **escreva o teste antes de acreditar nisso**.
-- [ ] **Passo 4:** `pytest tests/nucleo/test_pii.py -v` → PASS
-- [ ] **Passo 5:** `git commit -m "feat(privacy): mascaramento de CPF, CEP, e-mail, telefone e placa"`
+- [ ] **Passo 5:** `pytest tests/nucleo/test_pii.py -v` → PASS
+- [ ] **Passo 6:** `git commit -m "feat(privacy): mascaramento por gerador semeado, sem literal de PII"`
 
 ---
 
@@ -110,10 +122,10 @@ seguinte escreve por aqui, e é por isso que mascaramento e guardrail cabem num 
 def test_mensagem_persiste_com_id_e_status(sessao):
     conv = repo.criar_conversa(sessao, channel="console", external_ref="s1")
     m = repo.gravar_mensagem(sessao, conv.id, autor=Autor.LEAD,
-                             conteudo="oi, CPF 111.111.111-11",
+                             conteudo=frase_do_lead(seed=1)[0],
                              status=MessageStatus.RECEIVED, external_id="e1")
     assert m.id and m.index == 0 and m.status is MessageStatus.RECEIVED
-    assert "111.111.111-11" not in m.conteudo      # mascarado NA GRAVAÇÃO
+    assert frase_do_lead(seed=1)[1]["cpf"] not in m.conteudo   # mascarado NA GRAVAÇÃO
 
 def test_index_e_sequencial_por_conversa(sessao): ...
 
