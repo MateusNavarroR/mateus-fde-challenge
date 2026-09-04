@@ -67,7 +67,7 @@ dinheiro.
 
 ```python
 def test_bloco_completo(payload_completo):
-    t = render(payload_completo)   # Completo, 28a, 2019, CEP 07145-200, início 17/10
+    t = render(payload_completo)   # Completo, 28a, 2019, CEP 07XXX-XXX, início 17/10
     assert "R$ 392,25" in t                    # preço na primeira linha
     assert "R$ 3.000" in t                     # franquia sempre
     assert "R$ 189,80" in t and "15 dos 31 dias" in t
@@ -164,7 +164,7 @@ assim; e a redundância vira **checagem cruzada** contra o que `qualify_lead` gr
 
 ```python
 async def test_retorno_nao_contem_numero_nenhum(conv):
-    r = await quote_plan("completo", 28, 2019, "07145-200", "2026-10-17")
+    r = await quote_plan("completo", 28, 2019, "07XXX-XXX", "2026-10-17")
     assert "cotado" in r and "q_" in r
     assert not re.search(r"\\d{2,}[,.]\\d{2}", r)   # nenhum valor monetário
     assert "392" not in r and "3000" not in r

@@ -723,7 +723,7 @@ test("degradação visível: aviso, reforço e encaminhamento em um turno só", 
   await page.getByRole("button", { name: /nova conversa/i }).click();
 
   const t0 = Date.now();
-  await page.getByRole("textbox").fill("tenho 28 anos, carro 2019, cep 07145-200, começo dia 17/10, quero o completo");
+  await page.getByRole("textbox").fill("tenho 28 anos, carro 2019, cep 07XXX-XXX, começo dia 17/10, quero o completo");
   await page.getByRole("textbox").press("Enter");
 
   await expect(page.getByTestId("digitando")).toBeVisible();
@@ -768,7 +768,7 @@ test("a cotação sai com preço, carência e pro-rata", async ({ page }) => {
   await subirCenario("feliz");
   await page.goto("/chat");
   await page.getByRole("button", { name: /nova conversa/i }).click();
-  await page.getByRole("textbox").fill("28 anos, carro 2019, cep 07145-200, plano completo, começo dia 17/10");
+  await page.getByRole("textbox").fill("28 anos, carro 2019, cep 07XXX-XXX, plano completo, começo dia 17/10");
   await page.getByRole("textbox").press("Enter");
 
   const bloco = page.getByTestId("bloco-cotacao");

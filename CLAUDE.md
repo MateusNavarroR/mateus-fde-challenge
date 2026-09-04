@@ -62,6 +62,14 @@ a API — se algo aqui divergir dele, ele vence.
 13. **Este repositório será público.** Nenhum segredo, credencial, PII real, nome de
     cliente ou caminho local em código, teste, fixture, log, screenshot ou `ai-logs/`.
     O histórico do Git também — remover num commit posterior não desfaz.
+13a. **A varredura de PII é automatizada e roda na suíte**
+    (`tests/nucleo/test_repo_publico.py`): os mesmos regexes de
+    `app/privacy/mascarar.py` apontados para **tudo que é versionado e não é código** —
+    `ai-logs/`, `artifacts/`, `docs/evidencia-ui/`, artefatos do dataset. É a superfície
+    de maior volume e era a única sem teste; o scrub manual do checklist da fatia 10
+    deixa de ser a única defesa, porque procedimento manual na véspera é onde vaza.
+    **Sem lista de exceções:** documento que precisa de CEP de exemplo usa a forma
+    `07XXX-XXX`, que preserva o prefixo — que é o que importa — e não casa o regex.
 13b. **Nenhum literal de PII, nem sintético.** Testes que exercitam mascaramento usam o
     **gerador semeado** de `tests/fixtures/pii.py`, que produz valor válido em formato
     em tempo de execução (`docs/planos/00-fixtures-pii.md`). O regex é exercitado no

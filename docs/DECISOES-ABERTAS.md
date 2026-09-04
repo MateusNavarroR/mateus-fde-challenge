@@ -229,7 +229,7 @@ expor o erro interno ("o sistema não reconheceu o plano").
 ## Decisão 4 — O formato de saída da cotação
 
 Todos os números abaixo são **reais**, vindos da `/quote`. O caso: Completo, 28 anos,
-veículo 2019, CEP `07145-200` (alto risco), início em 17/10/2026 →
+veículo 2019, CEP `07XXX-XXX` (alto risco), início em 17/10/2026 →
 `premio_mensal 392.25` · `franquia 3000` · `carencia 30 dias (roubo, furto)` ·
 `pro_rata 15/31 dias = R$ 189,80`.
 

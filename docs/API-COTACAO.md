@@ -228,7 +228,7 @@ diagnóstico correto do caminho de recusa (que é 30% do tráfego, §7).
   "plano_id":    "essencial | completo | premium",   // opcional, default "essencial"
   "idade":       35,                                  // obrigatório, int, 0..200
   "veiculo_ano": 2022,                                // obrigatório, int, 1950..2100
-  "cep":         "01310-100",                         // opcional, string|null
+  "cep":         "01XXX-XXX",                         // opcional, string|null
   "data_inicio": "2026-07-15"                         // opcional, "YYYY-MM-DD"|null
 }
 ```
@@ -297,8 +297,8 @@ Um único `round` no fim; os multiplicadores não são arredondados entre si.
 Agravo de **1,30** quando os **dois primeiros dígitos** do CEP, após remover hífens,
 estão em `07 · 08 · 21 · 26 · 59`. Sem CEP, CEP vazio ou prefixo fora da lista: 1,00.
 
-Medido: `07000-000`, `08123456` (sem hífen), `21000-000`, `26703-384`, `59000-000` →
-todos 155,87 (essencial × 1,30). `01310-100` → 119,90.
+Medido: `07XXX-XXX`, `08XXXXXX` (sem hífen), `21XXX-XXX`, `26XXX-XXX`, `59XXX-XXX` →
+todos 155,87 (essencial × 1,30). `01XXX-XXX` → 119,90.
 
 **A omissão do CEP subcota em até 30%.** E `"7000-000"` — CEP de 7 dígitos, um erro de
 digitação plausível — **também** subcota, sem nenhum sinal de erro. Perguntar o CEP e
@@ -310,11 +310,11 @@ Cinco casos calculados manualmente e conferidos contra a resposta da API:
 
 | Caso | Conta | Manual | API |
 |---|---|---|---|
-| premium, 22a, 2015, `08123-456` | 339,90 × 1,60 × 1,45 × 1,30 | 1.025,14 | **1.025,14** |
-| essencial, 65a, 2018, `01310-100` | 119,90 × 1,40 × 1,15 × 1,00 | 193,04 | **193,04** |
-| completo, 28a, 2012, `21000-000` | 209,90 × 1,25 × 1,45 × 1,30 | 494,58 | **494,58** |
+| premium, 22a, 2015, `08XXX-XXX` | 339,90 × 1,60 × 1,45 × 1,30 | 1.025,14 | **1.025,14** |
+| essencial, 65a, 2018, `01XXX-XXX` | 119,90 × 1,40 × 1,15 × 1,00 | 193,04 | **193,04** |
+| completo, 28a, 2012, `21XXX-XXX` | 209,90 × 1,25 × 1,45 × 1,30 | 494,58 | **494,58** |
 | premium, 30a, 2026, sem CEP | 339,90 × 1,00 × 1,00 × 1,00 | 339,90 | **339,90** |
-| essencial, 75a, 2006, `59999-999` | 119,90 × 1,40 × 1,45 × 1,30 | 316,42 | **316,42** |
+| essencial, 75a, 2006, `59XXX-XXX` | 119,90 × 1,40 × 1,45 × 1,30 | 316,42 | **316,42** |
 
 O espaço inteiro de preços possíveis são **72 valores** (3 planos × 4 faixas etárias ×
 3 faixas de veículo × 2 regiões), de **R$ 119,90** a **R$ 1.025,14**. Este conjunto

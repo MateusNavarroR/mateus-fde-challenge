@@ -222,7 +222,7 @@ Quer que eu siga com a emissão?
 ```
 
 Os números do exemplo são reais, vindos da `/quote`: Completo, 28 anos, veículo 2019,
-CEP `07145-200`, início em 17/10/2026.
+CEP `07XXX-XXX`, início em 17/10/2026.
 
 | Sub-decisão | Escolha | Por quê |
 |---|---|---|

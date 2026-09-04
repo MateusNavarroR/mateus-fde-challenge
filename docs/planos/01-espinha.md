@@ -165,7 +165,7 @@ def test_valor_monetario_em_texto_do_modelo_e_rejeitado(texto):
         checar_texto_do_modelo(texto)
 
 @pytest.mark.parametrize("texto", [
-    "tenho 35 anos", "carro 2019", "o CEP é 01310-100", "cobre roubo e furto",
+    "tenho 35 anos", "carro 2019", "o CEP é 01XXX-XXX", "cobre roubo e furto",
     "a franquia é menor no Premium",
 ])
 def test_texto_sem_valor_monetario_passa(texto):
