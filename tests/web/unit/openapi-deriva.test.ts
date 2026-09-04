@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
-import { ROTAS } from "../../../web/src/api/cliente";
+import { ROTAS, ROTAS_AUTENTICACAO } from "../../../web/src/api/cliente";
 
 /**
  * O teste que separa "construímos contra o contrato" de "construímos contra o
@@ -109,6 +109,29 @@ it("toda rota que a UI consome está no contrato congelado", () => {
     const usada = String((fn as (a: string) => string)("{id}")).split("?")[0];
     expect(doContrato, `${nome} → ${usada} não existe no openapi congelado`).toContain(usada);
   }
+});
+
+/**
+ * As rotas de login moram num objeto SEPARADO, e a separação é o conteúdo desta
+ * decisão.
+ *
+ * O `openapi.yaml` foi congelado na Fase 0 como o contrato do **produto**, e os dois
+ * testes acima existem para que ninguém acrescente superfície sem decisão escrita.
+ * Login não é produto: é o mecanismo pelo qual um humano alcança o produto — a mesma
+ * natureza de `GET /`, que já ficava fora. O backend as monta com
+ * `include_in_schema=False`, e `tests/nucleo/test_auth.py` mantém um inventário
+ * fechado das rotas escondidas do schema: se aparecer uma quarta, ele reprova.
+ *
+ * Misturá-las em `ROTAS` obrigaria a relaxar "toda rota que a UI consome está no
+ * contrato" — e é justamente essa afirmação que pega uma rota inventada no JSX.
+ */
+it("as rotas de autenticação ficam fora do contrato, e são exatamente três", () => {
+  const auth = Object.values(ROTAS_AUTENTICACAO).map((f) => f());
+  expect(auth.sort()).toEqual(
+    ["/api/auth/estado", "/api/auth/login", "/api/auth/logout"].sort(),
+  );
+  const doContrato = Object.keys(congelado.paths);
+  for (const rota of auth) expect(doContrato).not.toContain(rota);
 });
 
 it("ROTAS cobre exatamente a superfície declarada — nada montado por string solta", () => {

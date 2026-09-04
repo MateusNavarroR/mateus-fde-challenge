@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { _reiniciarEventos } from "../../web/src/admin/useEventos";
+import { _reiniciarAutenticacao } from "../../web/src/ui/useAutenticacao";
 import { WebSocketFalso } from "./fakes/websocket-falso";
 
 // O jsdom não implementa layout, então `scrollIntoView` não existe. A tela usa
@@ -20,6 +21,10 @@ afterEach(() => {
   // O socket de eventos é um singleton de sessão: sem isto ele vazaria de um
   // caso para o outro e a contagem de sockets deixaria de significar algo.
   _reiniciarEventos();
+  // O estado de autenticação também é singleton de módulo: sem isto, um caso que
+  // entrou deixaria o próximo já autenticado — e o teste do login passaria sem
+  // login nenhum.
+  _reiniciarAutenticacao();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   WebSocketFalso.reiniciar();

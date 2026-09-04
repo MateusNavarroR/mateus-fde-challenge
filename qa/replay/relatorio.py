@@ -1,0 +1,406 @@
+"""O relatório do replay: o que rodou, o que não rodou, e por quê.
+
+**A regra que dá forma ao módulo:** um replay que morre na conversa 18 e não diz que
+morreu é pior que um replay que não roda. Por isso o relatório sempre existe — ele é
+escrito no `finally` do executor —, sempre traz `completadas`, `falhadas` e a razão de
+cada falha, e sempre diz quantas conversas a amostra tinha. Um numerador sem denominador
+é a forma mais educada de mentir.
+
+**PII.** As falas do lead entram cruas no agente (`casos.py`) e **nada cru sai daqui**:
+`_limpo` passa todo texto por `app.privacy.mascarar` antes de serializar. Isso vale para
+a mensagem de erro do provedor, que pode ecoar o prompt — e o prompt carrega a fala do
+lead. A saída default vive em `qa/_saida/`, que é ignorado pelo Git por construção
+(`qa.dataset.caminhos.dir_saida`), mas a defesa não depende disso: depende do
+mascaramento.
+
+**O relatório é lido de volta.** `de_json` existe porque a comparação entre duas
+execuções — antes e depois de uma mudança de prompt — é o uso principal do artefato, e
+uma comparação feita a olho num JSON de 30 conversas não acontece.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from app.privacy.mascarar import mascarar
+from qa.replay.assercoes import Desfecho
+from qa.replay.falhas import ClasseDeFalha, Falha
+
+#: Acima disto a suíte reprova por incompreensão do respondedor, não por defeito do
+#: agente. 20% das perguntas é generoso e ainda assim vermelho muito antes de o número
+#: virar decorativo: com o script cobrindo dois campos de cinco, uma taxa dessas
+#: significa que o agente está perguntando outra coisa e ninguém percebeu.
+LIMIAR_NAO_ENTENDI = 0.20
+
+#: Segundos de parede por inferência, medido no cenário de referência (§9). Só alimenta
+#: a estimativa impressa antes de começar — nunca uma asserção.
+SEGUNDOS_POR_INFERENCIA = 3.0
+
+
+def _limpo(texto: str | None, limite: int = 400) -> str | None:
+    """Mascara e trunca. Único caminho de texto para dentro do relatório."""
+    if texto is None:
+        return None
+    return mascarar(texto[:limite])
+
+
+@dataclass
+class ExtracaoConferida:
+    """Três campos, e só três: idade, `veiculo_ano` e CEP (DECISOES-FECHADAS §9).
+
+    Marca e modelo ficam fora porque `veiculo_texto` contém informação que o lead nunca
+    disse, e penalizar por isso mede o ruído do gabarito.
+
+    O CEP aparece como **acerto ou erro**, nunca como valor: ele é PII, e o relatório é
+    um artefato que alguém vai colar num README.
+    """
+
+    esperado_idade: int | None = None
+    obtido_idade: int | None = None
+    esperado_veiculo_ano: int | None = None
+    obtido_veiculo_ano: int | None = None
+    #: Só o veredito. Nem o esperado nem o obtido.
+    cep_correto: bool | None = None
+
+    @property
+    def acertos(self) -> int:
+        certos = 0
+        if self.esperado_idade is not None and self.esperado_idade == self.obtido_idade:
+            certos += 1
+        if (
+            self.esperado_veiculo_ano is not None
+            and self.esperado_veiculo_ano == self.obtido_veiculo_ano
+        ):
+            certos += 1
+        if self.cep_correto:
+            certos += 1
+        return certos
+
+    @property
+    def comparaveis(self) -> int:
+        """Quantos dos três o dataset oferecia gabarito para.
+
+        Campo sem gabarito não conta como erro do agente — contar rebaixaria a taxa por
+        culpa do corpus.
+        """
+        return sum(
+            1
+            for presente in (
+                self.esperado_idade is not None,
+                self.esperado_veiculo_ano is not None,
+                self.cep_correto is not None,
+            )
+            if presente
+        )
+
+
+@dataclass
+class ResultadoConversa:
+    """Uma linha do relatório. Uma conversa."""
+
+    conversation_id: str
+    estrato: str
+    outcome_dataset: str
+    inferencias: int = 0
+    turnos: int = 0
+
+    desfecho_esperado: str = str(Desfecho.INCOMPLETO)
+    desfecho_obtido: str = str(Desfecho.INCOMPLETO)
+    motivo_esperado: str | None = None
+    motivo_obtido: str | None = None
+
+    tools_chamadas: list[str] = field(default_factory=list)
+    tools_faltando: list[str] = field(default_factory=list)
+    tools_proibidas_chamadas: list[str] = field(default_factory=list)
+    reliability: str | None = None
+
+    extracao: ExtracaoConferida = field(default_factory=ExtracaoConferida)
+
+    preco_alcancavel: bool | None = None
+    preco_exato: bool | None = None
+
+    tem_midia: bool = False
+    midia_tratada: bool | None = None
+
+    perguntas_do_agente: int = 0
+    nao_entendi: int = 0
+
+    falha: dict[str, Any] | None = None
+    segundos: float = 0.0
+
+    @property
+    def completou(self) -> bool:
+        return self.falha is None
+
+    @property
+    def passou(self) -> bool:
+        """O veredito por conversa. Falha de provedor **não** reprova o agente.
+
+        Separar as duas coisas é o ponto inteiro do módulo: 402 é uma conta sem crédito,
+        não um agente ruim, e somá-los produziria uma taxa de acerto que cai quando o
+        cartão vence.
+        """
+        if self.falha is not None:
+            return False
+        if self.tools_faltando or self.tools_proibidas_chamadas:
+            return False
+        if self.desfecho_obtido != self.desfecho_esperado:
+            return False
+        if self.desfecho_esperado == str(Desfecho.REFUSED):
+            if self.motivo_obtido != self.motivo_esperado:
+                return False
+        if self.preco_exato is False:
+            return False
+        if self.tem_midia and self.midia_tratada is False:
+            return False
+        return True
+
+
+@dataclass
+class Relatorio:
+    """O artefato. Sempre escrito, mesmo quando a execução morre no meio."""
+
+    modo: str
+    modelo: str
+    seed: int
+    conversas_pedidas: int = 0
+    inferencias_previstas: int = 0
+    iniciado_em: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds")
+    )
+    terminado_em: str | None = None
+    #: Preenchido quando a execução parou antes da última conversa (402, Ctrl-C).
+    interrompido_por: str | None = None
+
+    resultados: list[ResultadoConversa] = field(default_factory=list)
+    #: Distribuição da amostra, para o relatório se explicar sozinho.
+    estratificacao: dict[str, Any] = field(default_factory=dict)
+    limiar_nao_entendi: float = LIMIAR_NAO_ENTENDI
+    segundos_de_espera: float = 0.0
+
+    # ─── contagens ───────────────────────────────────────────────────────────
+
+    @property
+    def completadas(self) -> int:
+        return sum(1 for r in self.resultados if r.completou)
+
+    @property
+    def falhadas(self) -> int:
+        return sum(1 for r in self.resultados if not r.completou)
+
+    @property
+    def nao_alcancadas(self) -> int:
+        """Conversas da amostra que a execução nunca chegou a tocar.
+
+        Existe separada de `falhadas` porque são coisas diferentes: uma conversa que
+        falhou foi tentada, uma não alcançada não foi. Somá-las esconderia onde a
+        execução parou.
+        """
+        return max(0, self.conversas_pedidas - len(self.resultados))
+
+    @property
+    def falhas_por_classe(self) -> dict[str, int]:
+        contagem: dict[str, int] = {}
+        for r in self.resultados:
+            if r.falha:
+                classe = str(r.falha.get("classe"))
+                contagem[classe] = contagem.get(classe, 0) + 1
+        return contagem
+
+    @property
+    def aprovados(self) -> int:
+        return sum(1 for r in self.resultados if r.passou)
+
+    @property
+    def taxa_de_acerto(self) -> float | None:
+        """Sobre as **completadas**, não sobre as pedidas.
+
+        E devolve `None` quando nenhuma completou, em vez de 0,0: zero acertos em zero
+        conversas é indefinido, e imprimir "0%" convidaria alguém a ler uma execução que
+        não rodou como uma execução que falhou tudo.
+        """
+        base = self.completadas
+        return None if base == 0 else self.aprovados / base
+
+    @property
+    def extracao_por_campo(self) -> dict[str, dict[str, int]]:
+        campos = {
+            "idade": ("esperado_idade", "obtido_idade"),
+            "veiculo_ano": ("esperado_veiculo_ano", "obtido_veiculo_ano"),
+        }
+        saida: dict[str, dict[str, int]] = {}
+        for nome, (esperado, obtido) in campos.items():
+            comparaveis = [
+                r.extracao for r in self.resultados
+                if getattr(r.extracao, esperado) is not None
+            ]
+            saida[nome] = {
+                "comparaveis": len(comparaveis),
+                "acertos": sum(
+                    1 for e in comparaveis if getattr(e, esperado) == getattr(e, obtido)
+                ),
+            }
+        ceps = [r.extracao for r in self.resultados if r.extracao.cep_correto is not None]
+        saida["cep"] = {
+            "comparaveis": len(ceps),
+            "acertos": sum(1 for e in ceps if e.cep_correto),
+        }
+        return saida
+
+    @property
+    def taxa_nao_entendi(self) -> float:
+        perguntas = sum(r.perguntas_do_agente for r in self.resultados)
+        if perguntas == 0:
+            return 0.0
+        return sum(r.nao_entendi for r in self.resultados) / perguntas
+
+    @property
+    def respondedor_reprovou(self) -> bool:
+        """O script não deu conta das perguntas do agente acima do limiar.
+
+        Quando isto é verdade, **a suíte reprova mesmo que o agente tenha ido bem** — e
+        a mensagem tem que dizer que o motivo é o harness, não o agente. Fragilidade
+        visível em vez de silenciosa: sem esta linha, um respondedor que parou de casar
+        produziria uma queda de desfechos que alguém debugaria no prompt por dois dias.
+        """
+        return self.taxa_nao_entendi > self.limiar_nao_entendi
+
+    @property
+    def aprovado(self) -> bool:
+        return (
+            self.completadas > 0
+            and self.falhadas == 0
+            and self.nao_alcancadas == 0
+            and not self.respondedor_reprovou
+            and self.aprovados == self.completadas
+        )
+
+    # ─── serialização ────────────────────────────────────────────────────────
+
+    def para_dict(self) -> dict[str, Any]:
+        dados = asdict(self)
+        dados["resumo"] = {
+            "conversas_pedidas": self.conversas_pedidas,
+            "completadas": self.completadas,
+            "falhadas": self.falhadas,
+            "nao_alcancadas": self.nao_alcancadas,
+            "aprovados": self.aprovados,
+            "taxa_de_acerto": self.taxa_de_acerto,
+            "falhas_por_classe": self.falhas_por_classe,
+            "extracao_por_campo": self.extracao_por_campo,
+            "taxa_nao_entendi": self.taxa_nao_entendi,
+            "respondedor_reprovou": self.respondedor_reprovou,
+            "aprovado": self.aprovado,
+        }
+        return dados
+
+    def escrever(self, destino: Path) -> Path:
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_text(
+            json.dumps(self.para_dict(), indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return destino
+
+
+def de_dict(dados: dict[str, Any]) -> Relatorio:
+    """Parser. O `resumo` é **derivado** e por isso descartado na leitura.
+
+    Reconstruí-lo das linhas em vez de confiar no que está escrito é o que impede um
+    relatório editado à mão de afirmar 100% com 12 linhas vermelhas embaixo.
+    """
+    dados = dict(dados)
+    dados.pop("resumo", None)
+    resultados = [
+        ResultadoConversa(
+            **{
+                **linha,
+                "extracao": ExtracaoConferida(**(linha.get("extracao") or {})),
+            }
+        )
+        for linha in dados.pop("resultados", [])
+    ]
+    return Relatorio(resultados=resultados, **dados)
+
+
+def de_json(texto: str) -> Relatorio:
+    return de_dict(json.loads(texto))
+
+
+def ler(origem: Path) -> Relatorio:
+    return de_json(origem.read_text(encoding="utf-8"))
+
+
+def falha_para_dict(falha: Falha) -> dict[str, Any]:
+    """`Falha` → linha do relatório, mascarada. Ver o docstring do módulo."""
+    return {
+        "classe": str(falha.classe),
+        "mensagem": _limpo(falha.mensagem),
+        "message_index": falha.message_index,
+        "fatal": falha.fatal,
+    }
+
+
+# ─── render de texto ─────────────────────────────────────────────────────────
+
+
+def render(rel: Relatorio) -> str:
+    """A versão para o terminal. Curta, e obrigada a dizer o denominador."""
+    linhas = [
+        f"replay {rel.modo} · modelo {rel.modelo} · seed {rel.seed}",
+        f"conversas ....... {rel.completadas}/{rel.conversas_pedidas} completadas"
+        f"  ({rel.falhadas} falharam, {rel.nao_alcancadas} não alcançadas)",
+    ]
+    if rel.interrompido_por:
+        linhas.append(f"INTERROMPIDO .... {rel.interrompido_por}")
+    for classe, n in sorted(rel.falhas_por_classe.items()):
+        linhas.append(f"  falha {classe:<16} {n}")
+
+    taxa = rel.taxa_de_acerto
+    linhas.append(
+        "acerto .......... "
+        + ("n/a (nenhuma conversa completou)" if taxa is None else f"{taxa:.0%}"
+           f"  ({rel.aprovados}/{rel.completadas})")
+    )
+    if rel.modo == "extracao":
+        for campo, n in rel.extracao_por_campo.items():
+            base = n["comparaveis"]
+            pct = "n/a" if base == 0 else f"{n['acertos'] / base:.0%}"
+            linhas.append(f"  {campo:<14} {n['acertos']:>4}/{base:<4} {pct}")
+
+    linhas.append(
+        f"não entendi ..... {rel.taxa_nao_entendi:.0%}"
+        f" (limiar {rel.limiar_nao_entendi:.0%})"
+        + ("  ⇒ REPROVA: o harness, não o agente" if rel.respondedor_reprovou else "")
+    )
+    if rel.segundos_de_espera:
+        linhas.append(f"esperando ....... {rel.segundos_de_espera:.0f}s em backoff")
+    linhas.append(f"veredito ........ {'APROVADO' if rel.aprovado else 'REPROVADO'}")
+    return "\n".join(linhas)
+
+
+def estimativa_de_parede(inferencias: int) -> str:
+    segundos = inferencias * SEGUNDOS_POR_INFERENCIA
+    if segundos < 90:
+        return f"~{segundos:.0f}s"
+    if segundos < 5400:
+        return f"~{segundos / 60:.0f} min"
+    return f"~{segundos / 3600:.1f} h"
+
+
+__all__ = [
+    "ClasseDeFalha",
+    "ExtracaoConferida",
+    "LIMIAR_NAO_ENTENDI",
+    "Relatorio",
+    "ResultadoConversa",
+    "de_dict",
+    "de_json",
+    "estimativa_de_parede",
+    "falha_para_dict",
+    "ler",
+    "render",
+]

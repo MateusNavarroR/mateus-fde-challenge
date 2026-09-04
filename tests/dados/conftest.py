@@ -36,3 +36,21 @@ def silver(bronze_linhas):
     from qa.dataset.silver import construir
 
     return construir(bronze_linhas, ano_corrente=2026)
+
+
+@pytest.fixture(scope="session")
+def casos_replay(bronze_linhas):
+    """Os casos de replay do parquet, com o ano fixado em 2026.
+
+    Mesmo motivo do fixture `silver`: as medições de `docs/API-COTACAO.md` §8.1 foram
+    tiradas com esse ano corrente, e a fronteira do veículo é `ano_corrente - 20`. O
+    código continua derivando a fronteira; o teste é que congela o relógio contra o qual
+    a medição existe.
+
+    Os casos carregam as falas **cruas** (o replay lê o bronze, não o silver — ver
+    `qa/replay/casos.py`). Eles vivem em memória durante a sessão de teste e nada daqui
+    é escrito em disco.
+    """
+    from qa.replay.casos import montar
+
+    return montar(bronze_linhas, ano_corrente=2026)

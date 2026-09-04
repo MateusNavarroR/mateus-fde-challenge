@@ -19,6 +19,16 @@ type Config = {
   status?: Record<string, unknown>;
   usage?: Record<string, unknown>;
   patchErro?: number;
+  /**
+   * O estado de autenticação que `/api/auth/estado` devolve.
+   *
+   * Ausente = instalação ABERTA, que é o caminho padrão e o que quase todo teste
+   * desta suíte pressupõe. Presente, o fake passa a exigir o login de verdade:
+   * `/api/auth/login` só aceita as credenciais aqui declaradas, e a sessão vira
+   * um booleano do lado do fake — que é exatamente o papel do cookie `httpOnly`
+   * no navegador, invisível para o JavaScript da página.
+   */
+  auth?: { usuario: string; senha: string; autenticado?: boolean };
   tudoVazio?: boolean;
   indisponivel?: boolean;
   status401?: boolean;
@@ -74,6 +84,8 @@ export function montarBackendFalso(config: Config = {}) {
       }
     : (config.conversas ?? { items: [], next_cursor: null });
 
+  let autenticado = config.auth?.autenticado ?? false;
+
   const responder = (corpo: unknown, status = 200): Response =>
     new Response(JSON.stringify(corpo), {
       status,
@@ -89,6 +101,31 @@ export function montarBackendFalso(config: Config = {}) {
     chamadasPorUrl.push(url);
 
     if (config.indisponivel) throw new TypeError("failed to fetch");
+
+    // A autenticação responde ANTES do 401 global: um teste que simula `/api/*`
+    // recusado ainda precisa que `/api/auth/estado` diga a verdade sobre a sessão.
+    if (url.startsWith("/api/auth/estado")) {
+      return responder({ exigido: config.auth !== undefined, autenticado: config.auth === undefined || autenticado });
+    }
+    if (url.startsWith("/api/auth/login")) {
+      const corpo = JSON.parse(String(init?.body ?? "{}")) as { usuario?: string; senha?: string };
+      if (
+        config.auth !== undefined &&
+        corpo.usuario === config.auth.usuario &&
+        corpo.senha === config.auth.senha
+      ) {
+        autenticado = true;
+        return new Response(null, { status: 204 });
+      }
+      // A mesma recusa do backend, palavra por palavra: nome errado e senha errada
+      // não se distinguem.
+      return responder({ detail: "usuário ou senha inválidos" }, 401);
+    }
+    if (url.startsWith("/api/auth/logout")) {
+      autenticado = false;
+      return new Response(null, { status: 204 });
+    }
+
     if (config.status401) return responder({ error: "nao_autorizado", message: "" }, 401);
 
     if (init?.method === "PATCH") {
@@ -201,6 +238,9 @@ export function montarBackendFalso(config: Config = {}) {
       await act(async () => {
         await new Promise((r) => setTimeout(r, 0));
       });
+    },
+    get autenticado() {
+      return autenticado;
     },
     fechar(): void {
       WebSocketFalso.ultima?.close();
