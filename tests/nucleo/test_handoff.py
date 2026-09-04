@@ -251,3 +251,201 @@ def test_o_relogio_de_demora_desliga_em_encaminhado():
 
     asyncio.run(rodar())
     assert textos.AVISO_SEM_COTACAO not in saidas
+
+
+# ─── o gatilho tem que ser alcançável PELO CAMINHO DE PRODUÇÃO ───────────────
+#
+# Este bloco existe por causa de um bug real: `MIDIA_SEM_TEXTO` passava em
+# `test_um_teste_por_gatilho` e era **inalcançável em produção**. O teste chamava
+# `casa()` com um `Contexto` montado à mão; `_encaminhar` montava o dele sem
+# `tipo_da_mensagem` nem `midias_apos_pedido`, e o gatilho nunca podia disparar.
+#
+# A unidade estava provada. A fiação, não. É a mesma cegueira que deixou passar o
+# `external_ref` fixo e o stub no lugar do agente — nenhum apareceu em teste, todos
+# apareceram usando.
+
+
+def test_todo_campo_que_um_gatilho_le_e_preenchido_por_encaminhar():
+    """O teste estrutural que fecha a CLASSE do bug, não só o caso.
+
+    Ele lê o código: os campos de `Contexto` que `casa()` consulta têm que ser os
+    mesmos que `_encaminhar` atribui. Acrescentar um campo novo a um gatilho e
+    esquecer de ligá-lo no turno reprova aqui, mesmo com o teste de unidade verde.
+    """
+    import ast
+    import inspect
+
+    from app.agent import turno
+
+    lidos = {
+        n.attr
+        for n in ast.walk(ast.parse(inspect.getsource(gatilhos.casa)))
+        if isinstance(n, ast.Attribute)
+        and isinstance(n.value, ast.Name)
+        and n.value.id == "c"
+    }
+
+    chamada = next(
+        n
+        for n in ast.walk(ast.parse(inspect.getsource(turno._encaminhar)))
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "Contexto"
+    )
+    preenchidos = {kw.arg for kw in chamada.keywords}
+
+    assert lidos <= preenchidos, (
+        f"gatilho(s) inalcançáveis em produção: `casa()` lê {sorted(lidos - preenchidos)}, "
+        "e `_encaminhar` não preenche. O teste de unidade continua verde e o gatilho "
+        "nunca dispara."
+    )
+
+
+async def test_a_segunda_midia_encaminha_de_verdade(sessao, conversa, monkeypatch):
+    """O caso concreto, ponta a ponta: duas mídias entram pelo canal e sai um handoff.
+
+    A primeira mídia **não** encaminha — o agente pede texto uma vez. É a segunda,
+    a insistência, que custa mais responder errado do que passar adiante.
+    """
+    from app.agent import runner, turno
+
+    class AgenteMudo:
+        def run(self, _texto):
+            return type("R", (), {"content": "Consegue me mandar por texto?"})()
+
+    monkeypatch.setattr(turno, "construir_agente", lambda _ctx: AgenteMudo())
+
+    class Canal:
+        name = "web"
+
+        async def send(self, *a, **kw):
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+    def pendentes() -> list[str]:
+        return [
+            h.trigger
+            for h in sessao.query(Handoff).filter_by(conversation_id=conversa.id).all()
+        ]
+
+    await runner.processar_turno_web(conversa.id, "audio-1.ogg", Canal(), tipo="audio")
+    sessao.commit()
+    assert pendentes() == [], "a primeira mídia não encaminha: o agente pede texto"
+
+    await runner.processar_turno_web(conversa.id, "audio-2.ogg", Canal(), tipo="audio")
+    sessao.commit()
+    assert HandoffTrigger.MIDIA_SEM_TEXTO.value in pendentes()
+
+
+async def test_texto_depois_de_uma_midia_nao_encaminha(sessao, conversa, monkeypatch):
+    """O negativo que dá sentido ao positivo.
+
+    Sem ele, um `casa()` que ignorasse `tipo_da_mensagem` passaria no teste acima —
+    e todo lead que mandasse um áudio e depois escrevesse cairia na fila.
+    """
+    from app.agent import runner, turno
+
+    class AgenteMudo:
+        def run(self, _texto):
+            return type("R", (), {"content": "Perfeito, obrigado."})()
+
+    monkeypatch.setattr(turno, "construir_agente", lambda _ctx: AgenteMudo())
+
+    class Canal:
+        name = "web"
+
+        async def send(self, *a, **kw):
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+    await runner.processar_turno_web(conversa.id, "foto.jpg", Canal(), tipo="image")
+    await runner.processar_turno_web(conversa.id, "tenho 30 anos", Canal())
+    sessao.commit()
+
+    assert sessao.query(Handoff).filter_by(conversation_id=conversa.id).count() == 0
+
+
+async def test_a_segunda_violacao_de_guardrail_encaminha(sessao, conversa, monkeypatch):
+    """O outro gatilho que o teste estrutural revelou inalcançável.
+
+    O modelo escreve um valor monetário — o que só o renderizador pode fazer. A
+    primeira vez a mensagem é descartada e o descarte fica gravado; a segunda
+    encaminha, porque um modelo que escorrega duas vezes na mesma conversa não é
+    ruído, é padrão.
+    """
+    from app.agent import runner, turno
+    from app.persistence.models import Message
+
+    class AgenteQueEscorrega:
+        def run(self, _texto):
+            return type("R", (), {"content": "Fica R$ 289,90 por mês."})()
+
+    monkeypatch.setattr(turno, "construir_agente", lambda _ctx: AgenteQueEscorrega())
+
+    class Canal:
+        name = "web"
+
+        async def send(self, *a, **kw):
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+    await runner.processar_turno_web(conversa.id, "quanto fica?", Canal())
+    sessao.commit()
+    descartadas = sessao.query(Message).filter_by(
+        conversation_id=conversa.id, status="discarded"
+    ).all()
+    assert len(descartadas) == 1, "o descarte tem que deixar rastro, não virar log"
+    # O conteúdo barrado é a evidência: sem ele o operador não sabe o que o modelo
+    # tentou dizer, e o descarte vira um número sem história.
+    assert "289,90" in descartadas[0].conteudo
+    assert sessao.query(Handoff).filter_by(conversation_id=conversa.id).count() == 0
+
+    await runner.processar_turno_web(conversa.id, "e então?", Canal())
+    sessao.commit()
+    assert [
+        h.trigger for h in sessao.query(Handoff).filter_by(conversation_id=conversa.id)
+    ] == [HandoffTrigger.GUARDRAIL.value]
+
+
+# ─── a fronteira entre o que o modelo decide e o que a regra conta ───────────
+
+
+def test_o_modelo_so_pode_pedir_os_dois_gatilhos_de_julgamento(sessao, conversa):
+    """Medido no navegador: com `midia_sem_texto` no menu da tool, o modelo
+    encaminhou na PRIMEIRA foto — contra a política de tentar uma vez.
+
+    A causa não é o prompt, é o menu. Um gatilho de contagem oferecido ao modelo é
+    escolhido pela impressão do turno isolado, que é exatamente o que a contagem
+    existe para não seguir. Por isso a recusa é mecanismo, como o guardrail.
+    """
+    from app.agent.tools import ContextoDoTurno, make_escalate_to_human
+
+    ctx = ContextoDoTurno(sessao=sessao, conversation_id=conversa.id)
+    escalar = make_escalate_to_human(ctx)
+
+    for aceito in ("assunto_sensivel", "lead_pediu_atendente"):
+        resposta = escalar(trigger=aceito, reason="motivo")
+        assert "encaminhado" in resposta
+    assert len(ctx.handoffs) == 2
+
+    for recusado in ("midia_sem_texto", "objecao_fora_da_alcada", "extracao_falhou",
+                     "guardrail", "cotacao_indisponivel"):
+        resposta = escalar(trigger=recusado, reason="motivo")
+        assert "não é seu para decidir" in resposta, recusado
+    assert len(ctx.handoffs) == 2, "gatilho de contagem não pode entrar por write-back"
+
+
+def test_a_fronteira_cobre_todos_os_sete_gatilhos():
+    """Se alguém acrescentar um gatilho ao enum, ele cai de um lado ou do outro — não
+    fica num limbo em que a tool aceita sem que ninguém tenha decidido."""
+    from app.agent.tools import _DO_MODELO
+
+    assert _DO_MODELO < {str(t) for t in HandoffTrigger}
+    contados = {str(t) for t in HandoffTrigger} - _DO_MODELO
+    assert len(contados) == 5

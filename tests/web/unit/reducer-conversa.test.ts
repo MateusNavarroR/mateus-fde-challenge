@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { estadoInicial, reduzir, type Acao, type Estado } from "../../../web/src/chat/useConversa";
+import type { Message } from "../../../web/src/api/tipos";
 import { fraseDoLead } from "../fixtures/pii";
 
 const msg = (index: number, autor: string, conteudo: string, extra = {}) =>
@@ -17,6 +18,18 @@ const msg = (index: number, autor: string, conteudo: string, extra = {}) =>
       ...extra,
     },
   }) as unknown as Acao;
+
+/** Uma `Message` de verdade — `msg()` devolve o EVENTO, não a mensagem. */
+const umaMensagem: Message = {
+  id: "m1",
+  index: 0,
+  autor: "lead",
+  tipo: "text",
+  conteudo: "oi",
+  status: "received",
+  quote_id: null,
+  criado_em: "2026-01-01T00:00:00Z",
+};
 
 const aplicar = (eventos: unknown[], de: Estado = estadoInicial()) =>
   eventos.reduce<Estado>((e, ev) => reduzir(e, ev as Acao), de);
@@ -154,4 +167,39 @@ describe("o guardrail visível", () => {
     const e = aplicar([msg(0, "lead", "meu seguro atual é R$ 300 por mês")]);
     expect(e.mensagens[0]!.suspeitaDeBug).toBe(false);
   });
+});
+
+it("a bolha otimista de um anexo nasce com o tipo da mídia, não como texto", () => {
+  // Sem isto o lead vê a própria foto aparecer como se tivesse escrito o nome do
+  // arquivo, e a bolha só se corrige quando o eco do servidor chega. O tipo é o que
+  // `MIDIA_SEM_TEXTO` lê — exibi-lo errado é exibir o estado errado da conversa.
+  const depois = reduzir(estadoInicial(), {
+    type: "envio-local",
+    idTemp: "tmp-1",
+    texto: "cnh.jpg",
+    tipo: "image",
+  });
+  expect(depois.mensagens.at(0)?.tipo).toBe("image");
+});
+
+it("carregar o histórico de uma conversa encaminhada já trava a entrada", () => {
+  // Medido no navegador: um F5 numa conversa `encaminhado` mostrava "conversa
+  // aberta" com o campo liberado, e o lead digitava no vazio — o backend para de
+  // responder em estado terminal, calado. A tela nascia em `novo` e só aprenderia o
+  // estado por um frame `state` do socket, que nessa conversa nunca chega.
+  const depois = reduzir(estadoInicial(), {
+    type: "historico",
+    messages: [umaMensagem],
+    state: "encaminhado",
+  });
+  expect(depois.state).toBe("encaminhado");
+  expect(depois.entradaBloqueada).toBe(true);
+});
+
+it("histórico SEM estado não inventa um — mantém o que a tela já sabia", () => {
+  // O negativo: um default para `novo` aqui reabriria a entrada de uma conversa já
+  // travada toda vez que o histórico recarregasse.
+  let e = reduzir(estadoInicial(), { type: "state", state: "encaminhado" });
+  e = reduzir(e, { type: "historico", messages: [umaMensagem] });
+  expect(e.entradaBloqueada).toBe(true);
 });

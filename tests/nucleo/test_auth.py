@@ -472,7 +472,11 @@ def test_as_rotas_escondidas_do_schema_sao_exatamente_as_declaradas():
         for m in getattr(r, "methods", set())
         if m in {"GET", "POST", "PUT", "PATCH", "DELETE"}
     }
-    esperadas = {("/", "GET"), *auth.ROTAS_FORA_DO_CONTRATO}
+    # `/{caminho:path}` é o catch-all que serve o SPA pela mesma origem da API. Ele
+    # substitui o antigo `GET /` e não entra no OpenAPI porque não é superfície de
+    # API: é o `index.html` do frontend, com `/api/*`, `/docs`, `/redoc` e
+    # `/openapi.json` explicitamente barrados dentro dele.
+    esperadas = {("/{caminho:path}", "GET"), *auth.ROTAS_FORA_DO_CONTRATO}
     assert escondidas == esperadas, (
         "rota fora do OpenAPI congelado sem decisão escrita — acrescente-a ao "
         "contrato ou a esta lista, com o motivo"

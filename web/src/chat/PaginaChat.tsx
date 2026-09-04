@@ -1,6 +1,11 @@
 import { Casca } from "../ui/Casca";
 import { useEffect, useRef, useState } from "react";
-import type { ConversationDetail, Message } from "../api/tipos";
+import type {
+  ConversationDetail,
+  EstadoConversa,
+  Message,
+  TipoMensagem,
+} from "../api/tipos";
 import { Bolha } from "./Bolha";
 import { BlocoCotacao } from "./BlocoCotacao";
 import { Digitando } from "./Digitando";
@@ -28,6 +33,7 @@ const ESTADO_LEGIVEL: Record<string, string> = {
 export function PaginaChat({ conversationId }: { conversationId?: string }) {
   const [id, setId] = useState<string | null>(conversationId ?? null);
   const [historico, setHistorico] = useState<Message[] | null>(null);
+  const [estadoInicial, setEstadoInicial] = useState<EstadoConversa | null>(null);
   const [falhaAoAbrir, setFalhaAoAbrir] = useState(false);
   const [rascunho, setRascunho] = useState("");
   const fim = useRef<HTMLDivElement | null>(null);
@@ -41,6 +47,7 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
       .then(({ id: aberta, detalhe }: { id: string; detalhe: ConversationDetail | null }) => {
         if (!vivo) return;
         setHistorico(detalhe?.messages ?? null);
+        setEstadoInicial(detalhe?.state ?? null);
         setId(aberta);
       })
       .catch(() => {
@@ -51,7 +58,8 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
     };
   }, [conversationId]);
 
-  const { estado, enviar } = useConversa(id, historico);
+  const anexo = useRef<HTMLInputElement>(null);
+  const { estado, enviar } = useConversa(id, historico, estadoInicial);
 
   useEffect(() => {
     fim.current?.scrollIntoView({ block: "end" });
@@ -64,10 +72,31 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
     setRascunho("");
   };
 
+  /**
+   * Anexo: registra que **chegou mídia**, sem subir o arquivo.
+   *
+   * O canal aqui é uma moldura de conversa, não um WhatsApp: guardar os bytes
+   * criaria uma superfície de dado sensível (uma foto de CNH, um áudio com o CPF
+   * falado) que este projeto declara não ter. O que a conversa precisa saber é que
+   * o lead mandou mídia em vez de texto — e é isso, e só isso, que trafega.
+   *
+   * É o que torna `MIDIA_SEM_TEXTO` alcançável de verdade: a primeira mídia faz o
+   * agente pedir texto, a segunda encaminha.
+   */
+  const anexar = (arquivo: File) => {
+    const tipo: TipoMensagem = arquivo.type.startsWith("image/")
+      ? "image"
+      : arquivo.type.startsWith("audio/")
+        ? "audio"
+        : "document";
+    enviar(arquivo.name, tipo);
+  };
+
   const trocarDeConversa = () => {
     void reiniciarSessao()
       .then((nova) => {
         setHistorico(null);
+        setEstadoInicial(null);
         setId(nova);
       })
       .catch(() => setFalhaAoAbrir(true));
@@ -164,6 +193,34 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
           <label className="so-leitor" htmlFor="campo-mensagem">
             Sua mensagem
           </label>
+          <input
+            ref={anexo}
+            type="file"
+            // `hidden`, e não a classe de leitor de tela: `so-leitor` esconde aos
+            // olhos e MANTÉM na árvore de acessibilidade, então quem navega por
+            // leitor encontrava dois controles ("Choose File" e "Anexar mídia")
+            // para a mesma ação. O botão visível é o único controle; este input é
+            // só o mecanismo, e `.click()` funciona em input escondido.
+            hidden
+            id="campo-anexo"
+            onChange={(e) => {
+              const arquivo = e.target.files?.[0];
+              if (arquivo) anexar(arquivo);
+              // Zera para que anexar o MESMO arquivo duas vezes seguidas continue
+              // disparando `change` — é justamente a insistência que o gatilho lê.
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            className="compositor__anexo"
+            disabled={estado.entradaBloqueada}
+            onClick={() => anexo.current?.click()}
+            aria-label="Anexar mídia"
+            title="Anexar mídia"
+          >
+            +
+          </button>
           <textarea
             id="campo-mensagem"
             className="compositor__campo"

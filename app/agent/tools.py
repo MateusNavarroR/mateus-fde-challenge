@@ -98,6 +98,10 @@ class ContextoDoTurno:
     #: Write-back: o backend lê daqui depois do turno.
     handoffs: list = field(default_factory=list)
 
+    #: `text` | `image` | `audio` | `document`. Vem do canal, nunca de argumento de
+    #: tool — é o que `MIDIA_SEM_TEXTO` lê, e o modelo não pode escolhê-lo.
+    tipo_da_mensagem: str = "text"
+
     #: `(texto, quote_id) -> None`, **síncrono**. Quem monta o contexto decide como a
     #: mensagem chega ao canal: o console imprime, o web empurra pelo socket. A tool
     #: é síncrona (é o Agno que a chama), então marshalar para o laço de eventos é
@@ -111,11 +115,6 @@ class ContextoDoTurno:
 
     #: A tool já falou com o lead neste turno ⇒ o texto do modelo é descartado.
     ja_enviou: bool = False
-
-    #: Contadores que os gatilhos de handoff leem. Por CAMPO, não global: falhar uma
-    #: vez no CEP e uma na idade não é "falhou duas vezes".
-    tentativas_extracao: dict[str, int] = field(default_factory=dict)
-    objecoes_de_preco: int = 0
 
     #: Contadores que os gatilhos de handoff leem. Por CAMPO, não global: falhar uma
     #: vez no CEP e uma na idade não é "falhou duas vezes".
@@ -345,6 +344,22 @@ def _campo_do_erro(e: Exception) -> str:
 
 
 # ─── escalate_to_human: write-back ───────────────────────────────────────────
+#
+# **Os dois gatilhos que são do modelo, e só esses.**
+#
+# A linha é: o modelo decide onde ele enxerga o que a regra não enxerga. Em
+# `assunto_sensivel` e `lead_pediu_atendente` a regra é um regex, e regex erra por
+# recall — "não aguento mais falar com robô" não casa com nenhum termo da lista, e o
+# modelo entende. Aí ele agrega.
+#
+# Nos outros cinco a regra CONTA (mídias, objeções, tentativas de extração, violações
+# de guardrail, tentativas de cotação). O modelo não tem nenhuma informação que a
+# contagem não tenha — só a impressão do turno isolado, que é exatamente o que a
+# política de "tentar uma vez" existe para não seguir.
+_DO_MODELO = frozenset({
+    "assunto_sensivel",
+    "lead_pediu_atendente",
+})
 
 
 def make_escalate_to_human(ctx: ContextoDoTurno) -> Callable[..., str]:
@@ -363,8 +378,7 @@ def make_escalate_to_human(ctx: ContextoDoTurno) -> Callable[..., str]:
         jurídico, saúde, reclamação formal), ou quando você não conseguir ajudar.
 
         Args:
-            trigger: um de `assunto_sensivel`, `lead_pediu_atendente`,
-                `objecao_fora_da_alcada`, `midia_sem_texto`, `extracao_falhou`.
+            trigger: `assunto_sensivel` ou `lead_pediu_atendente`.
             reason: por que, em uma frase, para o atendente.
             summary: resumo curto da conversa até aqui.
 
@@ -378,7 +392,20 @@ def make_escalate_to_human(ctx: ContextoDoTurno) -> Callable[..., str]:
             t = HandoffTrigger(trigger)
         except ValueError:
             return (f"trigger inválido: {trigger!r}. Use um de "
-                    f"{', '.join(str(x) for x in HandoffTrigger)}.")
+                    f"{', '.join(str(x) for x in _DO_MODELO)}.")
+
+        if t not in _DO_MODELO:
+            # A recusa é MECANISMO, não instrução no prompt — a mesma escolha do
+            # guardrail. Numa medição real, o modelo encaminhou na PRIMEIRA foto
+            # com `midia_sem_texto`, contra a política de tentar uma vez: quando um
+            # gatilho de contagem está no menu, ele é escolhido pelo caso isolado.
+            return (
+                f"{trigger} não é seu para decidir: ele é contado pelo sistema a "
+                "partir do que está gravado na conversa, e a política é tentar uma "
+                "vez antes. Responda o lead normalmente — peça o dado por texto, "
+                "ou trate a objeção. Se a condição se repetir, o encaminhamento "
+                "acontece sozinho."
+            )
 
         ctx.handoffs.append({
             "trigger": t, "reason": reason or "decisão do agente",

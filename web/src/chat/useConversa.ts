@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { gravarCru, lerCru } from "./textoCruLocal";
 import { conectarChat, type StatusConexao } from "../api/ws";
-import type { EstadoConversa, EventoChat, Message } from "../api/tipos";
+import type { EstadoConversa, EventoChat, Message, TipoMensagem } from "../api/tipos";
 
 export type Mensagem = Message & {
   /** Bolha otimista: existe na tela e ainda não no banco. */
@@ -46,9 +46,10 @@ export type Estado = {
 
 export type Acao =
   | EventoChat
-  | { type: "envio-local"; idTemp: string; texto: string }
+  | { type: "envio-local"; idTemp: string; texto: string; tipo?: TipoMensagem }
   | { type: "historico"; messages: Message[]; state?: EstadoConversa }
-  | { type: "conexao"; status: StatusConexao };
+  | { type: "conexao"; status: StatusConexao }
+  | { type: "trocou-de-conversa"; conversationId: string };
 
 /**
  * O mesmo regex de dinheiro do guardrail do Núcleo, transcrito. Um marcador que
@@ -153,6 +154,13 @@ export function reduzir(estado: Estado, acao: Acao): Estado {
       return fechar(porId, pendentes, { ...estado, cruDoLead });
     }
 
+    case "trocou-de-conversa":
+      // Zera TUDO, e é o ponto: sem isto, "Nova conversa" depois de um handoff
+      // herdava `entradaBloqueada: true` da conversa anterior e entregava um
+      // compositor morto numa conversa que acabou de nascer. As bolhas antigas
+      // também ficariam, o que é pior: seriam de outra conversa.
+      return estadoInicial(lerCru(acao.conversationId));
+
     case "historico": {
       const porId = new Map(estado.porId);
       for (const m of acao.messages) porId.set(m.id, enriquecer(m, false, estado.cruDoLead));
@@ -169,7 +177,7 @@ export function reduzir(estado: Estado, acao: Acao): Estado {
         // Índice provisório: as pendentes são posicionadas no fim, não por ele.
         index: Number.MAX_SAFE_INTEGER,
         autor: "lead",
-        tipo: "text",
+        tipo: acao.tipo ?? "text",
         conteudo: acao.texto,
         status: "pending",
         quote_id: null,
@@ -217,20 +225,45 @@ export function novoIdTemporario(): string {
 }
 
 /** Liga o reducer ao socket. O componente não conhece o protocolo. */
-export function useConversa(conversationId: string | null, historico?: Message[] | null) {
+export function useConversa(
+  conversationId: string | null,
+  historico?: Message[] | null,
+  /**
+   * O estado que veio COM o histórico.
+   *
+   * Sem ele a tela nasce em `novo` e só descobre o estado real no primeiro frame
+   * `state` do socket — que numa conversa já encaminhada nunca chega, porque o
+   * backend para de responder. Medido no navegador: um F5 numa conversa
+   * `encaminhado` mostrava "conversa aberta", com o campo liberado, e o lead
+   * digitava no vazio. O componente de travamento existia e estava certo; ninguém
+   * nunca lhe contava o estado.
+   */
+  estadoDoHistorico?: EstadoConversa | null,
+) {
   // O texto cru do lead é lido do `sessionStorage` na montagem: um F5 no meio da
   // conversa mantém o que ele digitou, e fechar a aba o descarta.
   const [estado, despachar] = useReducer(reduzir, conversationId, (id) =>
     estadoInicial(id !== null ? lerCru(id) : {}),
   );
-  const enviarRef = useRef<(texto: string) => boolean>(() => false);
+  const enviarRef = useRef<(texto: string, tipo: TipoMensagem) => boolean>(() => false);
   const ultimoIndexRef = useRef(-1);
   ultimoIndexRef.current = estado.ultimoIndex;
 
+  const anterior = useRef(conversationId);
+  useEffect(() => {
+    if (conversationId === null || conversationId === anterior.current) return;
+    anterior.current = conversationId;
+    despachar({ type: "trocou-de-conversa", conversationId });
+  }, [conversationId]);
+
   useEffect(() => {
     if (!historico || historico.length === 0) return;
-    despachar({ type: "historico", messages: historico });
-  }, [historico]);
+    despachar({
+      type: "historico",
+      messages: historico,
+      ...(estadoDoHistorico ? { state: estadoDoHistorico } : {}),
+    });
+  }, [historico, estadoDoHistorico]);
 
   // Persiste o cru do lead na sessão do NAVEGADOR. Nada disto é enviado, e o
   // servidor continua sem nunca ter a versão crua persistida.
@@ -246,17 +279,18 @@ export function useConversa(conversationId: string | null, historico?: Message[]
       aoEvento: (evento) => despachar(evento),
       aoStatus: (status) => despachar({ type: "conexao", status }),
     });
-    enviarRef.current = (texto: string) => sessao.enviar({ type: "message", text: texto });
+    enviarRef.current = (texto: string, tipo: TipoMensagem) =>
+      sessao.enviar({ type: "message", text: texto, tipo });
     return () => {
       enviarRef.current = () => false;
       sessao.fechar();
     };
   }, [conversationId]);
 
-  const enviar = useCallback((texto: string) => {
+  const enviar = useCallback((texto: string, tipo: TipoMensagem = "text") => {
     const idTemp = novoIdTemporario();
-    despachar({ type: "envio-local", idTemp, texto });
-    enviarRef.current(texto);
+    despachar({ type: "envio-local", idTemp, texto, tipo });
+    enviarRef.current(texto, tipo);
     return idTemp;
   }, []);
 

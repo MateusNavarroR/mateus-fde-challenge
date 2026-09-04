@@ -30,7 +30,11 @@ log = logging.getLogger("autoseguro.turno")
 
 
 async def responder(
-    conversation_id: str, texto: str, adaptador, chegada_do_lead: float | None = None
+    conversation_id: str,
+    texto: str,
+    adaptador,
+    chegada_do_lead: float | None = None,
+    tipo: str = "text",
 ) -> None:
     laco = asyncio.get_running_loop()
     fabrica = sessao_factory()
@@ -79,12 +83,6 @@ async def responder(
 
         conv = repo.obter_conversa(s, conversation_id)
         if conv is not None and conv.state == "encaminhado":
-            # `encaminhado` é terminal: o agente parou de responder. A mensagem do
-            # lead fica persistida — ela é do operador, não nossa para responder.
-            return
-
-        conv = repo.obter_conversa(s, conversation_id)
-        if conv is not None and conv.state == "encaminhado":
             # `encaminhado` é TERMINAL: o agente parou de responder. A mensagem do
             # lead fica persistida — ela é do operador, não nossa para responder.
             return
@@ -95,6 +93,7 @@ async def responder(
             texto_do_lead=texto,
             enviar=enviar,
             chegada_do_lead=chegada_do_lead or time.monotonic(),
+            tipo_da_mensagem=tipo,
         )
         agente = construir_agente(ctx)
 
@@ -123,64 +122,16 @@ async def responder(
         try:
             await enviar_async(saida, autor="agente")
         except GuardrailViolado as e:
-            # Violação não é corrigida pelo modelo — isso vira laço. A mensagem é
-            # descartada e a violação conta.
+            # Violação não é corrigida pelo modelo — pedir de novo vira laço. A
+            # mensagem é descartada, o descarte é GRAVADO (é a evidência que o
+            # operador lê) e a violação conta para o gatilho.
             log.warning("guardrail: %s", e.motivo)
-
-
-async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) -> bool:
-    """Avalia os sete gatilhos e, se algum casar, encaminha.
-
-    As duas origens convergem aqui: o que o **modelo** pediu por `escalate_to_human`
-    (write-back em `ctx.handoffs`) e o que a **regra** detectou no turno. Elas
-    produzem o mesmo sinal, e `disparado_por` é a única diferença.
-    """
-    from app import textos
-    from app.contracts.conversa import HandoffTrigger
-    from app.handoff import gatilhos
-
-    perfil = repo.obter_conversa(s, conversation_id)
-    contexto = gatilhos.Contexto(
-        texto_do_lead=texto,
-        cotacao_falhou=any(
-            h.get("trigger") is HandoffTrigger.COTACAO_INDISPONIVEL for h in ctx.handoffs
-        ),
-        tentativas_extracao=ctx.tentativas_extracao,
-        objecoes_de_preco=ctx.objecoes_de_preco,
-    )
-    avaliado = gatilhos.avaliar(contexto)
-
-    # O pedido do modelo entra na disputa com a mesma precedência das regras.
-    do_modelo = next((h for h in ctx.handoffs if h.get("disparado_por") == "modelo"), None)
-
-    if avaliado is None and do_modelo is None:
-        return False
-
-    if avaliado is not None:
-        trigger, motivo, secundarios = avaliado
-        origem = "regra"
-        quote_id = next((h.get("quote_id") for h in ctx.handoffs if h.get("quote_id")), None)
-        resumo = None
-    else:
-        trigger, motivo = do_modelo["trigger"], do_modelo["reason"]
-        secundarios, origem = [], "modelo"
-        quote_id, resumo = do_modelo.get("quote_id"), do_modelo.get("summary")
-
-    gatilhos.registrar(
-        s, conversation_id, trigger, motivo,
-        secundarios=secundarios, summary=resumo, quote_id=quote_id,
-        disparado_por=origem,
-    )
-    s.commit()
-
-    # A mensagem de indisponibilidade já saiu de dentro da tool; repeti-la seria
-    # dizer duas vezes a mesma coisa.
-    if trigger is not HandoffTrigger.COTACAO_INDISPONIVEL:
-        await enviar_async(
-            textos.compor_handoff(str(trigger),
-                                  assunto=gatilhos.assunto_do_texto(texto))
-        )
-    return True
+            repo.registrar_descarte(s, conversation_id, saida)
+            s.commit()
+            # Reavalia AGORA: a contagem acabou de mudar, e esperar o próximo turno
+            # deixaria o lead sem resposta e sem handoff justamente no turno em que
+            # o agente falhou duas vezes.
+            await _encaminhar(s, conversation_id, ctx, texto, enviar_async)
 
 
 async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) -> bool:
@@ -197,11 +148,15 @@ async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) ->
 
     contexto = gatilhos.Contexto(
         texto_do_lead=texto,
+        tipo_da_mensagem=ctx.tipo_da_mensagem,
         cotacao_falhou=any(
             h.get("trigger") is HandoffTrigger.COTACAO_INDISPONIVEL for h in ctx.handoffs
         ),
         tentativas_extracao=ctx.tentativas_extracao,
         objecoes_de_preco=ctx.objecoes_de_preco,
+        violacoes_guardrail=repo.violacoes_de_guardrail(s, conversation_id),
+        # Do BANCO, incluindo a mensagem deste turno, que já foi gravada.
+        midias_apos_pedido=repo.midias_do_lead(s, conversation_id),
     )
     avaliado = gatilhos.avaliar(contexto)
     do_modelo = next((h for h in ctx.handoffs if h.get("disparado_por") == "modelo"), None)

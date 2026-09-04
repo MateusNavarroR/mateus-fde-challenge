@@ -188,6 +188,77 @@ def gravar_mensagem(
     return m
 
 
+def registrar_descarte(s: Session, conversation_id: str, conteudo: str) -> Message:
+    """Grava a mensagem que o guardrail **impediu de sair**, com status `discarded`.
+
+    Sem isto a violação virava uma linha de log e desaparecia: o transcript entregue
+    mostrava a conversa como se nada tivesse acontecido, e `discarded` era um valor
+    do enum que nada nunca escrevia — uma promessa do contrato sem caminho de código.
+
+    Ela é o insumo de `GUARDRAIL`, que encaminha na **segunda** violação. A primeira
+    é descartada e contada: um modelo que escorrega uma vez não justifica ocupar uma
+    pessoa; um que escorrega duas na mesma conversa, sim.
+
+    ⚠️ **Não passa pela verificação 1 de propósito.** As três verificações guardam o
+    que é **entregue**; esta linha existe justamente para registrar que o texto NÃO
+    foi entregue. Submetê-la ao guardrail seria pedir que o registro do descarte
+    fosse recusado pelo mesmo motivo que causou o descarte — e a evidência sumiria de
+    novo, agora por construção.
+    """
+    m = Message(
+        id=_id("msg"),
+        conversation_id=conversation_id,
+        index=proximo_index(s, conversation_id),
+        autor="agente",
+        tipo="text",
+        conteudo=mascarar(conteudo),
+        status="discarded",
+    )
+    s.add(m)
+    s.flush()
+    return m
+
+
+def violacoes_de_guardrail(s: Session, conversation_id: str) -> int:
+    """Quantas mensagens desta conversa o guardrail barrou. Derivado do banco, como
+    `midias_do_lead` e pelo mesmo motivo."""
+    return int(
+        s.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.status == "discarded",
+            )
+        ).scalar_one()
+    )
+
+
+def midias_do_lead(s: Session, conversation_id: str) -> int:
+    """Quantas mensagens de mídia o lead já mandou nesta conversa.
+
+    Deriva do **banco**, e não de um contador que o chamador passa, pelo mesmo motivo
+    das três verificações do guardrail: um contador de argumento é um número que o
+    chamador pode escolher, e o gatilho de handoff deixaria de ser auditável a partir
+    do transcript.
+
+    É o insumo de `MIDIA_SEM_TEXTO`. A regra dispara na **segunda** mídia porque a
+    resposta à primeira é sempre o pedido de texto — "insistiu depois de pedirmos"
+    é, operacionalmente, "mandou a segunda".
+    """
+    return int(
+        s.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.autor == "lead",
+                Message.tipo != "text",
+            )
+        ).scalar_one()
+    )
+
+
 def atualizar_status_mensagem(s: Session, message_id: str, status: str) -> None:
     s.get(Message, message_id).status = status
     s.flush()

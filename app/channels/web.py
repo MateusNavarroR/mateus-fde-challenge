@@ -55,11 +55,12 @@ class WebChannelAdapter:
 
     async def send(self, conversation_id: str, text: str, *, message_id: str,
                    quote_id: str | None = None, autor: str = "agente",
-                   index: int = 0, status: str = "sent") -> str:
+                   index: int = 0, status: str = "sent",
+                   tipo: str = "text") -> str:
         frame = {
             "type": "message",
             "message": {
-                "id": message_id, "index": index, "autor": autor, "tipo": "text",
+                "id": message_id, "index": index, "autor": autor, "tipo": tipo,
                 "conteudo": text, "status": status, "quote_id": quote_id,
             },
         }
@@ -84,6 +85,9 @@ class WebChannelAdapter:
         while True:
             yield json.loads(await self.ws.receive_text())
 
+
+#: Os tipos que o canal aceita — o espelho do enum `message_tipo` do banco.
+_TIPOS = frozenset({"text", "image", "audio", "document"})
 
 #: Conexões de administração, para o push de `/api/events`.
 _admin: set[WebSocket] = set()
@@ -141,9 +145,14 @@ def registrar_websockets(app: FastAPI) -> None:
                     continue
 
                 texto = msg.get("text", "")
+                # O canal decide o tipo, não o modelo. Um valor fora do enum viraria
+                # erro de banco três camadas adiante, então a validação é aqui.
+                tipo = msg.get("tipo", "text")
+                if tipo not in _TIPOS:
+                    tipo = "text"
                 from app.agent.runner import processar_turno_web
 
-                await processar_turno_web(conversation_id, texto, adaptador)
+                await processar_turno_web(conversation_id, texto, adaptador, tipo=tipo)
 
         except WebSocketDisconnect:
             return

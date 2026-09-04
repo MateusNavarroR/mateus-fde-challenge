@@ -283,4 +283,4 @@ export type EventoAdmin = { type: TipoEventoAdmin } & Record<string, unknown>;
 
 /** Cliente → servidor, na abertura do WS de chat (inclusive na primeira vez). */
 export type Hello = { type: "hello"; last_index: number };
-export type EnvioDoLead = { type: "message"; text: string };
+export type EnvioDoLead = { type: "message"; text: string; tipo?: TipoMensagem };

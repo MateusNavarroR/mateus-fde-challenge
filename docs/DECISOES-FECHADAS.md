@@ -182,6 +182,37 @@ Fila estimada: **~8 %** dos leads.
 **Não são gatilhos:** recusa 422 (§2), falha isolada da `/quote` que o retry resolveu,
 primeira objeção de preço, primeira mídia.
 
+### Quais gatilhos são do modelo, e quais são da regra
+
+**Só `assunto_sensivel` e `lead_pediu` podem vir do modelo.** A tool
+`escalate_to_human` recusa os outros cinco, com mensagem explicando por quê.
+
+A linha: o modelo decide onde ele enxerga o que a regra não enxerga. Nesses dois a
+regra é um regex, e regex erra por *recall* — "não aguento mais falar com robô" não
+casa com nenhum termo da lista, e o modelo entende. Nos outros cinco a regra **conta**
+(mídias, objeções, tentativas de extração, violações de guardrail, tentativas de
+cotação), e o modelo não tem nenhuma informação que a contagem não tenha: só a
+impressão do turno isolado, que é exatamente o que a política de "tentar uma vez"
+existe para não seguir.
+
+Isso não é preferência de estilo, é medição. Com `midia_sem_texto` no menu da tool, o
+agente encaminhou na **primeira** foto — contra esta mesma tabela. Um gatilho de
+contagem oferecido ao modelo é escolhido pelo caso isolado. Por isso a recusa é
+**mecanismo** (a tool devolve a recusa), e não uma frase no prompt: a mesma escolha do
+guardrail, e pelo mesmo motivo.
+
+### Mídia chega como nome de arquivo, e os bytes não são guardados
+
+O canal aceita anexo e registra `tipo` = `image` | `audio` | `document` na mensagem. O
+que trafega e o que fica gravado é o **nome do arquivo**; o conteúdo não sobe. Guardar
+os bytes criaria uma superfície de dado sensível que este projeto declara não ter — uma
+foto de CNH, um áudio com o CPF falado — e o que a conversa precisa saber é que chegou
+mídia em vez de texto.
+
+Consequência para o prompt: o agente é instruído a **nunca** dizer que viu ou ouviu a
+mídia. Medido: com `foto-do-carro.jpg`, ele respondeu *"recebi a foto, carro bonito"* —
+uma afirmação sobre algo que ele não tem.
+
 ### Precedência
 
 Lista fixa, na ordem da tabela, **primeiro que casa vence**. O handoff grava também os
