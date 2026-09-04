@@ -125,7 +125,9 @@ Paralelismo quebra o determinismo.
   message** — zera o cache silenciosamente. Medir `cache_read_tokens`.
 - **Não usar `cache_response` do Agno como replay**: o cache hit retorna antes da
   execução de tools, então o cliente da `/quote`, o retry e a persistência não rodam.
-- Pipeline do dataset em camadas: **bronze → silver (PII mascarada) → gold**.
+- Pipeline do dataset em **bronze → silver (PII mascarada)**. A camada **gold foi
+  cortada** por decisão de escopo: silver é o que responde por C5 e não depende dela;
+  o que gold faria cabe em memória no replay.
 - Ordenar conversas por **`message_index`**, nunca por `timestamp` (99,8% fora de ordem).
 
 ## Comportamento fechado (contrato: `docs/DECISOES-FECHADAS.md`)

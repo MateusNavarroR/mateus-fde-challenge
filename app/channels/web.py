@@ -1,0 +1,168 @@
+"""Adaptador `web` da porta `ChannelAdapter`, sobre WebSocket.
+
+**O problema que ele resolve:** a tool de cotação bloqueia até o job resolver — até
+~37 s no pior caso — e fala durante a espera. Aviso aos 6 s, reforço aos ~20 s, e o
+bloco da cotação quando resolve. São **três mensagens separadas que aparecem enquanto
+o turno não terminou**.
+
+O WebSocket não é request/response, então não há acoplamento a desfazer: quem chama
+`send()` no meio do turno é a tool, e o frame sai na hora.
+
+Ordem dos frames num turno degradado:
+
+    1. MessageEvent  autor=lead      eco com o id e o `index` canônicos
+    2. TypingEvent   ativo=true      ao adquirir o lock do turno
+    3. MessageEvent  autor=sistema   aviso, aos 6 s          ← da tool
+    4. MessageEvent  autor=sistema   reforço, aos ~20 s      ← da tool
+    5. MessageEvent  autor=sistema   bloco da cotação        ← da tool, com quote_id
+    6. MessageEvent  autor=agente    só quando há texto do modelo
+    7. StateEvent                    na mudança de estado
+    8. TypingEvent   ativo=false     ao liberar o lock
+
+O indicador de digitando **permanece** entre 2 e 8, inclusive enquanto 3, 4 e 5 chegam:
+é o que comunica "ainda estou trabalhando" e a diferença entre "travou" e "está
+tentando".
+
+**Reconexão é obrigatória** por causa da janela de 37 s. Ao conectar, o cliente manda
+`{"type":"hello","last_index":N}` e o servidor reenvia de `messages` tudo com
+`index > N` — do **banco**, não de um buffer em memória.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+from app.config import get_settings
+from app.persistence import repo
+from app.persistence.db import sessao_factory
+
+log = logging.getLogger("autoseguro.web")
+
+
+@dataclass
+class WebChannelAdapter:
+    """Implementa a porta. Um adaptador por conexão."""
+
+    ws: WebSocket
+    name: str = "web"
+    enviadas: list[dict] = field(default_factory=list)
+
+    async def send(self, conversation_id: str, text: str, *, message_id: str,
+                   quote_id: str | None = None, autor: str = "agente",
+                   index: int = 0, status: str = "sent") -> str:
+        frame = {
+            "type": "message",
+            "message": {
+                "id": message_id, "index": index, "autor": autor, "tipo": "text",
+                "conteudo": text, "status": status, "quote_id": quote_id,
+            },
+        }
+        self.enviadas.append(frame["message"])
+        await self.ws.send_text(json.dumps(frame, ensure_ascii=False))
+        return f"web:{message_id}"
+
+    async def typing(self, conversation_id: str, *, ativo: bool) -> None:
+        """Visível aqui — é nesta tela que ele existe. No console é no-op.
+
+        Falhar aqui nunca interrompe o turno: é sinalização, não conteúdo.
+        """
+        try:
+            await self.ws.send_text(json.dumps({"type": "typing", "ativo": ativo}))
+        except Exception:  # noqa: BLE001
+            log.debug("typing perdido; o turno segue")
+
+    async def estado(self, state: str) -> None:
+        await self.ws.send_text(json.dumps({"type": "state", "state": state}))
+
+    async def receive(self) -> AsyncIterator[dict]:  # pragma: no cover
+        while True:
+            yield json.loads(await self.ws.receive_text())
+
+
+#: Conexões de administração, para o push de `/api/events`.
+_admin: set[WebSocket] = set()
+
+
+async def publicar_evento(tipo: str, dados: dict) -> None:
+    """`handoff.created`, `handoff.updated`, `quote.attempt`.
+
+    É o que faz um handoff criado no backend aparecer na fila **sem recarregar a
+    página** — comportamento que a evidência de UI precisa provar.
+    """
+    frame = json.dumps({"type": tipo, "data": dados}, ensure_ascii=False, default=str)
+    mortos = []
+    for ws in _admin:
+        try:
+            await ws.send_text(frame)
+        except Exception:  # noqa: BLE001
+            mortos.append(ws)
+    for ws in mortos:
+        _admin.discard(ws)
+
+
+def registrar_websockets(app: FastAPI) -> None:
+    @app.websocket("/api/chat/{conversation_id}")
+    async def chat(ws: WebSocket, conversation_id: str) -> None:
+        await ws.accept()
+        adaptador = WebChannelAdapter(ws)
+        fabrica = sessao_factory()
+
+        with fabrica() as s:
+            if repo.obter_conversa(s, conversation_id) is None:
+                await ws.close(code=4404)
+                return
+
+        try:
+            while True:
+                bruto = await ws.receive_text()
+                msg = json.loads(bruto)
+
+                if msg.get("type") == "hello":
+                    # Replay a partir do BANCO: o que saiu durante uma queda de socket
+                    # numa janela de 37 s não pode se perder.
+                    ultimo = int(msg.get("last_index", -1))
+                    with fabrica() as s:
+                        for m in repo.mensagens(s, conversation_id):
+                            if m.index > ultimo:
+                                await adaptador.send(
+                                    conversation_id, m.conteudo, message_id=m.id,
+                                    quote_id=m.quote_id, autor=m.autor,
+                                    index=m.index, status=m.status,
+                                )
+                    continue
+
+                if msg.get("type") != "message":
+                    continue
+
+                texto = msg.get("text", "")
+                from app.agent.runner import processar_turno_web
+
+                await processar_turno_web(conversation_id, texto, adaptador)
+
+        except WebSocketDisconnect:
+            return
+
+    @app.websocket("/api/events")
+    async def eventos(ws: WebSocket) -> None:
+        cfg = get_settings()
+        # O navegador não põe cabeçalho no handshake do WebSocket: quando
+        # ADMIN_TOKEN está definido, o token vem por query string.
+        if cfg.admin_exigido and ws.query_params.get("token") != cfg.admin_token:
+            await ws.close(code=4401)
+            return
+        await ws.accept()
+        _admin.add(ws)
+        try:
+            while True:
+                await asyncio.sleep(30)
+                await ws.send_text(json.dumps({"type": "ping"}))
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            _admin.discard(ws)

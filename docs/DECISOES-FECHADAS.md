@@ -340,7 +340,7 @@ mesmos arquivos nas fatias 1 a 6 e não se separam de verdade.
 |---|---|---|---|
 | **Núcleo** | agente, tools, `QuoteClient`, renderer, canal console, persistência, handoff, recusa, `turn_usage` | contratos da Fase 0 | fatias 1–6, sequencial, uma sessão por fatia |
 | **Frontend** | as quatro telas + painel de custo, evidência Playwright | `openapi.yaml` congelado + estado real no banco | abre na **fatia 4** |
-| **Dados/QA** | bronze → silver → gold, replay com os evals nativos, suítes de degradação | módulo de PII (nasce na fatia 1) | fatia 9 |
+| **Dados/QA** | bronze → silver (gold cortada, ver acima), replay com os evals nativos, suítes de degradação | módulo de PII (nasce na fatia 1) | fatia 9 |
 | passe: documentação | README, `ARQUITETURA.md`, diagramas Mermaid | tudo pronto | fatia 10 |
 | passe: segurança | plugins Trail of Bits, checklist de repo público | tudo pronto | fatia 10, antes do push |
 

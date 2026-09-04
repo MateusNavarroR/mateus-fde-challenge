@@ -97,3 +97,27 @@ def test_diretorios_de_alto_volume_varridos_quando_existirem(diretorio):
         for classe, trecho in _achados(p)
     ]
     assert not problemas, "\n  ".join(problemas)
+
+
+# ─── promessas do README ─────────────────────────────────────────────────────
+
+
+def test_readme_nao_aponta_para_documento_inexistente():
+    """A regra máxima aplicada ao índice: *tudo que o repositório promete tem que
+    existir*. Um link quebrado no README é a forma mais barata de quebrar essa regra,
+    e a que ninguém percebe — porque quem escreve o índice sabe o que pretendia criar.
+
+    Documento planejado e ainda não escrito pode ser citado, desde que **marcado**.
+    """
+    import re
+
+    readme = RAIZ / "README.md"
+    if not readme.exists():
+        pytest.skip("README.md ainda não existe")
+
+    problemas = []
+    for linha in readme.read_text().splitlines():
+        for alvo in re.findall(r"\b(docs/[\w/.-]+\.md)\b", linha):
+            if not (RAIZ / alvo).exists() and "ainda não escrito" not in linha:
+                problemas.append(f"{alvo} não existe e a linha não está marcada")
+    assert not problemas, "\n  ".join(problemas)
