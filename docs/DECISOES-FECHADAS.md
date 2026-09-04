@@ -356,12 +356,19 @@ reutiliza o mesmo módulo no pipeline.
 
 O Frontend usa `/frontend-design` na criação das telas e `/impeccable` na revisão.
 
-### Ordem de corte, se o dia 3 apertar
+### Escopo cortado — decisão tomada, não pendência
 
-1. camada gold do dataset
-2. vídeo
-3. detalhe de `/admin/status` — ficam `/health` e taxa de sucesso, saem p50/p95
-4. adaptador `web` — fica só o console, com o motivo declarado no README
+Dois itens saíram do escopo por decisão, e entram no README como tal:
+
+| Cortado | Por quê |
+|---|---|
+| **vídeo da demo** | não é entregável nem critério de avaliação. A tela `/chat` e o transcript já mostram o comportamento, e a evidência Playwright é gravada de qualquer forma. |
+| **camada gold do dataset** | já era a primeira da fila de corte. **Silver é o que responde por C5** e não depende de gold — o replay lê de silver com a elegibilidade calculada em memória. |
+
+### Ordem de corte, se ainda apertar
+
+1. detalhe de `/admin/status` — ficam `/health` e taxa de sucesso, saem p50/p95
+2. adaptador `web` — fica só o console, com o motivo declarado no README
 
 **Nunca cortar:** `QuoteClient` inteiro · tabela de handoff com um teste por gatilho ·
 persistência com id e status · README de decisões · o transcript reproduzível ·
