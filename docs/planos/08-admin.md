@@ -738,7 +738,7 @@ test("um handoff criado no backend aparece na fila sem reload", async ({ page, c
   const lead = await context.newPage();                  // o estado nasce de uma conversa real
   await lead.goto("/chat");
   await lead.getByRole("button", { name: /nova conversa/i }).click();
-  await lead.getByRole("textbox").fill("28 anos, carro 2019, cep 07145-200, completo, começo dia 17/10");
+  await lead.getByRole("textbox").fill("28 anos, carro 2019, cep 07XXX-XXX, completo, começo dia 17/10");
   await lead.getByRole("textbox").press("Enter");
 
   await expect(page.getByTestId(/^handoff-/)).toHaveCount(antes + 1, { timeout: 60_000 });
