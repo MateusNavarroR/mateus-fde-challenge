@@ -25,12 +25,37 @@ const rotas = (spec: { paths: Record<string, object> }): string[] =>
     .flatMap(([p, ops]) => Object.keys(ops).map((m) => `${m.toUpperCase()} ${p}`))
     .sort();
 
-describe.runIf(existsSync(GERADO))("deriva entre o congelado e o gerado", () => {
-  const gerado = JSON.parse(readFileSync(GERADO, "utf8"));
+/**
+ * As duas rotas de WebSocket **não aparecem** no `openapi.json` gerado.
+ *
+ * O plano supunha que o FastAPI as documentasse como `GET` (o upgrade HTTP); ele
+ * não documenta — `APIRouter.websocket()` não entra no schema OpenAPI, por
+ * desenho do framework. Não é omissão do backend nem deriva: é uma propriedade
+ * do gerador.
+ *
+ * A exceção é **fechada e nominal**, e o último caso deste bloco impede que ela
+ * cresça. Quem existe de verdade nessas duas rotas é provado pelo handshake, nos
+ * testes de ponta a ponta — não por um documento que não fala de WebSocket.
+ */
+const SO_WEBSOCKET = ["GET /api/chat/{conversation_id}", "GET /api/events"];
 
-  it("toda rota do congelado existe no gerado", () => {
-    const faltando = rotas(congelado).filter((r) => !rotas(gerado).includes(r));
+describe.runIf(existsSync(GERADO))("deriva entre o congelado e o gerado", () => {
+  // O corpo de um `describe.runIf` roda na coleta mesmo quando os casos são
+  // pulados, então a leitura precisa ser tolerante à ausência do arquivo.
+  const gerado = existsSync(GERADO)
+    ? JSON.parse(readFileSync(GERADO, "utf8"))
+    : { paths: {} };
+
+  it("toda rota REST do congelado existe no gerado", () => {
+    const faltando = rotas(congelado)
+      .filter((r) => !SO_WEBSOCKET.includes(r))
+      .filter((r) => !rotas(gerado).includes(r));
     expect(faltando, "o backend não entrega o que o contrato promete").toEqual([]);
+  });
+
+  it("a exceção do WebSocket não cresce — são exatamente estas duas rotas", () => {
+    const ausentes = rotas(congelado).filter((r) => !rotas(gerado).includes(r));
+    expect(ausentes.sort()).toEqual([...SO_WEBSOCKET].sort());
   });
 
   it("toda rota do gerado existe no congelado", () => {
@@ -39,7 +64,9 @@ describe.runIf(existsSync(GERADO))("deriva entre o congelado e o gerado", () => 
   });
 
   it("o arquivo gerado é ignorado pelo git", () => {
-    expect(readFileSync(".gitignore", "utf8")).toContain("tests/web/.openapi-gerado.json");
+    // A regra vive no `.gitignore` de `tests/web/`, não no da raiz: o derivado é
+    // desta pasta, e o plano não pode escrever fora do escopo desta frente.
+    expect(readFileSync("tests/web/.gitignore", "utf8")).toContain(".openapi-gerado.json");
   });
 });
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agno.agent import Agent
+from agno.db.postgres import PostgresDb
 
 from app.agent.catalogo import carregar_catalogo
 from app.agent.prompt import construir_bloco_volatil, construir_system
@@ -38,10 +39,19 @@ def catalogo_do_processo() -> str:
     return _catalogo
 
 
-@dataclass
-class Turno:
-    texto: str
-    metrics: object | None = None
+_db: PostgresDb | None = None
+
+
+def _db_do_processo() -> PostgresDb:
+    """O Agno guarda a sessão no mesmo Postgres da aplicação, em tabelas próprias.
+
+    Elas são criadas pelo próprio Agno e **não** entram nas nossas migrações — o
+    esquema delas é dele, e versioná-lo criaria um segundo dono para o mesmo objeto.
+    """
+    global _db
+    if _db is None:
+        _db = PostgresDb(db_url=get_settings().database_url)
+    return _db
 
 
 def _perfil(ctx: ContextoDoTurno) -> LeadProfile:
@@ -83,6 +93,14 @@ def construir_agente(ctx: ContextoDoTurno, adaptador=None, historico=None) -> Ag
         instructions=instrucoes,
         tools=tools,
         markdown=False,
+        # SEM `db`, `add_history_to_context=True` não faz nada — o Agno avisa e segue,
+        # e cada turno nasce sem passado. O sintoma não é um erro: é um agente que
+        # repergunta a idade que o lead acabou de dar, para sempre.
+        #
+        # A sessão do Agno é indexada pelo NOSSO `conversation_id`, no MESMO Postgres
+        # da aplicação. Assim não há um segundo lugar guardando o histórico.
+        db=_db_do_processo(),
+        session_id=ctx.conversation_id,
         add_history_to_context=True,
         num_history_runs=20,
     )

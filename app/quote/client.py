@@ -4,12 +4,21 @@ Tudo que é status, tentativa, backoff e semáforo vive **abaixo da fronteira da
 Um modelo exposto a "recebi 503" improvisa, e improvisar aí é a falha que esta
 arquitetura existe para impedir.
 
-Nesta fatia o cliente só chama e classifica. Retry, backoff e semáforo chegam na
-fatia 4 — construir tudo agora seria construir muito antes de qualquer coisa rodar.
+O `read timeout` é maior que `QUOTE_SLOW_SECONDS`: 10% das chamadas dormem 8,004 s e
+devolvem **200 correto**, e um timeout menor converte sucesso em falha — que o retry
+então reproduz, porque o próximo sorteio pode cair de novo na faixa lenta.
+
+O **semáforo** existe porque o handler do legado é síncrono e roda no threadpool do
+AnyIO, cujo limite é 40. Medido: 60 chamadas lentas simultâneas → 40 em ~8,8 s e 20
+enfileiradas para ~16,6 s, acima do nosso timeout. Sem limitar, o dimensionamento do
+timeout deixa de valer exatamente quando há mais leads — e o modo de falha é o pior
+possível: falha artificial em massa.
 """
 
 from __future__ import annotations
 
+import random
+import threading
 import time
 
 import httpx
@@ -42,6 +51,63 @@ class Resposta:
         return classificar_erro(self.http_status, self.corpo, timeout=self.timeout)
 
 
+class Semaforo:
+    """Limita as chamadas em voo contra a `/quote`.
+
+    Expõe `maximo_em_voo` porque a asserção que prova o semáforo é sobre o **máximo
+    simultâneo**, não sobre a latência final: com menos de 40 chamadas o legado não
+    degrada, e um teste que só olha latência passaria com a feature ausente.
+    """
+
+    def __init__(self, limite: int) -> None:
+        self._sem = threading.Semaphore(limite)
+        self._lock = threading.Lock()
+        self.em_voo = 0
+        self.maximo_em_voo = 0
+
+    def __enter__(self):
+        self._sem.acquire()
+        with self._lock:
+            self.em_voo += 1
+            self.maximo_em_voo = max(self.maximo_em_voo, self.em_voo)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        with self._lock:
+            self.em_voo -= 1
+        self._sem.release()
+
+    def zerar(self) -> None:
+        self.maximo_em_voo = 0
+
+
+_semaforo: Semaforo | None = None
+
+
+def semaforo() -> Semaforo:
+    global _semaforo
+    if _semaforo is None:
+        _semaforo = Semaforo(get_settings().quote_max_concorrencia)
+    return _semaforo
+
+
+def resetar_semaforo() -> None:
+    """Só para a suíte."""
+    global _semaforo
+    _semaforo = None
+
+
+def calcular_backoff(tentativa: int) -> float:
+    """Exponencial com **full jitter**, com teto.
+
+    Não há `Retry-After` no 5xx do legado — o backoff é 100% nosso. O jitter evita
+    que várias conversas retentem no mesmo instante e sincronizem a carga.
+    """
+    cfg = get_settings()
+    teto = min(cfg.quote_backoff_teto_s, cfg.quote_backoff_base_s * (2 ** (tentativa - 1)))
+    return random.uniform(0, teto)
+
+
 def chamar(req: QuoteRequest, *, url: str | None = None) -> Resposta:
     """Uma tentativa. Não retenta, não classifica além do necessário.
 
@@ -51,6 +117,13 @@ def chamar(req: QuoteRequest, *, url: str | None = None) -> Resposta:
     """
     cfg = get_settings()
     base = url or cfg.quote_api_url
+    with semaforo():
+        return _chamar_sem_semaforo(req, base, cfg)
+
+
+def _chamar_sem_semaforo(req: QuoteRequest, base: str, cfg) -> Resposta:
+    # A espera no semáforo NÃO conta contra o read timeout: é fila nossa, não latência
+    # do legado. O cronômetro começa aqui.
     t0 = time.monotonic()
     try:
         r = httpx.post(

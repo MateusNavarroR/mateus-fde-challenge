@@ -1,0 +1,1061 @@
+/*
+ * AutoSeguro — sistema visual
+ * ===========================================================================
+ *
+ * O ASSUNTO, antes da estética. Isto não é "um app de chat" nem "um dashboard":
+ * é um corretor de seguro auto atendendo por mensagem, e a sala que audita esse
+ * atendimento. O vernáculo é documental — proposta, apólice, segunda via,
+ * carimbo de vigência, livro de registro. Auditoria é livro-razão.
+ *
+ * A CENA, que decide claro ou escuro: um operador conferindo, de dia, numa mesa,
+ * se uma integração quebrada foi tratada. Ele lê números e cita ids ao telefone.
+ * Isso pede papel, não console.
+ *
+ * COR — estratégia contida: neutro levemente tingido na direção da marca, mais
+ * um acento que carrega menos de 10% da superfície.
+ *
+ *   fundo      off-white com croma na direção do violeta da marca. Não é creme,
+ *              não é bege, não é "papel envelhecido": o quente por default é o
+ *              reflexo, e este projeto não o quer.
+ *   acento     violeta-anilina de carimbo. Um só.
+ *   alarme     vermelho de vigência, reservado a DUAS coisas: disjuntor aberto e
+ *              handoff pendente. Se aparecer em terceiro lugar, deixou de alarmar.
+ *   verde      só confirma (cotação ok, handoff resolvido). Nunca decora.
+ *
+ * TIPO — dois eixos de contraste, não duas grotescas parecidas: Courier Prime é
+ * a voz do documento (números, log de tentativas, ids, carimbos), em tamanho
+ * real e não como microrrótulo; Archivo é a voz da interface e do texto lido.
+ *
+ * A OUSADIA MORA EM UM LUGAR SÓ: o carimbo do disjuntor em `/admin/status`. É o
+ * único elemento com escala e rotação na aplicação inteira, e é exatamente o que
+ * o avaliador precisa achar em dois segundos. O resto é disciplinado.
+ *
+ * A ESTRUTURA CARREGA INFORMAÇÃO, não decora: zebra = linha de dado; filete
+ * duplo = seção do documento; fundo tingido = quem falou.
+ *
+ * Contraste conferido: o menor texto (rótulo de 0.78rem em `--tinta-tenue`)
+ * dá 4,84:1 sobre a linha zebrada, que é o pior fundo em que ele aparece.
+ */
+
+@import "@fontsource-variable/archivo/index.css";
+@import "@fontsource/courier-prime/400.css";
+@import "@fontsource/courier-prime/700.css";
+
+:root {
+  /* superfícies */
+  --fundo: #f3f2f7;
+  --folha: #fbfafe;
+  --linha-par: #eae7f2;
+  --filete: #c9c4d6;
+  --filete-forte: #8f8899;
+
+  /* tinta */
+  --tinta: #17161c;
+  --tinta-fraca: #4f4b58;
+  --tinta-tenue: #67626f;
+
+  /* o acento único */
+  --carimbo: #453483;
+  --carimbo-forte: #362a68;
+  --carimbo-lavado: #eae6f6;
+
+  /* alarme: disjuntor aberto e handoff pendente. Nada mais. */
+  --vigencia: #a62a21;
+  --vigencia-lavada: #f7e7e5;
+
+  /* confirmação */
+  --quitado: #2f6b45;
+  --quitado-lavado: #e4eee7;
+
+  --sans: "Archivo Variable", "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --doc: "Courier Prime", "Courier New", monospace;
+
+  --gutter: clamp(1rem, 4vw, 2.5rem);
+
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#raiz {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--fundo);
+  color: var(--tinta);
+  font-family: var(--sans);
+  font-size: 15px;
+  font-optical-sizing: auto;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--carimbo);
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--carimbo);
+  outline-offset: 2px;
+}
+
+/* Números são dado de livro-razão: mesma largura, alinhados na coluna. */
+.num {
+  font-family: var(--doc);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/*
+ * Texto de apoio, em caixa de frase. A versalete espaçada acima de cada bloco é
+ * cromo de template — e aqui seria três vezes mais barulhenta que o dado.
+ */
+.rotulo {
+  font-size: 0.8rem;
+  color: var(--tinta-tenue);
+}
+
+.so-leitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   /chat — a transcrição do atendimento
+   ========================================================================== */
+
+.chat {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100dvh;
+  max-width: 44rem;
+  margin: 0 auto;
+  background: var(--folha);
+  border-inline: 1px solid var(--filete);
+}
+
+.chat__topo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.1rem var(--gutter) 0.85rem;
+  /* Filete duplo: a marca de seção do documento. */
+  border-bottom: 3px double var(--filete-forte);
+}
+
+.chat__marca {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.chat__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.chat__acoes {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem var(--gutter);
+  border-bottom: 1px solid var(--filete);
+}
+
+.chat__thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1.4rem var(--gutter) 2rem;
+  overflow-y: auto;
+}
+
+.chat__rodape {
+  padding: 0.85rem var(--gutter) 1.1rem;
+  border-top: 3px double var(--filete-forte);
+  background: var(--fundo);
+}
+
+.compositor {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-end;
+}
+
+.compositor__campo {
+  flex: 1;
+  min-height: 2.75rem;
+  max-height: 8rem;
+  padding: 0.6rem 0.7rem;
+  resize: none;
+  font-size: 1rem;
+  background: var(--folha);
+  border: 1px solid var(--filete-forte);
+  border-radius: 2px;
+}
+
+.compositor__campo::placeholder {
+  /* O cinza-fantasma de placeholder é o erro de contraste mais comum. */
+  color: var(--tinta-tenue);
+}
+
+.compositor__campo:disabled {
+  background: var(--linha-par);
+  color: var(--tinta-fraca);
+  cursor: not-allowed;
+}
+
+.compositor__enviar {
+  height: 2.75rem;
+  padding-inline: 1.15rem;
+  font-weight: 600;
+  color: var(--folha);
+  background: var(--carimbo);
+  border: 1px solid var(--carimbo);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.compositor__enviar:hover:not(:disabled) {
+  background: var(--carimbo-forte);
+}
+
+.compositor__enviar:disabled {
+  color: var(--tinta-tenue);
+  background: var(--linha-par);
+  border-color: var(--filete-forte);
+  cursor: not-allowed;
+}
+
+.chat__travado {
+  margin: 0 0 0.7rem;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--tinta-fraca);
+  background: var(--linha-par);
+  border: 1px solid var(--filete);
+  border-radius: 2px;
+}
+
+/* --- quem fala ------------------------------------------------------------
+ * `sistema` e `agente` são a MESMA classe, de propósito: para quem está do outro
+ * lado é a mesma empresa falando. A distinção é auditoria e vive no admin.
+ *
+ * A empresa é papel; o lead é tinta. A inversão é a distinção inteira — mais
+ * sóbria que dois balões coloridos, e legível em qualquer impressão.
+ */
+
+.bolha {
+  max-width: min(82%, 32rem);
+  padding: 0.55rem 0.8rem;
+  font-size: 1rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 2px;
+}
+
+.bolha--empresa {
+  align-self: flex-start;
+  background: var(--folha);
+  border: 1px solid var(--filete);
+}
+
+.bolha--lead {
+  align-self: flex-end;
+  color: var(--folha);
+  background: var(--tinta);
+  border: 1px solid var(--tinta);
+}
+
+.bolha--pendente {
+  color: var(--linha-par);
+  background: var(--tinta-fraca);
+  border-color: var(--tinta-fraca);
+}
+
+.marca-bug {
+  display: block;
+  margin-top: 0.45rem;
+  padding-top: 0.35rem;
+  font-family: var(--doc);
+  font-size: 0.8rem;
+  color: var(--vigencia);
+  border-top: 1px solid var(--vigencia);
+}
+
+.bolha--lead .marca-bug {
+  color: #ffb9b0;
+  border-top-color: #ffb9b0;
+}
+
+/* --- o ritmo da espera ----------------------------------------------------
+ * O indicador é por TURNO, não por mensagem. Não são três bolinhas: é a linha do
+ * turno ainda sendo escrita. Enquanto ela existe, o turno não acabou — mesmo com
+ * três mensagens já na tela.
+ *
+ * Não mede nada: os 6 s e os 20 s são do backend. Um relógio aqui seria a
+ * política de degradação em duas cópias.
+ */
+.digitando {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--tinta-fraca);
+}
+
+.digitando__risco {
+  display: block;
+  width: 3px;
+  height: 1.5rem;
+  background: var(--carimbo);
+  transform-origin: top center;
+  animation: escrevendo 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes escrevendo {
+  0%,
+  100% {
+    transform: scaleY(0.25);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .digitando__risco {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
+/* --- a proposta -----------------------------------------------------------
+ * O bloco chega pronto do renderer. A tela não formata número nenhum: formatar
+ * moeda aqui abriria uma segunda origem de preço.
+ */
+
+.cotacao {
+  align-self: flex-start;
+  max-width: min(86%, 33rem);
+  padding: 0.85rem 0.95rem;
+  background: var(--folha);
+  border: 1px solid var(--tinta);
+  /* Deslocamento sólido, sem borrão: é papel sobre papel, não sombra de card. */
+  box-shadow: 3px 3px 0 var(--linha-par);
+}
+
+.cotacao__linha {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cotacao__linha--vazia {
+  height: 0.5rem;
+}
+
+/* A carência é a ressalva que gera reclamação depois se passar batida. */
+.cotacao__linha--carencia {
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  color: var(--carimbo);
+  background: var(--carimbo-lavado);
+  border: 1px solid var(--carimbo);
+  border-radius: 2px;
+}
+
+.cotacao__rodape {
+  margin-top: 0.7rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--filete);
+  font-family: var(--doc);
+  font-size: 0.8rem;
+  color: var(--tinta-tenue);
+}
+
+/* --- avisos ---------------------------------------------------------------- */
+
+.pilula {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  font-family: var(--doc);
+  font-size: 0.8rem;
+  color: var(--tinta-fraca);
+  background: var(--linha-par);
+  border: 1px solid var(--filete);
+  border-radius: 2px;
+}
+
+.pilula--atencao {
+  color: var(--vigencia);
+  background: var(--vigencia-lavada);
+  border-color: var(--vigencia);
+}
+
+.botao-fantasma {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.88rem;
+  color: var(--carimbo);
+  background: transparent;
+  border: 1px solid var(--carimbo);
+  border-radius: 2px;
+  cursor: pointer;
+  transition:
+    background 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.botao-fantasma:hover {
+  color: var(--folha);
+  background: var(--carimbo);
+}
+
+.elo-admin {
+  margin-left: auto;
+  font-size: 0.88rem;
+}
+
+/* ==========================================================================
+   /admin — o livro de registro
+   ========================================================================== */
+
+.admin {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.admin__barra {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  padding: 0.8rem var(--gutter);
+  background: var(--folha);
+  border-bottom: 3px double var(--filete-forte);
+}
+
+.admin__marca {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.admin__nav {
+  display: flex;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.admin__nav a {
+  padding-bottom: 2px;
+  font-size: 0.95rem;
+  color: var(--tinta-fraca);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.admin__nav a:hover {
+  color: var(--tinta);
+  border-bottom-color: var(--filete-forte);
+}
+
+.admin__nav a[aria-current="page"] {
+  color: var(--tinta);
+  font-weight: 600;
+  border-bottom-color: var(--carimbo);
+}
+
+.badge-pendentes {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  font-family: var(--doc);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--folha);
+  background: var(--vigencia);
+  border-radius: 2px;
+}
+
+.admin__conexao {
+  margin-left: auto;
+}
+
+.admin__conteudo {
+  width: 100%;
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: var(--gutter);
+}
+
+.pagina__topo {
+  margin-bottom: 1.4rem;
+}
+
+.pagina__titulo {
+  margin: 0;
+  font-size: clamp(1.5rem, 3.5vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.pagina__subtitulo {
+  margin: 0.3rem 0 0;
+  max-width: 68ch;
+  color: var(--tinta-fraca);
+  text-wrap: pretty;
+}
+
+/* --- a folha pautada ------------------------------------------------------
+ * A zebra não é enfeite: ela marca a linha de dado, que é o que se lê correndo o
+ * dedo numa tabela larga.
+ */
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.tabela th {
+  padding: 0.4rem 0.65rem;
+  text-align: left;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--tinta-fraca);
+  border-bottom: 1px solid var(--tinta);
+  white-space: nowrap;
+}
+
+.tabela td {
+  padding: 0.5rem 0.65rem;
+  vertical-align: baseline;
+}
+
+.tabela tbody tr:nth-child(odd) {
+  background: var(--linha-par);
+}
+
+.tabela tbody tr:hover {
+  background: var(--carimbo-lavado);
+}
+
+.tabela .num {
+  text-align: right;
+}
+
+/* --- métricas: o número primeiro, o nome depois --------------------------
+ * Sem grade de cards iguais e sem o par "número gigante + rótulo em versalete":
+ * as métricas dividem uma faixa entre dois filetes, como um cabeçalho de razão.
+ */
+
+.grade {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 2.2rem;
+  padding: 0.9rem 0;
+  border-block: 1px solid var(--filete);
+}
+
+.metrica {
+  display: flex;
+  flex-direction: column;
+  min-width: 8rem;
+  padding-block: 0.3rem;
+}
+
+.metrica__valor {
+  font-family: var(--doc);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.3rem, 3vw, 1.6rem);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.metrica__valor--na {
+  color: var(--tinta-tenue);
+  font-weight: 400;
+}
+
+.metrica__nome {
+  order: 2;
+  font-size: 0.88rem;
+  color: var(--tinta-fraca);
+}
+
+.metrica__nota {
+  order: 3;
+  margin-top: 0.15rem;
+  max-width: 42ch;
+  font-size: 0.8rem;
+  color: var(--tinta-tenue);
+}
+
+/* --- marcações de estado --------------------------------------------------
+ * Recusa é desfecho de NEGÓCIO e não gera handoff; falha é indisponibilidade e
+ * gera. Empilhar as duas no mesmo cinza apagaria a decisão mais importante do
+ * produto — então o vermelho de vigência marca só a falha, e a recusa fica no
+ * violeta, que é registro, não alarme.
+ */
+
+.selo {
+  display: inline-block;
+  padding: 0.02rem 0.4rem;
+  font-family: var(--doc);
+  font-size: 0.84rem;
+  border: 1px solid var(--filete-forte);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.selo--ok {
+  color: var(--quitado);
+  background: var(--quitado-lavado);
+  border-color: var(--quitado);
+}
+
+.selo--recusa {
+  color: var(--carimbo);
+  background: var(--carimbo-lavado);
+  border-color: var(--carimbo);
+}
+
+.selo--falha {
+  color: var(--vigencia);
+  background: var(--vigencia-lavada);
+  border-color: var(--vigencia);
+}
+
+.selo--espera {
+  color: var(--tinta);
+  background: var(--folha);
+  border-style: dashed;
+}
+
+.selo--neutro {
+  color: var(--tinta-fraca);
+  background: transparent;
+  border-color: var(--filete);
+}
+
+/* --- O CARIMBO ------------------------------------------------------------
+ * O único elemento com escala e rotação na aplicação inteira. Borda dupla,
+ * levemente torto, como o de vigência numa apólice. É onde a ousadia foi gasta,
+ * e é o que o avaliador tem que achar em dois segundos.
+ *
+ * Caixa alta aqui não é rótulo de template: é a tipografia de dentro de um
+ * carimbo, que é como carimbo se escreve.
+ */
+
+.breaker {
+  display: flex;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 2.5rem);
+  flex-wrap: wrap;
+  margin: 1.2rem 0 1.6rem;
+}
+
+.breaker__selo {
+  margin: 0;
+  padding: 0.5rem 1.1rem 0.6rem;
+  font-family: var(--doc);
+  text-align: center;
+  transform: rotate(-2.5deg);
+}
+
+.breaker__estado {
+  display: block;
+  font-size: clamp(1.5rem, 5vw, 2.3rem);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.breaker__caption {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.breaker__dados {
+  display: flex;
+  gap: 1.6rem;
+  flex-wrap: wrap;
+}
+
+.breaker--fechado .breaker__selo {
+  color: var(--quitado);
+  border: 3px double var(--quitado);
+  transform: rotate(-1deg);
+}
+
+.breaker--aberto .breaker__selo {
+  color: var(--vigencia);
+  background: var(--vigencia-lavada);
+  border: 4px double var(--vigencia);
+}
+
+.breaker--meia .breaker__selo {
+  color: var(--carimbo);
+  border: 3px dashed var(--carimbo);
+  transform: rotate(1.5deg);
+}
+
+/* --- o registro de mensagens ---------------------------------------------
+ * Aqui `sistema` É distinguível de `agente`: no admin isso é informação, e a
+ * assimetria com a /chat é deliberada. A distinção é o fundo e o corte da letra
+ * — a segunda via em carbono do formulário —, não uma tarja lateral.
+ */
+
+.msg {
+  display: grid;
+  grid-template-columns: 2.6rem 4.8rem minmax(0, 1fr) 11rem;
+  gap: 0.7rem;
+  align-items: baseline;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--filete);
+  font-size: 0.9rem;
+}
+
+.msg > .num:first-child {
+  color: var(--tinta-tenue);
+  text-align: right;
+}
+
+.msg__conteudo {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.msg__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  font-size: 0.8rem;
+  color: var(--tinta-tenue);
+}
+
+.msg--lead {
+  background: var(--folha);
+}
+
+.msg--agente {
+  background: var(--carimbo-lavado);
+}
+
+/* Segunda via em carbono: o que a máquina falou, não o corretor. */
+.msg--sistema {
+  background: var(--linha-par);
+  font-style: italic;
+}
+
+.msg--operador {
+  background: var(--quitado-lavado);
+}
+
+/* --- o log de tentativas -------------------------------------------------- */
+
+.tentativa {
+  display: grid;
+  grid-template-columns: 3rem 4rem 6rem minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.35rem 0.65rem;
+  font-family: var(--doc);
+  font-size: 0.86rem;
+  border-bottom: 1px solid var(--filete);
+}
+
+.tentativa:nth-child(odd) {
+  background: var(--linha-par);
+}
+
+.trilho {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trilho__barra {
+  height: 6px;
+  min-width: 3px;
+  background: var(--vigencia);
+}
+
+.trilho__barra--ok {
+  background: var(--quitado);
+}
+
+/* --- vazio e erro ---------------------------------------------------------
+ * Vazio é convite, erro é instrução. O vazio não usa vermelho e não usa alerta:
+ * num admin recém-subido ele é o primeiro estado que o avaliador vê, e um vazio
+ * que parece defeito manda procurar defeito onde não há.
+ */
+
+.vazio {
+  padding: 1.8rem 0;
+  border-block: 1px solid var(--filete);
+}
+
+.vazio__titulo {
+  margin: 0 0 0.3rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.vazio__texto {
+  margin: 0;
+  max-width: 66ch;
+  color: var(--tinta-fraca);
+  text-wrap: pretty;
+}
+
+.erro {
+  padding: 0.9rem 1rem;
+  background: var(--vigencia-lavada);
+  border: 1px solid var(--vigencia);
+  border-radius: 2px;
+}
+
+.erro__titulo {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--vigencia);
+}
+
+.erro__texto {
+  margin: 0 0 0.7rem;
+  max-width: 66ch;
+  text-wrap: pretty;
+}
+
+code {
+  font-family: var(--doc);
+  font-size: 0.9em;
+  padding: 0 0.2rem;
+  background: var(--carimbo-lavado);
+  border-radius: 2px;
+}
+
+.erro code {
+  background: #f0d9d5;
+}
+
+.botao {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--folha);
+  background: var(--carimbo);
+  border: 1px solid var(--carimbo);
+  border-radius: 2px;
+  cursor: pointer;
+  transition:
+    background 140ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.botao:hover {
+  background: var(--carimbo-forte);
+}
+
+.botao--discreto {
+  color: var(--carimbo);
+  background: transparent;
+}
+
+.botao--discreto:hover {
+  color: var(--folha);
+  background: var(--carimbo);
+}
+
+.filtros {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.campo {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.campo select,
+.campo input {
+  padding: 0.3rem 0.45rem;
+  background: var(--folha);
+  border: 1px solid var(--filete-forte);
+  border-radius: 2px;
+  font-family: var(--doc);
+  font-size: 0.9rem;
+}
+
+.secao {
+  margin-top: 2.4rem;
+  padding-top: 1.2rem;
+  border-top: 3px double var(--filete-forte);
+  scroll-margin-top: 4.5rem;
+}
+
+.secao__titulo {
+  margin: 0 0 0.2rem;
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+/* --- a fila ---------------------------------------------------------------- */
+
+.handoff {
+  padding: 0.8rem 0.95rem;
+  margin-bottom: 0.6rem;
+  background: var(--folha);
+  border: 1px solid var(--filete);
+  border-radius: 2px;
+}
+
+.handoff--pendente {
+  border-color: var(--vigencia);
+  background: var(--vigencia-lavada);
+}
+
+.handoff--assumido {
+  border-color: var(--carimbo);
+}
+
+.handoff--resolvido {
+  background: transparent;
+  color: var(--tinta-fraca);
+}
+
+.handoff__topo {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+
+.handoff__acoes {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+
+.cartao {
+  padding: 0.8rem 0;
+  border-block: 1px solid var(--filete);
+}
+
+/* --- responsivo -----------------------------------------------------------
+ * Em 390 px a tabela vira lista. `overflow-x` numa tabela larga passaria o teste
+ * de largura do container e ainda assim seria ilegível no celular.
+ */
+
+@media (max-width: 640px) {
+  .tabela,
+  .tabela tbody,
+  .tabela tr,
+  .tabela td {
+    display: block;
+    width: 100%;
+  }
+
+  .tabela thead {
+    display: none;
+  }
+
+  .tabela tr {
+    margin-bottom: 0.6rem;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--filete);
+    border-radius: 2px;
+  }
+
+  .tabela td {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    padding: 0.2rem 0;
+  }
+
+  .tabela td::before {
+    content: attr(data-rotulo);
+    flex: 0 0 auto;
+    font-size: 0.84rem;
+    color: var(--tinta-tenue);
+  }
+
+  .tabela .num {
+    text-align: left;
+  }
+
+  .msg {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+  }
+
+  .msg__meta {
+    flex-direction: row;
+    gap: 0.7rem;
+    align-items: baseline;
+  }
+
+  .tentativa {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chat {
+    border-inline: none;
+  }
+}

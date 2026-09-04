@@ -11,6 +11,11 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "agno>=2.7",
     "anthropic>=0.40",
+    "ollama>=0.4",
+    # Transitiva do layout do Agno: agno.models.ollama importa OllamaResponses,
+    # que importa agno.models.openai. O SDK da OpenAI é necessário para o caminho
+    # Ollama funcionar, mesmo sem nenhuma chamada à OpenAI.
+    "openai>=1.40",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
 ]

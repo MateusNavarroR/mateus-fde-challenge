@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // A suíte mora em ../tests/web, fora deste pacote: sem isto o TypeScript não
+    // acha `web/node_modules` a partir de lá (mesmo motivo dos aliases do vitest).
+    "baseUrl": ".",
+    "paths": {
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"],
+      "react/jsx-dev-runtime": ["./node_modules/@types/react/jsx-dev-runtime"],
+      "*": ["./node_modules/@types/*", "./node_modules/*"]
+    },
+    "jsx": "react-jsx",
+    // A augmentação do jest-dom entra pelo import em tests/web/setup.ts, que faz
+    // parte do programa — pôr o pacote aqui traria a variante de Jest e quebraria
+    // o `.not` do vitest.
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  },
+  "include": ["src", "scripts", "vite.config.ts", "vitest.config.ts", "playwright.config.ts", "../tests/web"]
+}

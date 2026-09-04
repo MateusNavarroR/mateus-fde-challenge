@@ -4,6 +4,13 @@ import { cleanup } from "@testing-library/react";
 import { _reiniciarEventos } from "../../web/src/admin/useEventos";
 import { WebSocketFalso } from "./fakes/websocket-falso";
 
+// O jsdom não implementa layout, então `scrollIntoView` não existe. A tela usa
+// para manter a última mensagem à vista; aqui basta que não exploda.
+// (o caso do vite.config roda em ambiente node, onde `Element` não existe)
+if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}
+
 beforeEach(() => {
   WebSocketFalso.reiniciar();
 });

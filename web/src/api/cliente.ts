@@ -1,0 +1,187 @@
+/**
+ * O cliente HTTP e a **origem única de URL** do projeto.
+ *
+ * Nenhum componente escreve `"/api/..."` no meio do JSX: é assim que uma rota
+ * escapa do inventário, e o inventário (`tests/web/unit/openapi-deriva.test.ts`)
+ * é o que garante que a UI só consome superfície que passou por decisão escrita.
+ *
+ * `ADMIN_TOKEN` é **opcional e exigido quando definido** (CLAUDE.md 14c). Sem
+ * token gravado, nenhum cabeçalho é enviado — mandar um cabeçalho vazio
+ * transformaria um token opcional em token obrigatório mal configurado.
+ */
+
+import type {
+  ConversationDetail,
+  Conversation,
+  FilaHandoffs,
+  Handoff,
+  PaginaConversas,
+  QuoteHealth,
+  Saude,
+  StatusHandoff,
+  Usage,
+} from "./tipos";
+
+export const CHAVE_TOKEN = "autoseguro.admin_token";
+
+/**
+ * A superfície inteira que a UI consome, uma função por rota.
+ *
+ * Chamar com o sentinela `"{id}"` devolve o caminho no formato do OpenAPI, que é
+ * como o teste de inventário casa cada rota com o contrato congelado.
+ */
+export const ROTAS = {
+  health: () => "/api/health",
+  conversas: (params?: { state?: string; limit?: number; cursor?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.state) q.set("state", params.state);
+    if (params?.limit !== undefined) q.set("limit", String(params.limit));
+    if (params?.cursor) q.set("cursor", params.cursor);
+    const s = q.toString();
+    return s ? `/api/conversations?${s}` : "/api/conversations";
+  },
+  conversa: (id: string) => `/api/conversations/${id}`,
+  status: (janela?: number) =>
+    janela === undefined ? "/api/quote-health" : `/api/quote-health?janela=${janela}`,
+  usage: (conversationId?: string) =>
+    conversationId === undefined ? "/api/usage" : `/api/usage?conversation_id=${conversationId}`,
+  handoffs: (params?: { status?: StatusHandoff; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.set("status", params.status);
+    if (params?.limit !== undefined) q.set("limit", String(params.limit));
+    const s = q.toString();
+    return s ? `/api/handoffs?${s}` : "/api/handoffs";
+  },
+  handoff: (id: string) => `/api/handoffs/${id}`,
+  /** Caminho do WebSocket. O esquema e o host saem do `location`, em `ws.ts`. */
+  wsChat: (id: string) => `/api/chat/${id}`,
+  eventos: () => "/api/events",
+} as const;
+
+export type TipoErro =
+  | "nao_autorizado"
+  | "nao_encontrado"
+  | "conflito"
+  | "indisponivel"
+  | "erro";
+
+export class ErroApi extends Error {
+  readonly tipo: TipoErro;
+  readonly status: number | null;
+  readonly error: string | null;
+
+  constructor(tipo: TipoErro, message: string, status: number | null, error: string | null) {
+    super(message);
+    this.name = "ErroApi";
+    this.tipo = tipo;
+    this.status = status;
+    this.error = error;
+  }
+}
+
+export function lerToken(): string | null {
+  try {
+    const t = localStorage.getItem(CHAVE_TOKEN);
+    return t && t.length > 0 ? t : null;
+  } catch {
+    // localStorage bloqueado (modo privado, política de site) não pode derrubar a tela.
+    return null;
+  }
+}
+
+export function gravarToken(token: string): void {
+  try {
+    if (token.length > 0) localStorage.setItem(CHAVE_TOKEN, token);
+    else localStorage.removeItem(CHAVE_TOKEN);
+  } catch {
+    /* idem */
+  }
+}
+
+function cabecalhos(comCorpo: boolean): Headers {
+  const h = new Headers();
+  if (comCorpo) h.set("content-type", "application/json");
+  const token = lerToken();
+  // Só existe cabeçalho quando existe token. Nunca um cabeçalho vazio.
+  if (token !== null) h.set("x-admin-token", token);
+  return h;
+}
+
+function tipoDoStatus(status: number): TipoErro {
+  if (status === 401 || status === 403) return "nao_autorizado";
+  if (status === 404) return "nao_encontrado";
+  if (status === 409) return "conflito";
+  if (status >= 500) return "indisponivel";
+  return "erro";
+}
+
+const TEXTO_PADRAO: Record<TipoErro, string> = {
+  nao_autorizado: "Esta instalação exige um ADMIN_TOKEN.",
+  nao_encontrado: "Recurso não encontrado.",
+  conflito: "Transição inválida.",
+  indisponivel: "O backend não respondeu.",
+  erro: "A chamada falhou.",
+};
+
+async function executar<T>(url: string, init: RequestInit): Promise<T> {
+  let resposta: Response;
+  try {
+    resposta = await fetch(url, init);
+  } catch {
+    // Backend fora do ar vira erro tipado, nunca uma tela em branco.
+    throw new ErroApi("indisponivel", TEXTO_PADRAO.indisponivel, null, null);
+  }
+
+  if (!resposta.ok) {
+    const tipo = tipoDoStatus(resposta.status);
+    let message = TEXTO_PADRAO[tipo];
+    let error: string | null = null;
+    try {
+      const corpo = (await resposta.json()) as Partial<{ error: string; message: string }>;
+      if (typeof corpo?.message === "string" && corpo.message.length > 0) message = corpo.message;
+      if (typeof corpo?.error === "string") error = corpo.error;
+    } catch {
+      // 401 sem corpo é comum: um erro tipado, não um crash de parse.
+    }
+    throw new ErroApi(tipo, message, resposta.status, error);
+  }
+
+  if (resposta.status === 204) return undefined as T;
+  return (await resposta.json()) as T;
+}
+
+export function get<T>(url: string): Promise<T> {
+  return executar<T>(url, { method: "GET", headers: cabecalhos(false) });
+}
+
+export function post<T>(url: string, corpo: unknown): Promise<T> {
+  return executar<T>(url, {
+    method: "POST",
+    headers: cabecalhos(true),
+    body: JSON.stringify(corpo),
+  });
+}
+
+export function patch<T>(url: string, corpo: unknown): Promise<T> {
+  return executar<T>(url, {
+    method: "PATCH",
+    headers: cabecalhos(true),
+    body: JSON.stringify(corpo),
+  });
+}
+
+// --- atalhos tipados -------------------------------------------------------
+
+export const api = {
+  saude: () => get<Saude>(ROTAS.health()),
+  criarConversa: () => post<Conversation>(ROTAS.conversas(), { channel: "web" }),
+  conversas: (params?: { state?: string; limit?: number; cursor?: string }) =>
+    get<PaginaConversas>(ROTAS.conversas(params)),
+  conversa: (id: string) => get<ConversationDetail>(ROTAS.conversa(id)),
+  quoteHealth: (janela?: number) => get<QuoteHealth>(ROTAS.status(janela)),
+  usage: (conversationId?: string) => get<Usage>(ROTAS.usage(conversationId)),
+  handoffs: (params?: { status?: StatusHandoff; limit?: number }) =>
+    get<FilaHandoffs>(ROTAS.handoffs(params)),
+  transicionarHandoff: (id: string, status: StatusHandoff) =>
+    patch<Handoff>(ROTAS.handoff(id), { status }),
+};

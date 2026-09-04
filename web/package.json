@@ -9,17 +9,15 @@
     "preview": "vite preview",
     "test": "cd .. && vitest run --config web/vitest.config.ts",
     "test:watch": "cd .. && vitest --config web/vitest.config.ts",
-    "e2e": "playwright test --config playwright.config.ts",
+    "e2e": "NODE_PATH=./node_modules playwright test --config playwright.config.ts",
     "lint": "tsc --noEmit -p tsconfig.json",
     "openapi:baixar": "node scripts/baixar-openapi.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
-    "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "@fontsource-variable/newsreader": "^5.3.0",
+    "@fontsource-variable/archivo": "^5.3.0",
+    "@fontsource/courier-prime": "^5.3.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.0"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0",
@@ -27,6 +25,7 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^26.4.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

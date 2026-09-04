@@ -1,0 +1,194 @@
+import { useEffect, useRef, useState } from "react";
+import type { ConversationDetail, Message } from "../api/tipos";
+import { Bolha } from "./Bolha";
+import { BlocoCotacao } from "./BlocoCotacao";
+import { Digitando } from "./Digitando";
+import { abrirSessao, reiniciarSessao } from "./sessao";
+import { useConversa } from "./useConversa";
+
+const ESTADO_LEGIVEL: Record<string, string> = {
+  novo: "conversa aberta",
+  qualificando: "coletando dados",
+  cotando: "cotação em andamento",
+  cotado: "cotação entregue",
+  fechado: "conversa encerrada",
+  encaminhado: "com a equipe",
+};
+
+/**
+ * A tela é um **cliente burro** de um fluxo de eventos. Ela não decide nada
+ * sobre a conversa: recebe `MessageEvent`, `TypingEvent` e `StateEvent`, mantém
+ * um mapa `id → Message` e renderiza ordenado por `index`.
+ *
+ * Não existe cronômetro aqui. Os 6 s e os 20 s da política de degradação são do
+ * backend — se a tela tivesse um `setTimeout(6000)`, existiriam duas cópias da
+ * política e elas divergiriam na primeira mudança de limiar.
+ */
+export function PaginaChat({ conversationId }: { conversationId?: string }) {
+  const [id, setId] = useState<string | null>(conversationId ?? null);
+  const [historico, setHistorico] = useState<Message[] | null>(null);
+  const [falhaAoAbrir, setFalhaAoAbrir] = useState(false);
+  const [rascunho, setRascunho] = useState("");
+  const fim = useRef<HTMLDivElement | null>(null);
+
+  // Retomada ao carregar. Um F5 no meio de uma janela de 37 s não pode destruir
+  // a conversa — sempre-nova é o comportamento do botão, não do carregamento.
+  useEffect(() => {
+    if (conversationId !== undefined) return;
+    let vivo = true;
+    void abrirSessao()
+      .then(({ id: aberta, detalhe }: { id: string; detalhe: ConversationDetail | null }) => {
+        if (!vivo) return;
+        setHistorico(detalhe?.messages ?? null);
+        setId(aberta);
+      })
+      .catch(() => {
+        if (vivo) setFalhaAoAbrir(true);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [conversationId]);
+
+  const { estado, enviar } = useConversa(id, historico);
+
+  useEffect(() => {
+    fim.current?.scrollIntoView({ block: "end" });
+  }, [estado.mensagens.length, estado.digitando]);
+
+  const submeter = () => {
+    const texto = rascunho.trim();
+    if (texto.length === 0 || estado.entradaBloqueada) return;
+    enviar(texto);
+    setRascunho("");
+  };
+
+  const trocarDeConversa = () => {
+    void reiniciarSessao()
+      .then((nova) => {
+        setHistorico(null);
+        setId(nova);
+      })
+      .catch(() => setFalhaAoAbrir(true));
+  };
+
+  return (
+    <div className="chat">
+      <header className="chat__topo">
+        <h1 className="chat__marca">AutoSeguro</h1>
+        <div className="chat__meta">
+          <span className="pilula" data-testid="estado-conversa">
+            {ESTADO_LEGIVEL[estado.state] ?? estado.state}
+          </span>
+        </div>
+      </header>
+
+      <div className="chat__acoes">
+        <button type="button" className="botao-fantasma" onClick={trocarDeConversa}>
+          Nova conversa
+        </button>
+        {/*
+          A navegação é assimétrica de propósito: `chat → admin` existe e é a
+          demonstração inteira da rastreabilidade. O inverso não existe.
+        */}
+        {id !== null ? (
+          <a className="elo-admin" href={`/admin/conversas/${id}`}>
+            Ver esta conversa no admin
+          </a>
+        ) : null}
+      </div>
+
+      <main className="chat__thread">
+        {estado.conexao === "reconectando" ? (
+          <p role="status" className="pilula pilula--atencao">
+            Reconectando… nada se perde: ao voltar, tudo que chegou aparece aqui.
+          </p>
+        ) : null}
+
+        {falhaAoAbrir ? (
+          <div role="alert" className="erro">
+            <p className="erro__titulo">Não consegui abrir a conversa</p>
+            <p className="erro__texto">
+              O backend não respondeu. Confira se ele está no ar com{" "}
+              <code>docker compose ps</code> e tente de novo.
+            </p>
+            <button
+              type="button"
+              className="botao"
+              onClick={() => {
+                setFalhaAoAbrir(false);
+                trocarDeConversa();
+              }}
+            >
+              Tentar de novo
+            </button>
+          </div>
+        ) : null}
+
+        {/*
+          Vazio é convite. Uma janela em branco de 37 s já é longa o bastante sem
+          que a primeira tela também não diga nada.
+        */}
+        {!falhaAoAbrir && estado.mensagens.length === 0 && !estado.digitando ? (
+          <p className="vazio__texto" data-testid="conversa-vazia">
+            Conte o que você precisa: idade, ano do carro, CEP e quando quer começar. Com
+            isso eu já consigo buscar o valor.
+          </p>
+        ) : null}
+
+        {estado.mensagens.map((m) =>
+          m.quote_id !== null && m.quote_id !== undefined && m.quote_id !== "" ? (
+            <BlocoCotacao key={m.id} mensagem={m} />
+          ) : (
+            <Bolha key={m.id} mensagem={m} />
+          ),
+        )}
+
+        {estado.digitando ? <Digitando /> : null}
+        <div ref={fim} />
+      </main>
+
+      <footer className="chat__rodape">
+        {estado.entradaBloqueada ? (
+          <p className="chat__travado">
+            Já passei sua conversa pra um atendente da equipe. A equipe assume daqui — por
+            isso o campo abaixo está travado.
+          </p>
+        ) : null}
+        <form
+          className="compositor"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submeter();
+          }}
+        >
+          <label className="so-leitor" htmlFor="campo-mensagem">
+            Sua mensagem
+          </label>
+          <textarea
+            id="campo-mensagem"
+            className="compositor__campo"
+            placeholder="Escreva aqui…"
+            rows={1}
+            value={rascunho}
+            disabled={estado.entradaBloqueada}
+            onChange={(e) => setRascunho(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submeter();
+              }
+            }}
+          />
+          <button
+            type="submit"
+            className="compositor__enviar"
+            disabled={estado.entradaBloqueada || rascunho.trim().length === 0}
+          >
+            Enviar
+          </button>
+        </form>
+      </footer>
+    </div>
+  );
+}

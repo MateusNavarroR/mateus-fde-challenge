@@ -1,0 +1,8 @@
+# Derivado do backend em execução, não do repositório: um snapshot versionado do
+# `openapi.json` gerado envelheceria em silêncio e a deriva deixaria de significar
+# algo. Produzido por `npm --prefix web run openapi:baixar`.
+.openapi-gerado.json
+
+# Artefatos de falha do Playwright. A pasta de evidência é docs/evidencia-ui/, e
+# rastro de teste quebrado não pode poluir o que o avaliador abre.
+.playwright/

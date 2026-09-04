@@ -98,3 +98,23 @@ it("a URL sai do location, nunca de host fixo", () => {
   expect(WebSocketFalso.ultima!.url).toBe(`ws://${location.host}/api/chat/c1`);
   s.fechar();
 });
+
+/**
+ * O navegador não põe cabeçalho no handshake do WebSocket. Quando existe token,
+ * ele vai por query string — decisão do Núcleo. Quando não existe, **nenhum
+ * parâmetro é enviado**: um token opcional não pode virar um token obrigatório
+ * mal configurado.
+ */
+it("sem token gravado, nenhum parâmetro entra na URL do socket", () => {
+  const s = conectarChat("c1", { ultimoIndex: () => -1, aoEvento: vi.fn() });
+  expect(WebSocketFalso.ultima!.url).not.toContain("?");
+  s.fechar();
+});
+
+it("com token gravado, ele vai por query string no handshake", () => {
+  localStorage.setItem("autoseguro.admin_token", "t-abc");
+  const s = conectarChat("c1", { ultimoIndex: () => -1, aoEvento: vi.fn() });
+  expect(WebSocketFalso.ultima!.url).toBe(`ws://${location.host}/api/chat/c1?token=t-abc`);
+  s.fechar();
+  localStorage.clear();
+});

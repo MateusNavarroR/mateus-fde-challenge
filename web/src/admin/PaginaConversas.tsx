@@ -1,0 +1,153 @@
+import { useCallback, useId, useState } from "react";
+import { api } from "../api/cliente";
+import { ESTADOS_CONVERSA } from "../api/tipos";
+import type { ConversationSummary, PaginaConversas as Pagina, StatusJob } from "../api/tipos";
+import { Erro } from "../ui/Erro";
+import { Vazio } from "../ui/Vazio";
+import { instante } from "../ui/formatar";
+import { useRecurso } from "../ui/useRecurso";
+
+/**
+ * `refused` e `failed` precisam ser distinguíveis à primeira vista.
+ *
+ * Recusa é desfecho de **negócio** e não gera handoff; `failed` é
+ * indisponibilidade e gera. Empilhar os dois no mesmo cinza apagaria a decisão
+ * mais importante do produto — por isso cores diferentes, não dois tons.
+ */
+const SELO_COTACAO: Record<StatusJob, { texto: string; classe: string }> = {
+  pending: { texto: "cotando", classe: "selo selo--espera" },
+  ok: { texto: "cotada", classe: "selo selo--ok" },
+  refused: { texto: "recusada", classe: "selo selo--recusa" },
+  failed: { texto: "falhou", classe: "selo selo--falha" },
+};
+
+export function PaginaConversas() {
+  const idFiltro = useId();
+  const [estado, setEstado] = useState<string>("");
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [acumulado, setAcumulado] = useState<ConversationSummary[]>([]);
+
+  const carregar = useCallback(async (): Promise<Pagina> => {
+    const p = await api.conversas({
+      ...(estado ? { state: estado } : {}),
+      ...(cursor ? { cursor } : {}),
+    });
+    setAcumulado((antes) => (cursor ? [...antes, ...p.items] : p.items));
+    return p;
+  }, [estado, cursor]);
+
+  const { dado, erro, carregando, recarregar } = useRecurso<Pagina>(carregar, [estado, cursor]);
+
+  if (erro) return <Erro erro={erro} aoTentarDeNovo={recarregar} />;
+
+  const linhas = acumulado;
+
+  return (
+    <section>
+      <div className="pagina__topo">
+        <div>
+          <h1 className="pagina__titulo">Conversas</h1>
+          <p className="pagina__subtitulo">
+            Tudo que o agente conduziu, com o desfecho da última cotação. A linha leva ao
+            detalhe, com mensagens e tentativas.
+          </p>
+        </div>
+      </div>
+
+      <div className="filtros">
+        <span className="campo">
+          <label className="rotulo" htmlFor={idFiltro}>
+            Estado
+          </label>
+          {/* Os valores saem do enum do contrato — nunca digitados à mão aqui. */}
+          <select
+            id={idFiltro}
+            value={estado}
+            onChange={(e) => {
+              setCursor(undefined);
+              setAcumulado([]);
+              setEstado(e.target.value);
+            }}
+          >
+            <option value="">todos</option>
+            {ESTADOS_CONVERSA.map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+          </select>
+        </span>
+      </div>
+
+      {linhas.length === 0 && !carregando ? (
+        <Vazio titulo="Nenhuma conversa ainda">
+          O banco está no ar e vazio. Abra <code>/chat</code>, mande uma mensagem, e ela
+          aparece aqui com id, estado e o desfecho da cotação.
+        </Vazio>
+      ) : (
+        <table className="tabela" role="table">
+          <thead>
+            <tr>
+              <th scope="col">Conversa</th>
+              <th scope="col">Estado</th>
+              <th scope="col">Msgs</th>
+              <th scope="col">Última cotação</th>
+              <th scope="col">Última mensagem</th>
+              <th scope="col">Atualizada</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((c) => {
+              const selo = c.ultima_cotacao_status ? SELO_COTACAO[c.ultima_cotacao_status] : null;
+              return (
+                <tr key={c.id}>
+                  <td data-rotulo="Conversa">
+                    <a href={`/admin/conversas/${c.id}`}>{c.id}</a>
+                    {c.handoff_pendente ? (
+                      <span
+                        className="selo selo--falha"
+                        data-testid="marca-handoff-pendente"
+                        title="handoff pendente"
+                      >
+                        handoff
+                      </span>
+                    ) : null}
+                  </td>
+                  <td data-rotulo="Estado">
+                    <span className="selo selo--neutro">{c.state}</span>
+                  </td>
+                  <td data-rotulo="Msgs" className="num">
+                    {c.total_mensagens}
+                  </td>
+                  <td data-rotulo="Última cotação">
+                    {selo ? (
+                      <span className={selo.classe} data-testid="selo-cotacao">
+                        {selo.texto}
+                      </span>
+                    ) : (
+                      <span className="rotulo">sem cotação</span>
+                    )}
+                  </td>
+                  <td data-rotulo="Última mensagem">{c.ultima_mensagem ?? "—"}</td>
+                  <td data-rotulo="Atualizada" className="num">
+                    {instante(c.atualizado_em)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {dado?.next_cursor ? (
+        <button
+          type="button"
+          className="botao botao--discreto"
+          onClick={() => setCursor(dado.next_cursor ?? undefined)}
+        >
+          Carregar mais
+        </button>
+      ) : null}
+    </section>
+  );
+}

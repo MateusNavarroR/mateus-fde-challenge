@@ -47,6 +47,12 @@ DEV = os.getenv("APP_ENV", "dev") == "dev"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.bootstrap import bootstrap
+
+    # Explícito no boot: o .env não chega ao SDK sozinho, e faltar credencial
+    # tem que doer aqui, não no meio de uma conversa.
+    bootstrap()
+
     s = get_settings()
     if not s.admin_exigido:
         log.warning(

@@ -22,6 +22,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.agent.agente import construir_agente  # noqa: E402
+from app.bootstrap import bootstrap  # noqa: E402
 from app.agent.tools import ContextoDoTurno  # noqa: E402
 from app.persistence import repo  # noqa: E402
 from app.persistence.db import sessao_factory  # noqa: E402
@@ -51,11 +52,19 @@ class CanalConsole:
 
 
 def main() -> None:
+    # Carrega o .env no processo e falha alto se a credencial faltar.
+    bootstrap()
+
     t0 = time.monotonic()
     canal = CanalConsole(t0)
     fabrica = sessao_factory()
     with fabrica() as s:
-        conv = repo.criar_conversa(s, channel="console", external_ref="manual")
+        conv = repo.criar_conversa(
+            s, channel="console",
+            # Único por execução: `conversations` tem UNIQUE (channel, external_ref),
+            # e uma execução anterior abortada bloquearia a próxima.
+            external_ref=f"manual-{int(time.time())}",
+        )
         s.commit()
         ctx = ContextoDoTurno(sessao=s, conversation_id=conv.id)
         agente = construir_agente(ctx, canal)

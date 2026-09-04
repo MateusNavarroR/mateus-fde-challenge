@@ -9,13 +9,25 @@ linha do tempo importa. É `quote_attempts` que responde, sem log nenhum: "tenta
 vezes, a 1ª deu 503 em 40 ms, a 2ª estourou o timeout aos 12 s, a 3ª voltou 200 aos
 8,01 s".
 
-Nesta fatia o job faz **uma** tentativa. Retry, backoff, semáforo e breaker entram na
-fatia 4.
+**O laço de retry.** Só `transient` e `timeout` retentam — 3 tentativas levam a 0,8% de
+falha residual, e a 4ª compraria 0,64 ponto percentual por mais um ciclo que pode ser
+de 12 s. `400` e `422`, nas duas formas, **nunca** retentam: retentá-los mascara defeito
+e queima tempo.
+
+**A espera é visível.** O relógio é o do lead — conta da chegada da mensagem dele, não
+de quando a tool começou —, e o disparo é daqui, não de um watchdog genérico na camada
+de conversa, que dispararia durante a geração do modelo.
+
+**O breaker é consultado antes da primeira tentativa.** Com o circuito aberto o job
+nasce `failed` **sem nenhuma tentativa** e com `circuito_aberto=True`: a tela precisa
+distinguir isso de "tentamos 3 vezes e falhou".
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import threading
+import time
 import uuid
 
 from sqlalchemy.orm import Session
@@ -27,9 +39,11 @@ from app.contracts.quote import (
     QuotePayload,
     QuoteRequest,
 )
+from app.config import get_settings
 from app.persistence.models import Quote, QuoteAttempt
 from app.privacy.mascarar import mascarar
 from app.quote import client
+from app.quote.breaker import breaker_global
 
 
 def _id(p: str) -> str:
@@ -105,19 +119,116 @@ def finalizar(
     return q
 
 
-def executar_job(s: Session, conversation_id: str, req: QuoteRequest) -> Quote:
-    """Uma tentativa (fatia 3). O laço de retry entra na fatia 4."""
+def executar_job(
+    s: Session,
+    conversation_id: str,
+    req: QuoteRequest,
+    *,
+    chegada_do_lead: float | None = None,
+    avisar=None,
+) -> Quote:
+    """Executa o job até resolver, com retry, backoff e breaker.
+
+    `chegada_do_lead` é o `time.monotonic()` de quando a mensagem do lead entrou — o
+    **relógio do lead**. Se contássemos do início da tool, o aviso chegaria depois de o
+    lead já ter ficado 8 s no escuro, porque o turno gasta a latência do modelo antes.
+
+    `avisar(texto)` entrega uma mensagem ao lead durante a espera. É opcional para que
+    o job seja testável sem canal.
+    """
+    cfg = get_settings()
+    br = breaker_global()
+    t0 = chegada_do_lead if chegada_do_lead is not None else time.monotonic()
+
     q = criar_job(s, conversation_id, req)
-    resp = client.chamar(req)
-    erro = None if resp.ok else resp.erro()
-    gravar_tentativa(s, q.id, 1, resp, erro)
 
-    if resp.ok:
-        return finalizar(s, q, status=QuoteJobStatus.OK,
-                         payload=QuotePayload.model_validate(resp.corpo),
-                         latency_ms=resp.latency_ms)
+    if not br.permite_chamada():
+        # Sem nenhuma tentativa: não chamamos a API, então não sabemos se este lead
+        # seria recusado. Afirmar recusa aqui seria adivinhar.
+        return finalizar(s, q, status=QuoteJobStatus.FAILED,
+                         erro=QuoteError(outcome=QuoteOutcome.TRANSIENT),
+                         circuito_aberto=True)
 
-    status = {
-        QuoteOutcome.REFUSED: QuoteJobStatus.REFUSED,
-    }.get(erro.outcome, QuoteJobStatus.FAILED)
-    return finalizar(s, q, status=status, erro=erro, latency_ms=resp.latency_ms)
+    avisos = _Avisos(t0, avisar, cfg)
+    total = 0
+    erro: QuoteError | None = None
+
+    for tentativa in range(1, cfg.quote_max_attempts + 1):
+        resp = client.chamar(req)
+        total += resp.latency_ms
+        erro = None if resp.ok else resp.erro()
+        gravar_tentativa(s, q.id, tentativa, resp, erro)
+
+        if resp.ok:
+            br.registrar_sucesso()
+            avisos.cancelar()
+            return finalizar(s, q, status=QuoteJobStatus.OK,
+                             payload=QuotePayload.model_validate(resp.corpo),
+                             latency_ms=total)
+
+        if not erro.outcome.retentavel:
+            # 400 e 422 (nas duas formas): a API respondeu, e a resposta é final.
+            br.registrar_desfecho_de_negocio()
+            avisos.cancelar()
+            status = (QuoteJobStatus.REFUSED if erro.outcome is QuoteOutcome.REFUSED
+                      else QuoteJobStatus.FAILED)
+            return finalizar(s, q, status=status, erro=erro, latency_ms=total)
+
+        br.registrar_falha_transitoria()
+        if tentativa < cfg.quote_max_attempts:
+            time.sleep(client.calcular_backoff(tentativa))
+
+    avisos.cancelar()
+    return finalizar(s, q, status=QuoteJobStatus.FAILED, erro=erro, latency_ms=total)
+
+
+class _Avisos:
+    """Aviso aos 6 s e reforço aos ~20 s, contados do relógio do LEAD.
+
+    **São temporizadores, não verificações entre tentativas.** A primeira versão
+    checava o relógio no topo de cada volta do laço, e um teste pegou o furo: a
+    chamada lenta bloqueia 8 s numa tentativa só, então o aviso de 6 s só dispararia
+    **depois** de o preço já ter chegado. Inútil justamente nos 10% do tráfego que a
+    espera existe para cobrir.
+
+    O disparo continua sendo **da tool**, e não de um watchdog na camada de conversa:
+    o temporizador nasce e morre com o job, então ele só existe quando há de fato uma
+    cotação em voo — e nunca dispara durante a geração do modelo.
+    """
+
+    def __init__(self, t0: float, avisar, cfg) -> None:
+        self.avisar = avisar
+        self.enviados: list[str] = []
+        self._timers: list[threading.Timer] = []
+        if avisar is None:
+            return
+
+        from app import textos
+
+        # O relógio é o do lead: se ele já esperou 3 s antes de a tool começar, o
+        # aviso sai 3 s depois daqui, não 6.
+        decorrido = time.monotonic() - t0
+        for nome, limiar, texto in (
+            ("aviso", cfg.aviso_espera_s, textos.AVISO_ESPERA),
+            ("reforco", cfg.reforco_espera_s, textos.REFORCO),
+        ):
+            atraso = max(0.0, limiar - decorrido)
+            t = threading.Timer(atraso, self._disparar, args=(nome, texto))
+            t.daemon = True
+            t.start()
+            self._timers.append(t)
+
+    def _disparar(self, nome: str, texto: str) -> None:
+        # O aviso sempre precede o reforço, mesmo se os dois vencerem juntos: receber
+        # "ainda tô aqui" antes de "tô buscando" confundiria o lead.
+        if nome == "reforco" and "aviso" not in self.enviados:
+            return
+        if nome in self.enviados:
+            return
+        self.enviados.append(nome)
+        self.avisar(texto)
+
+    def cancelar(self) -> None:
+        """Chamado quando o job resolve: nada de aviso depois do preço."""
+        for t in self._timers:
+            t.cancel()

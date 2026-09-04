@@ -1,3 +1,9 @@
+/**
+ * @vitest-environment node
+ *
+ * Este caso importa o `vite.config.ts`, que carrega o esbuild — e o esbuild não
+ * roda dentro do jsdom.
+ */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import config from "../../../web/vite.config";
