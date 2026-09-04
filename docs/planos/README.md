@@ -112,3 +112,25 @@ tests/nucleo/             uma suíte por fatia + test_guardrail.py transversal
 
 Conventional Commits, em português, uma linha por passo de plano concluído.
 Nada de `git push` sem autorização explícita.
+
+---
+
+## Pendências do orquestrador
+
+Coisas combinadas com o usuário que não são de nenhuma fatia e não podem se perder.
+
+### `/impeccable` com vistoria de navegação por Playwright
+
+Depois das fatias 5 e 6, antes de gerar a evidência definitiva:
+
+1. **Vistoria de navegação pela aplicação de verdade**, com Playwright — não revisão de
+   componente. Percorrer o **fluxo inicial completo**: entrada na aplicação → escolha da
+   via → conversa no `/chat` → cotação saindo → `/admin/conversas` → detalhe com a linha
+   do tempo → `/admin/handoffs`.
+2. Só então `/impeccable` sobre o que renderiza, com **estado real**. Revisar mockup é
+   revisar a coisa errada, e por isso esta ordem.
+
+O motivo de estar aqui e não numa lista mental: a navegação foi justamente o que o
+usuário apontou como não comunicando as seções, e uma vistoria feita percorrendo as
+telas é o único jeito de saber se a correção pegou. Componente que passa em teste de
+unidade e confunde quem navega continua sendo um problema.
