@@ -61,7 +61,7 @@ describe("bolha otimista", () => {
     expect(e.mensagens.at(-1)).toMatchObject({ id: "tmp-1", autor: "lead", pendente: true });
   });
 
-  it("reconcilia por id, e o texto exibido passa a ser o MASCARADO", () => {
+  it("reconcilia por id — nunca por texto, porque o eco vem mascarado", () => {
     // Reconciliar por texto seria bug: não existe endpoint que devolva a versão
     // crua (openapi.yaml, invariante 2). Aqui o digitado e o ecoado diferem por
     // construção, porque a frase carrega PII.
@@ -71,7 +71,23 @@ describe("bolha otimista", () => {
     expect(e.mensagens).toHaveLength(1);
     expect(e.mensagens[0]!.id).toBe("m0");
     expect(e.mensagens[0]!.pendente).toBe(false);
-    expect(e.mensagens[0]!.conteudo).not.toContain(pii.cpf);
+  });
+
+  it("o lead continua vendo o que digitou — o servidor é que não guarda", () => {
+    // Este teste substitui um que exigia o oposto. A versão anterior assertava que
+    // a bolha do lead passava a exibir o texto MASCARADO depois do eco, e o efeito
+    // era o lead ver a própria mensagem alterada — o que parece defeito, porque ele
+    // sabe o que escreveu.
+    //
+    // O invariante do backend não mudou nem um pouco: o eco vem mascarado, o banco
+    // guarda mascarado, e não existe endpoint com a versão crua. O que mudou é que
+    // o NAVEGADOR DELE lembra o que ele digitou, em sessionStorage, e nada disso
+    // sai da aba.
+    const [frase, pii] = fraseDoLead(11);
+    let e = reduzir(estadoInicial(), { type: "envio-local", idTemp: "tmp-1", texto: frase });
+    e = reduzir(e, msg(0, "lead", frase.replace(pii.cpf, "[CPF]")));
+    expect(e.mensagens[0]!.conteudo).toBe(frase);
+    expect(e.mensagens[0]!.conteudo).toContain(pii.cpf);
   });
 
   it("reconcilia FIFO quando o lead envia duas antes do eco (a conversa enfileira)", () => {

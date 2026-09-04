@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { gravarCru, lerCru } from "./textoCruLocal";
 import { conectarChat, type StatusConexao } from "../api/ws";
 import type { EstadoConversa, EventoChat, Message } from "../api/tipos";
 
@@ -25,6 +26,14 @@ export type Mensagem = Message & {
 
 export type Estado = {
   porId: Map<string, Mensagem>;
+  /**
+   * `id da mensagem → texto que o LEAD digitou`, antes do mascaramento.
+   *
+   * Só existe no navegador dele (`textoCruLocal.ts`). O servidor continua sem nunca
+   * ter a versão crua persistida — o que muda é que o lead deixa de ver a própria
+   * mensagem alterada, que parecia defeito.
+   */
+  cruDoLead: Record<string, string>;
   /** Ids temporários na ordem de envio. A reconciliação é FIFO. */
   pendentesDoLead: string[];
   mensagens: Mensagem[];
@@ -54,13 +63,26 @@ function pareceCotacaoSemLastro(m: Message): boolean {
   return DINHEIRO.test(m.conteudo) && !temQuote;
 }
 
-function enriquecer(m: Message, pendente: boolean): Mensagem {
-  return { ...m, pendente, suspeitaDeBug: pareceCotacaoSemLastro(m) };
+function enriquecer(
+  m: Message,
+  pendente: boolean,
+  cruDoLead: Record<string, string> = {},
+): Mensagem {
+  const cru = m.autor === "lead" ? cruDoLead[m.id] : undefined;
+  return {
+    ...m,
+    // Só a fala do LEAD tem versão local. O que a empresa disse vem do servidor e
+    // não pode ter uma segunda fonte da verdade.
+    conteudo: cru ?? m.conteudo,
+    pendente,
+    suspeitaDeBug: pareceCotacaoSemLastro(m),
+  };
 }
 
-export function estadoInicial(): Estado {
+export function estadoInicial(cruDoLead: Record<string, string> = {}): Estado {
   return {
     porId: new Map(),
+    cruDoLead,
     pendentesDoLead: [],
     mensagens: [],
     digitando: false,
@@ -98,6 +120,7 @@ export function reduzir(estado: Estado, acao: Acao): Estado {
     case "message": {
       const porId = new Map(estado.porId);
       let pendentes = estado.pendentesDoLead;
+      let cruDoLead = estado.cruDoLead;
       const chegando = acao.message;
 
       /*
@@ -115,18 +138,24 @@ export function reduzir(estado: Estado, acao: Acao): Estado {
       ) {
         const [primeiro, ...resto] = pendentes;
         if (primeiro !== undefined) {
+          // O texto cru migra do id temporário para o canônico junto com a bolha.
+          const cru = estado.cruDoLead[primeiro];
+          if (cru !== undefined) {
+            cruDoLead = { ...cruDoLead, [chegando.id]: cru };
+            delete cruDoLead[primeiro];
+          }
           porId.delete(primeiro);
           pendentes = resto;
         }
       }
 
-      porId.set(chegando.id, enriquecer(chegando, false));
-      return fechar(porId, pendentes, estado);
+      porId.set(chegando.id, enriquecer(chegando, false, cruDoLead));
+      return fechar(porId, pendentes, { ...estado, cruDoLead });
     }
 
     case "historico": {
       const porId = new Map(estado.porId);
-      for (const m of acao.messages) porId.set(m.id, enriquecer(m, false));
+      for (const m of acao.messages) porId.set(m.id, enriquecer(m, false, estado.cruDoLead));
       const base = acao.state
         ? { ...estado, state: acao.state, entradaBloqueada: acao.state === "encaminhado" }
         : estado;
@@ -149,7 +178,10 @@ export function reduzir(estado: Estado, acao: Acao): Estado {
         suspeitaDeBug: false,
       };
       porId.set(acao.idTemp, otimista);
-      return fechar(porId, [...estado.pendentesDoLead, acao.idTemp], estado);
+      return fechar(porId, [...estado.pendentesDoLead, acao.idTemp], {
+        ...estado,
+        cruDoLead: { ...estado.cruDoLead, [acao.idTemp]: acao.texto },
+      });
     }
 
     /*
@@ -186,7 +218,11 @@ export function novoIdTemporario(): string {
 
 /** Liga o reducer ao socket. O componente não conhece o protocolo. */
 export function useConversa(conversationId: string | null, historico?: Message[] | null) {
-  const [estado, despachar] = useReducer(reduzir, undefined, estadoInicial);
+  // O texto cru do lead é lido do `sessionStorage` na montagem: um F5 no meio da
+  // conversa mantém o que ele digitou, e fechar a aba o descarta.
+  const [estado, despachar] = useReducer(reduzir, conversationId, (id) =>
+    estadoInicial(id !== null ? lerCru(id) : {}),
+  );
   const enviarRef = useRef<(texto: string) => boolean>(() => false);
   const ultimoIndexRef = useRef(-1);
   ultimoIndexRef.current = estado.ultimoIndex;
@@ -195,6 +231,13 @@ export function useConversa(conversationId: string | null, historico?: Message[]
     if (!historico || historico.length === 0) return;
     despachar({ type: "historico", messages: historico });
   }, [historico]);
+
+  // Persiste o cru do lead na sessão do NAVEGADOR. Nada disto é enviado, e o
+  // servidor continua sem nunca ter a versão crua persistida.
+  useEffect(() => {
+    if (conversationId === null) return;
+    gravarCru(conversationId, estado.cruDoLead);
+  }, [conversationId, estado.cruDoLead]);
 
   useEffect(() => {
     if (conversationId === null) return;
