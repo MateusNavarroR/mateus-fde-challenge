@@ -18,6 +18,93 @@ from __future__ import annotations
 #: projetada: 6,5 s ainda é latência plausível e avisar ali seria ruído.
 AVISO_SEM_COTACAO = "Só um instante, tô demorando mais que o normal aqui. Já te respondo."
 
+# ① — 6 s, com cotação em voo. Despachado de dentro da tool, com o relógio do LEAD:
+# conta da chegada da mensagem dele, não de quando a tool começou.
+# "Buscando", não "confirmando": aos 6 s o valor ainda não existe.
+AVISO_ESPERA = "Tô buscando o valor no sistema e ele tá lento agora. Já te trago, tá?"
+
+# ② — reforço aos ~20 s.
+REFORCO = "Ainda tô aqui, viu? O sistema não me devolveu ainda. Assim que sair eu te mando."
+
+# ③ — o job de cotação terminou `failed`. A segunda frase é deliberada: ela diz a
+# arquitetura dentro do produto, no momento em que ela importa para o lead.
+INDISPONIBILIDADE = (
+    "Não consegui confirmar o valor agora: o sistema de cotação não respondeu. "
+    "Não vou te passar um número sem ter certeza dele."
+)
+
+# ④ — despedida do encaminhamento. "A equipe", não "ele": presumir o gênero de quem
+# vai atender erra em metade dos casos. Sem prazo.
+DESPEDIDA = (
+    "Já passei sua conversa pra um atendente da equipe, com tudo que a gente conversou. "
+    "A equipe assume daqui."
+)
+
+# ⑧a / ⑧b — prefixos de assunto sensível. Dois, e não um: "sinto muito" numa
+# notificação extrajudicial soa como admissão, e a ausência dele depois de "meu carro
+# capotou ontem" soa como frieza.
+SENSIVEL_SINISTRO = (
+    "Sinto muito por isso. Esse assunto precisa de uma pessoa da equipe olhando com "
+    "atenção — não é algo pra eu resolver por aqui."
+)
+SENSIVEL_JURIDICO = (
+    "Entendi. Esse é um assunto que precisa de uma pessoa da equipe olhando, e não é "
+    "algo que eu deva tratar por aqui."
+)
+
+# ⑤⑥⑦ — as três recusas. Só a de veículo tem oferta, e ela vem DENTRO do template:
+# o texto do modelo é descartado no turno da recusa, sem exceção, porque o risco ali
+# não é preço alucinado e sim promessa falsa ("vou ver com o setor de exceções").
+RECUSA_IDADE_ACIMA = (
+    "Infelizmente não consigo seguir com essa cotação: a nossa aceitação vai até 75 anos "
+    "de idade do condutor. Acima disso a apólice não é emitida, e não é algo que eu "
+    "consiga contornar por aqui. Deixei seu cadastro registrado do nosso lado. "
+    "Sinto muito não poder ajudar dessa vez."
+)
+RECUSA_IDADE_ABAIXO = (
+    "Pra contratar o seguro é preciso ter no mínimo 18 anos, então não consigo emitir a "
+    "cotação agora. Quando chegar lá, é só me chamar que a gente resolve rápido."
+)
+RECUSA_VEICULO = (
+    "Esse carro tem mais de 20 anos, e a nossa aceitação vai até 20 anos de uso — então "
+    "não consigo cotar ele. Mas se tiver outro carro na casa que seja mais novo, me manda "
+    "o modelo e o ano que eu faço a cotação dele agora."
+)
+
+RECUSAS = (RECUSA_IDADE_ACIMA, RECUSA_IDADE_ABAIXO, RECUSA_VEICULO)
+
 TODOS: dict[str, str] = {
     "AVISO_SEM_COTACAO": AVISO_SEM_COTACAO,
+    "AVISO_ESPERA": AVISO_ESPERA,
+    "REFORCO": REFORCO,
+    "INDISPONIBILIDADE": INDISPONIBILIDADE,
+    "DESPEDIDA": DESPEDIDA,
+    "SENSIVEL_SINISTRO": SENSIVEL_SINISTRO,
+    "SENSIVEL_JURIDICO": SENSIVEL_JURIDICO,
+    "RECUSA_IDADE_ACIMA": RECUSA_IDADE_ACIMA,
+    "RECUSA_IDADE_ABAIXO": RECUSA_IDADE_ABAIXO,
+    "RECUSA_VEICULO": RECUSA_VEICULO,
 }
+
+#: Motivo de recusa normalizado → texto. Só estes três viram mensagem de recusa; os
+#: casos que a API chama de recusa mas são dado nosso errado (ano futuro, plano
+#: inexistente) caem em `bad_request` e nunca chegam aqui.
+POR_MOTIVO: dict[str, str] = {
+    "idade_acima_do_limite": RECUSA_IDADE_ACIMA,
+    "idade_abaixo_do_minimo": RECUSA_IDADE_ABAIXO,
+    "veiculo_acima_de_20_anos": RECUSA_VEICULO,
+}
+
+
+def compor_handoff(trigger: str, *, assunto: str | None = None) -> str:
+    """O handoff é sempre **um prefixo opcional mais a despedida**.
+
+    Tabela de quatro linhas, determinística — o que mantém o descarte do texto do
+    modelo sem exceção em todo caminho de encaminhamento.
+    """
+    if trigger == "cotacao_indisponivel":
+        return f"{INDISPONIBILIDADE}\n\n{DESPEDIDA}"
+    if trigger == "assunto_sensivel":
+        prefixo = SENSIVEL_SINISTRO if assunto in ("sinistro", "saude") else SENSIVEL_JURIDICO
+        return f"{prefixo}\n\n{DESPEDIDA}"
+    return DESPEDIDA
