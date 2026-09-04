@@ -22,6 +22,20 @@ uma regra determinística (breaker aberto, job `failed`) e uma decisão do model
 O contrato da Fase 0 marcou `HandoffTrigger` como provisório. Aqui ele fecha, e o banco
 passa a recusar um gatilho que não existe.
 
+> ⚠️ **Esta é a única fatia que altera `app/contracts/`, e a alteração é uma remoção.**
+>
+> O enum tem **oito** membros; a decisão fechada tem **sete**. O sobrando é
+> `COTACAO_RECUSADA` — justamente o que `DECISOES-FECHADAS.md` §3 lista sob *"Não são
+> gatilhos: recusa 422"*. Ele foi escrito na Fase 0, **antes** de a decisão 3 fechar, e
+> o próprio contrato já avisava: *"⚠️ Conjunto provisório… ele é substituído pela decisão
+> fechada."*
+>
+> **Passo 0 desta task: remover `COTACAO_RECUSADA` de `app/contracts/conversa.py`.**
+> Sem isso o teste de auto-consistência abaixo é impossível de passar — ou o `CHECK`
+> aceitaria um gatilho que a regra de negócio proíbe, ou o enum e o SQL divergiriam para
+> sempre. Sanciona a exceção ao "congelado" do `README.md` dos planos, porque a remoção
+> foi prevista pelo próprio contrato.
+
 - [ ] **Passo 1: teste que falha**
 
 ```python

@@ -34,7 +34,7 @@ Cada arquivo tem **uma** responsabilidade. O que muda junto, mora junto.
 
 ```
 app/
-├── contracts/            ← Fase 0, CONGELADO. Nenhuma fatia altera.
+├── contracts/            ← Fase 0, CONGELADO. Uma exceção prevista: ver nota.
 │   ├── quote.py          QuoteRequest · QuotePayload · classificar_erro · QuoteResult
 │   ├── conversa.py       LeadProfile · Turn · HandoffSignal · ConversationState
 │   └── channel.py        a porta ChannelAdapter
@@ -79,6 +79,11 @@ db/migrations/
 
 tests/nucleo/             uma suíte por fatia + test_guardrail.py transversal
 ```
+
+> **A exceção ao "congelado".** `HandoffTrigger` foi marcado como provisório no próprio
+> contrato da Fase 0, e tem **oito** membros contra os **sete** gatilhos que a decisão 3
+> fechou. A fatia 5 remove `COTACAO_RECUSADA` — recusa não vira handoff — e é a única
+> alteração autorizada em `app/contracts/`. Qualquer outra volta para decisão escrita.
 
 ### As três fronteiras que o mapa trava
 

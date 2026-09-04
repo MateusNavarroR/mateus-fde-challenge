@@ -119,6 +119,23 @@ async def test_job_ok_sem_premio_e_impossivel(sessao):
     """O CHECK da migração impõe isso; o teste prova que o código não tenta."""
 ```
 
+- [ ] **Passo 1b: o `detalhe` da tentativa também é texto que vai ao banco**
+
+```python
+async def test_detalhe_da_tentativa_e_mascarado(sessao, responder_400_ecoando):
+    """A migração 0001 diz, na própria coluna: o corpo do 422 do Pydantic ecoa o
+    payload enviado (idade, CEP). E o 400 ecoa o valor mal formatado que mandamos.
+    quote_attempts alimenta /admin/status, que é superfície visível."""
+    frase, pii = frase_do_lead(seed=2)
+    await executar_job(sessao, "c1", request_com(data_inicio=frase))
+    detalhe = sessao.query(QuoteAttempt).one().detalhe
+    assert not any(v in detalhe for v in pii.values())
+
+async def test_422_do_pydantic_nao_grava_detalhe(sessao, responder_422_detail):
+    # classificar_erro já não propaga; este teste TRAVA isso contra "melhorias"
+    assert sessao.query(QuoteAttempt).one().detalhe is None
+```
+
 - [ ] **Passo 2:** FAIL
 - [ ] **Passo 3:** implementar. `client.chamar()` devolve `(status, corpo, latency_ms)`;
       `executar_job()` classifica com `classificar_erro`, grava a tentativa **sempre** —

@@ -126,6 +126,30 @@ def test_plano_invalido_nao_vira_essencial_calado(conv):
     qualify_lead(plano_id="ouro")
     assert perfil(conv).plano_id is None
 
+@pytest.mark.parametrize("dito,iso", [
+    ("2026-10-17",        date(2026, 10, 17)),
+    ("17/10/2026",        date(2026, 10, 17)),
+    ("dia 17 de outubro", date(2026, 10, 17)),
+    ("dia 1º do mês que vem", PRIMEIRO_DO_MES_SEGUINTE),
+])
+def test_data_inicio_normaliza_para_iso(conv, dito, iso):
+    """O campo mais arriscado dos cinco. API-COTACAO §7.1: 'como a data vem de
+    texto livre, é o erro nosso mais provável' — e ele vira 400 na /quote, que
+    NÃO retenta. Task 4 não cobre isto porque o lead do dataset nunca informa
+    data de início, então é aqui ou em lugar nenhum."""
+    qualify_lead(data_inicio=dito)
+    assert perfil(conv).data_inicio == iso
+
+@pytest.mark.parametrize("dito", ["semana que vem", "quando der", "urgente"])
+def test_data_ambigua_fica_pendente_em_vez_de_chutar(conv, dito):
+    qualify_lead(data_inicio=dito)
+    assert perfil(conv).data_inicio is None      # repergunta, não adivinha
+
+def test_data_no_passado_nao_e_aceita(conv):
+    # a API aceita sem reclamar; a validação tem que ser nossa
+    qualify_lead(data_inicio="2020-03-10")
+    assert perfil(conv).data_inicio is None
+
 def test_origem_do_campo_e_guardada_mascarada(conv):
     frase, pii = frase_do_lead(seed=5)
     qualify_lead(idade=35, origem=frase)

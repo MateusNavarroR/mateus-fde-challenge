@@ -56,11 +56,26 @@ async def test_backoff_tem_jitter():
     assert max(esperas) <= 2.0            # teto
 
 @pytest.mark.serial
-async def test_semaforo_segura_sob_concorrencia(porta_lenta):
-    # sem limite, acima de 40 lentas o legado serializa e o tempo dobra para ~16,6s
-    rs = await asyncio.gather(*[executar_job(...) for _ in range(20)])
-    assert all(a.latency_ms < 12_000 for r in rs for a in r.attempts)
+async def test_semaforo_limita_as_chamadas_em_voo(porta_lenta, contador):
+    """A asserção é sobre o MÁXIMO EM VOO, não sobre a latência final.
+
+    Medir só a latência não prova nada: API-COTACAO §3.3 mostra que o legado só
+    degrada ACIMA de 40 lentas simultâneas — com 20 jobs, toda tentativa fica em
+    8,1–8,9 s com ou sem semáforo. O teste passaria com a feature ausente."""
+    await asyncio.gather(*[executar_job(...) for _ in range(30)])
+    assert contador.maximo_em_voo <= 8          # o invariante 11, diretamente
+
+@pytest.mark.serial
+async def test_sem_semaforo_o_teto_e_estourado(porta_lenta, contador, sem_semaforo):
+    """O par negativo: prova que o contador mede o que diz medir. Sem o limite,
+    as 30 chamadas entram juntas."""
+    await asyncio.gather(*[executar_job(...) for _ in range(30)])
+    assert contador.maximo_em_voo == 30
 ```
+
+`contador` é uma fixture que instrumenta `client.chamar()` — incrementa ao entrar,
+decrementa ao sair, guarda o máximo. **Sem o par negativo, o contador poderia estar
+sempre em 1 por um bug de instrumentação e o primeiro teste passaria feliz.**
 
 O terceiro é o teste mais valioso da fatia: ele deixa **no código** o motivo de o
 timeout ser 12 s, em vez de só na prosa do README.
