@@ -69,9 +69,20 @@ export function Console({ rota, children }: { rota: string; children?: ReactNode
   const auth = useAutenticacao();
   const sair = useSair();
 
-  const conexao = useEventos((tipo) => {
-    if (tipo === "handoff.created" || tipo === "handoff.updated") fila.recarregar();
-  });
+  // O socket de EVENTOS é da operação, e só abre quando há acesso a ela.
+  //
+  // No simulador anônimo — que é público, porque um lead não faz login para pedir
+  // cotação — ele batia num 401 e reconectava em laço com backoff, para sempre, contra
+  // uma rota que nunca ia abrir. Barulho no console do avaliador e trabalho inútil no
+  // servidor, para receber eventos que a tela não tem permissão de mostrar.
+  const podeOuvirOperacao =
+    auth.situacao === "conhecido" && (!auth.exigido || auth.autenticado);
+  const conexao = useEventos(
+    (tipo) => {
+      if (tipo === "handoff.created" || tipo === "handoff.updated") fila.recarregar();
+    },
+    { ativo: podeOuvirOperacao },
+  );
 
   const alternar = useCallback(() => {
     setColapsada((c) => {

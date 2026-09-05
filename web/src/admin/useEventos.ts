@@ -57,12 +57,24 @@ export function _reiniciarEventos(): void {
  * Assina o push. `aoEvento` recebe só o tipo — é tudo que a UI usa, e é tudo que
  * o Núcleo precisa garantir no envelope.
  */
-export function useEventos(aoEvento?: (tipo: TipoEventoAdmin) => void): StatusConexao {
-  const [status, setStatus] = useState<StatusConexao>(statusAtual);
+export function useEventos(
+  aoEvento?: (tipo: TipoEventoAdmin) => void,
+  /**
+   * `ativo: false` não abre o socket, e devolve `"fechado"`.
+   *
+   * Existe para o simulador anônimo, que é público: sem sessão, `/api/events` responde
+   * 401 e o cliente reconectava em laço com backoff contra uma rota que nunca ia
+   * abrir. O default é `true` para não mudar nenhum chamador existente.
+   */
+  opcoes?: { ativo?: boolean },
+): StatusConexao {
+  const ativo = opcoes?.ativo ?? true;
+  const [status, setStatus] = useState<StatusConexao>(ativo ? statusAtual : "fechado");
   const ref = useRef(aoEvento);
   ref.current = aoEvento;
 
   useEffect(() => {
+    if (!ativo) return;
     const ouvinte: Ouvinte = (tipo) => ref.current?.(tipo);
     const deStatus = (s: StatusConexao) => setStatus(s);
     ouvintes.add(ouvinte);
@@ -74,7 +86,7 @@ export function useEventos(aoEvento?: (tipo: TipoEventoAdmin) => void): StatusCo
       ouvintesDeStatus.delete(deStatus);
       liberar();
     };
-  }, []);
+  }, [ativo]);
 
   return status;
 }

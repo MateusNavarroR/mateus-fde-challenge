@@ -10,11 +10,12 @@
  *
  * As invariantes valem igual; o alvo mudou.
  */
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { Console, SECOES } from "../../../web/src/ui/Console";
 import { App } from "../../../web/src/App";
+import { _reiniciarAutenticacao } from "../../../web/src/ui/useAutenticacao";
 import { montarBackendFalso } from "../fakes/backend-falso";
 
 const CHAVE_COLAPSO = "autoseguro.barra_colapsada";
@@ -114,12 +115,30 @@ it("o colapso sobrevive a uma remontagem — é preferência, não estado de tel
   expect(screen.getByRole("button", { name: /expandir/i })).toBeVisible();
 });
 
-it("um socket de eventos para a sessão inteira, não um por tela", () => {
+it("um socket de eventos para a sessão inteira, não um por tela", async () => {
+  // `async` porque o socket de eventos passou a esperar o estado de autenticação:
+  // sem sessão ele não abre, e antes disso não dá para saber se há uma. O que o
+  // teste trava continua sendo o mesmo — UM socket, não um por tela.
   const srv = montarBackendFalso({});
   const { rerender } = render(<Console rota="/painel" />);
+  await screen.findByRole("navigation", { name: /seções/i });
   rerender(<Console rota="/handoffs" />);
   rerender(<Console rota="/status" />);
-  expect(srv.socketsAbertos).toBe(1);
+  await waitFor(() => expect(srv.socketsAbertos).toBe(1));
+});
+
+it("o simulador ANÔNIMO não abre o socket da operação", async () => {
+  // Ele é público — um lead não faz login para pedir cotação — e `/api/events` exige
+  // sessão. Sem esta guarda, o cliente reconectava em laço com backoff, para sempre,
+  // contra uma rota que nunca ia abrir.
+  _reiniciarAutenticacao();
+  const srv = montarBackendFalso({
+    auth: { usuario: `op-${Math.random().toString(36).slice(2)}`,
+            senha: Math.random().toString(36).slice(2), autenticado: false },
+  });
+  render(<Console rota="/simulador" />);
+  await screen.findByRole("navigation", { name: /seções/i });
+  await waitFor(() => expect(srv.socketsAbertos).toBe(0));
 });
 
 it("NÃO existe deep link de uma conversa para o simulador (decisão fechada §8)", () => {

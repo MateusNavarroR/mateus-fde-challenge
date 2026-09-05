@@ -35,7 +35,7 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
   const [estadoInicial, setEstadoInicial] = useState<EstadoConversa | null>(null);
   const [falhaAoAbrir, setFalhaAoAbrir] = useState(false);
   const [rascunho, setRascunho] = useState("");
-  const fim = useRef<HTMLDivElement | null>(null);
+  const thread = useRef<HTMLElement | null>(null);
 
   // Retomada ao carregar. Um F5 no meio de uma janela de 37 s não pode destruir
   // a conversa — sempre-nova é o comportamento do botão, não do carregamento.
@@ -60,8 +60,17 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
   const anexo = useRef<HTMLInputElement>(null);
   const { estado, enviar } = useConversa(id, historico, estadoInicial);
 
+  // Rola a ESTEIRA, e não o elemento pela API do navegador.
+  //
+  // `scrollIntoView` rola **todos** os ancestrais roláveis até o elemento aparecer —
+  // inclusive a página. Com a moldura ancorada e conteúdo acima dela, cada mensagem
+  // enviada arrastava a janela inteira para o topo: o usuário perdia de vista o que
+  // estava lendo a cada envio. Mexer no `scrollTop` do contêiner move só ele, que é
+  // o que se queria desde o começo.
   useEffect(() => {
-    fim.current?.scrollIntoView({ block: "end" });
+    const esteira = thread.current;
+    if (esteira === null) return;
+    esteira.scrollTop = esteira.scrollHeight;
   }, [estado.mensagens.length, estado.digitando]);
 
   const submeter = () => {
@@ -134,7 +143,7 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
         ) : null}
       </div>
 
-      <main className="chat__thread">
+      <main className="chat__thread" ref={thread}>
         {estado.conexao === "reconectando" ? (
           <p role="status" className="pilula pilula--atencao">
             Reconectando… nada se perde: ao voltar, tudo que chegou aparece aqui.
@@ -181,7 +190,6 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
         )}
 
         {estado.digitando ? <Digitando /> : null}
-        <div ref={fim} />
       </main>
 
       <footer className="chat__rodape">

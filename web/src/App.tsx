@@ -91,6 +91,17 @@ export function App() {
 
   if (SECOES.some((s) => destino === s.href || destino.startsWith(`${s.href}/`))) {
     if (auth.situacao === "desconhecido") return <Aguardando />;
+    // O SIMULADOR fica FORA da guarda, e o backend é quem manda nisso: ele serve
+    // `POST /api/conversations` e o WebSocket do chat **sem autenticação**, porque um
+    // lead não faz login para pedir cotação — está declarado como superfície pública
+    // em `docs/SEGURANCA.md`. Guardá-lo no cliente criava uma tela que pedia senha
+    // para algo que a API entrega a qualquer um, e contradizia a própria tela de
+    // login, que promete em texto que o chat simulado é público.
+    //
+    // A casca degrada sozinha: sem sessão, a contagem de handoffs volta 401 e some, e
+    // o WebSocket de eventos do admin não conecta — a pílula já diz isso. Nenhum dado
+    // de operação aparece, porque nenhum deles é servido sem sessão.
+    if (destino === "/simulador") return <Operacao rota={destino} />;
     return barrado ? <Login destino={destino} /> : <Operacao rota={destino} />;
   }
 

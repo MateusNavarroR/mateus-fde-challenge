@@ -1,6 +1,7 @@
 import { beforeEach, expect, it } from "vitest";
 import { estadoInicial, reduzir } from "../../../web/src/chat/useConversa";
 import { esquecerCru, gravarCru, lerCru } from "../../../web/src/chat/textoCruLocal";
+import { gerarPii } from "../fixtures/pii";
 
 const CPF = "111.222.333-44";
 const DIGITADO = `meu cpf é ${CPF}`;
@@ -94,4 +95,25 @@ it("storage bloqueado não quebra a tela", () => {
 it("JSON corrompido no storage não quebra a tela", () => {
   sessionStorage.setItem("autoseguro:cru:c1", "{isso não é json");
   expect(lerCru("c1")).toEqual({});
+});
+
+it("o mapa guardado sobrevive à chegada tardia do id da conversa", () => {
+  /*
+   * O bug: o `id` chega depois da montagem (a `PaginaChat` o resolve num `await`), e
+   * no render em que ele chega o estado ainda está vazio — o reducer que lê o
+   * `sessionStorage` só roda depois dos efeitos daquele commit. O efeito de
+   * persistência então gravava `{}` por cima do que existia, e o reducer lia o mapa
+   * recém-apagado. Na tela: depois de um F5, o lead voltava a ver `[CEP]` na própria
+   * bolha.
+   *
+   * A regra que este teste trava é simples e é o conserto: **mapa vazio não grava.**
+   */
+  const conversa = "conv_chegada_tardia";
+  const cru = { msg_1: `meu CEP é ${gerarPii(4242).cep}` };
+  gravarCru(conversa, cru);
+
+  // O que o efeito fazia no render da chegada do id.
+  gravarCru(conversa, {});
+
+  expect(lerCru(conversa)).toEqual(cru);
 });

@@ -266,7 +266,8 @@ export function useConversa(
   }, [historico, estadoDoHistorico]);
 
   // Persiste o cru do lead na sessão do NAVEGADOR. Nada disto é enviado, e o
-  // servidor continua sem nunca ter a versão crua persistida.
+  // servidor continua sem nunca ter a versão crua persistida. `gravarCru` ignora o
+  // mapa vazio — ver o comentário lá, que explica a corrida que isso conserta.
   useEffect(() => {
     if (conversationId === null) return;
     gravarCru(conversationId, estado.cruDoLead);

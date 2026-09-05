@@ -45,6 +45,22 @@ export function lerCru(conversationId: string): Record<string, string> {
 }
 
 export function gravarCru(conversationId: string, mapa: Record<string, string>): void {
+  /*
+   * MAPA VAZIO NÃO GRAVA, e esta linha é o conserto de um bug real.
+   *
+   * O `id` da conversa chega DEPOIS da montagem — a `PaginaChat` o resolve num
+   * `await` — e, no render em que ele chega, o estado do reducer ainda é o vazio: o
+   * efeito de troca de conversa só dispara o `dispatch`, e o reducer, que é quem lê
+   * este armazenamento, roda depois de todos os efeitos daquele commit. O efeito de
+   * persistência então gravava `{}` por cima do que estava guardado, e o reducer lia
+   * o mapa recém-apagado. Na tela: depois de um F5, o lead voltava a ver `[CEP]` na
+   * própria bolha — exatamente o que este módulo existe para evitar.
+   *
+   * Gravar vazio nunca é necessário: cada conversa tem a sua chave, e "Nova conversa"
+   * troca o `id`. Não existe estado vazio que precise ser lembrado — só
+   * `esquecerCru` apaga, e ele é explícito.
+   */
+  if (Object.keys(mapa).length === 0) return;
   try {
     sessionStorage.setItem(chave(conversationId), JSON.stringify(mapa));
   } catch {

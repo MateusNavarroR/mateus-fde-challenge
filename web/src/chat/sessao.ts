@@ -133,6 +133,23 @@ export async function abrirSessao(): Promise<{ id: string; detalhe: Conversation
           detalhe = null;
           return null;
         }
+        /*
+         * 401 NÃO derruba a retomada, e a razão é que este GET é uma OTIMIZAÇÃO.
+         *
+         * `GET /api/conversations/{id}` é rota de operação e exige sessão; o chat é
+         * anônimo por desenho, e o lead não tem nenhuma. Mas o histórico dele não
+         * depende deste GET: ao abrir, o WebSocket manda `hello` com `last_index` e o
+         * servidor faz o replay do banco. O GET só adianta as bolhas antes do socket
+         * conectar.
+         *
+         * Sem este ramo, o simulador aberto sem login mostrava "Não consegui abrir a
+         * conversa" — um erro de backend fora do ar para uma conversa que estava lá e
+         * que o socket ia entregar meio segundo depois.
+         */
+        if (e instanceof ErroApi && e.tipo === "nao_autorizado") {
+          detalhe = null;
+          return null;
+        }
         throw e;
       }
     },
