@@ -13,7 +13,7 @@ máquina foi derrubado ou recriado — **com uma exceção grave, admitida abaix
 Ao investigar por que a suíte `not live` falhava com `relation "ai.agno_runs" does
 not exist`, rodei um arquivo de teste isolado **sem exportar `APP_DATABASE_URL`**
 para checar o comportamento default. `tests/conftest.py` tem como fallback
-`postgresql+psycopg://postgres:postgres@127.0.0.1:55432/autoseguro` — e a porta
+`postgresql+psycopg://postgres:postgres[at]127.0.0.1:55432/autoseguro` — e a porta
 55432 é exatamente uma das que o enunciado desta avaliação me disse para **não
 tocar**, por já estar em uso por uma instância real (`autoseguro-db`, container
 `autoseguro-db` publicado em `127.0.0.1:55432`).

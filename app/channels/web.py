@@ -128,11 +128,11 @@ def publicar_no_chat_sync(conversation_id: str, frame: dict) -> None:
     """`publicar_no_chat` a partir de uma rota síncrona. Ver `publicar_sync`."""
     if _laco is None:  # sem servidor rodando: teste de unidade, script
         return
+    coro = publicar_no_chat(conversation_id, frame)  # ver `publicar_sync`
     try:
-        asyncio.run_coroutine_threadsafe(
-            publicar_no_chat(conversation_id, frame), _laco
-        )
+        asyncio.run_coroutine_threadsafe(coro, _laco)
     except Exception:  # noqa: BLE001  # pragma: no cover
+        coro.close()
         log.debug("push no chat perdido; o lead recebe no replay do hello")
 
 #: O laço do servidor, capturado no boot. Uma rota síncrona roda no threadpool do
@@ -176,9 +176,17 @@ def publicar_sync(tipo: str, dados: dict) -> None:
     """
     if _laco is None:  # sem servidor rodando: teste de unidade, script
         return
+    # A coroutine é criada ANTES do `try` e FECHADA no `except`, e isso não é
+    # preciosismo: `run_coroutine_threadsafe` pode levantar (laço já fechado, que é o
+    # caso comum no fim de um teste), e a coroutine ficaria criada e nunca aguardada.
+    # O Python emite `RuntimeWarning: coroutine was never awaited` — eram 57 numa
+    # execução da suíte, e uma pilha de warnings conhecidos é onde um warning novo se
+    # esconde.
+    coro = publicar_evento(tipo, dados)
     try:
-        asyncio.run_coroutine_threadsafe(publicar_evento(tipo, dados), _laco)
+        asyncio.run_coroutine_threadsafe(coro, _laco)
     except Exception:  # noqa: BLE001  # pragma: no cover
+        coro.close()
         log.debug("push perdido; a tela recarrega do endpoint")
 
 

@@ -775,3 +775,40 @@ def test_a_chave_de_sessao_passa_pelo_SCRYPT_e_nao_por_um_hash_barato():
     # ...enquanto trocar a senha continua derrubando toda sessão viva.
     _, outra = _credencial_efemera()
     assert auth._chave_de_sessao(usuario, outra) != chave
+
+
+def test_TODO_tipo_de_evento_declarado_tem_um_emissor():
+    """O teste acima pegava a ausência TOTAL de emissores. Este pega a parcial.
+
+    `quote.attempt` estava no contrato de eventos, no enum do cliente e na
+    `PaginaStatus` — que tem até um debounce de 400 ms, escrito porque "um cenário
+    degradado emite dezenas por segundo". **Ninguém nunca o emitia.** Uma auditoria
+    externa achou; o teste irmão não pegava, porque ele só exige que EXISTA alguma
+    chamada a `publicar_evento`, e as de handoff bastavam.
+
+    A lista de tipos é o contrato com o frontend: cada um precisa de quem o produza,
+    senão a tela espera por um evento que nunca chega — e o pior é que ela funciona,
+    só que sempre desatualizada.
+    """
+    raiz = Path(__file__).resolve().parents[2]
+    fontes = "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (raiz / "app").rglob("*.py")
+        if p != raiz / "app" / "channels" / "web.py"
+    )
+
+    # A MESMA lista que o frontend declara em `TIPOS_EVENTO_ADMIN`, lida de lá para
+    # que as duas não possam divergir em silêncio.
+    tipos_ts = (raiz / "web" / "src" / "api" / "tipos.ts").read_text(encoding="utf-8")
+    linha = next(
+        l for l in tipos_ts.splitlines() if "TIPOS_EVENTO_ADMIN" in l and "=" in l
+    )
+    tipos = re.findall(r'"([a-z.]+)"', linha)
+    assert len(tipos) >= 3, f"não consegui ler os tipos de {linha!r}"
+
+    sem_emissor = [t for t in tipos if f'"{t}"' not in fontes]
+    assert not sem_emissor, (
+        f"tipos de evento declarados e nunca emitidos: {sem_emissor}. A tela espera "
+        "por eles e nunca recebe — e o pior é que ela funciona, só que sempre "
+        "desatualizada."
+    )

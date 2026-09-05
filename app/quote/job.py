@@ -26,6 +26,7 @@ distinguir isso de "tentamos 3 vezes e falhou".
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import threading
 import time
 import uuid
@@ -42,6 +43,8 @@ from app.contracts.quote import (
 from app.config import get_settings
 from app.persistence.models import Quote, QuoteAttempt
 from app.privacy.mascarar import mascarar
+
+log = logging.getLogger("autoseguro.quote")
 from app.quote import client
 from app.quote.breaker import breaker_global
 
@@ -87,6 +90,24 @@ def gravar_tentativa(
     s.add(a)
     s.flush()
     return a
+
+
+def _publicar_tentativa(quote_id: str, attempt: int, outcome: str, latency_ms: int) -> None:
+    """Push do `quote.attempt`. Falhar aqui NUNCA atrapalha a cotação.
+
+    É sinalização, como o `typing`: o dado já está em `quote_attempts`, e a tela
+    recarrega do endpoint de qualquer forma. Um push perdido custa um atraso de
+    repintura; um push que levanta custaria a cotação do lead.
+    """
+    from app.channels.web import publicar_sync
+
+    try:
+        publicar_sync("quote.attempt", {
+            "quote_id": quote_id, "attempt": attempt,
+            "outcome": outcome, "latency_ms": latency_ms,
+        })
+    except Exception:  # noqa: BLE001 — ver docstring
+        log.debug("push de quote.attempt perdido; a tela recarrega do endpoint")
 
 
 def finalizar(
@@ -157,7 +178,23 @@ def executar_job(
         resp = client.chamar(req)
         total += resp.latency_ms
         erro = None if resp.ok else resp.erro()
-        gravar_tentativa(s, q.id, tentativa, resp, erro)
+        a = gravar_tentativa(s, q.id, tentativa, resp, erro)
+
+        # E AVISA A TELA DE STATUS, que já esperava por isto.
+        #
+        # `quote.attempt` estava no contrato de eventos (`app/channels/web.py`), no
+        # enum do cliente e na `PaginaStatus` — que tem até um debounce de 400 ms,
+        # escrito porque "um cenário degradado emite dezenas por segundo". **Ninguém
+        # nunca emitia.** A cadeia inteira construída e nunca ligada, achada numa
+        # auditoria; é a quarta desta família no repositório.
+        #
+        # Importa para o critério que mais pesa: a tela de saúde da integração
+        # mudando ao vivo enquanto a `/quote` falha é a prova de C2 acontecendo, em
+        # vez de um número que só aparece se alguém recarregar a página.
+        #
+        # Sem `await` e sem bloquear: `publicar_sync` marshala para o laço do
+        # servidor e nunca atrasa a cotação, que é o caminho caro.
+        _publicar_tentativa(q.id, tentativa, a.outcome, resp.latency_ms)
 
         if resp.ok:
             br.registrar_sucesso()

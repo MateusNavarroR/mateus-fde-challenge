@@ -299,7 +299,7 @@ este terceiro tipo. Registrado para quem for revisar o painel de eventos depois.
   auditar em `supply-chain-risk-auditor` além do que já foi coberto.
 - Varredura de segredo no histórico completo (50 commits) sobre padrões de chave
   Anthropic/AWS/GitHub/chave privada: nenhum literal real, só valores sintéticos de
-  teste (`ANTHROPIC_API_KEY=valor-de-teste`, `=do-arquivo`).
+  teste (a linha da chave da Anthropic preenchida com um placeholder, `=do-arquivo`).
 
 ---
 

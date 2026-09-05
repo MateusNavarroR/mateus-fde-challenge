@@ -38,6 +38,7 @@ dez minutos, e o único jeito de conferir a amostra sem pagar por ela.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -51,6 +52,15 @@ from qa.replay.executor import Executor, Modo
 #: derivado do dataset e não é versionado, mesmo mascarado.
 def destino_padrao() -> Path:
     return caminhos.dir_saida().parent / "replay"
+
+
+def _sem_credencial(url: str) -> str:
+    """`postgresql://user:senha@host/db` → `postgresql://***:***@host/db`.
+
+    Mesma regra do resto do sistema: o que é segredo não sai por canal de saída, e
+    aqui o canal é o stdout de uma ferramenta que roda em CI.
+    """
+    return re.sub(r"://[^@/]+@", "://***:***@", url)
 
 
 def montar_parser() -> argparse.ArgumentParser:
@@ -139,7 +149,14 @@ def main(argv: list[str] | None = None) -> int:
         # mesmo depois de uma avaliação inteira ter rodado.
         url_dos_evals = args.evals_db or get_settings().database_url
         db_evals = db_de_evals(url_dos_evals)
-        alvo = "o mesmo banco do replay" if args.evals_db is None else args.evals_db
+        # A URL SAI MASCARADA. Uma string de conexão do Postgres carrega usuário e
+        # senha (`postgres://user:pass@host/db`), e `print` em CI vai para log
+        # persistente e pesquisável. O operador digitou o valor e ele já está no
+        # `history` dele — o que não deve acontecer é a credencial vazar para um log
+        # que outras pessoas leem.
+        alvo = "o mesmo banco do replay" if args.evals_db is None else _sem_credencial(
+            args.evals_db
+        )
         print(f"\nevals .......... ligados; gravam em ai.eval_runs de {alvo}")
 
     executor = Executor(
