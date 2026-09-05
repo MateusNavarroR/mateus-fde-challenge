@@ -196,10 +196,29 @@ class Executor:
     responder: Callable[..., Any] | None = None
     backoff: Backoff | None = None
     modelo: str = ""
+    #: `PostgresDb` apontado para `ai.eval_runs`, ou `None` para não avaliar.
+    #:
+    #: Opcional de propósito: a suíte do harness roda o laço inteiro sem banco, e um
+    #: `db` obrigatório aqui a obrigaria a subir Postgres para testar amostragem.
+    #: Quem quer o número no painel liga com `--evals`; quem quer só o replay, não.
+    db_evals: Any = None
+    registro_evals: Any = None
 
     def __post_init__(self) -> None:
         if self.backoff is None:
             self.backoff = Backoff(seed=self.seed)
+        if self.registro_evals is None:
+            from qa.replay.evals import Registro
+
+            self.registro_evals = Registro()
+
+    def _engine_de_evals(self):
+        """A engine para conferir o que foi gravado. Do mesmo banco do `db_evals`."""
+        from sqlalchemy import create_engine
+
+        from app.config import get_settings
+
+        return create_engine(get_settings().database_url)
 
     def _fabrica(self):
         if self.sessao_factory is not None:
@@ -380,6 +399,22 @@ class Executor:
     ) -> None:
         chamadas = coletor.chamadas_de_tool()
         resultado.tools_chamadas = sorted(set(chamadas))
+
+        # O `ReliabilityEval` do Agno, com persistência, ao lado da nossa própria
+        # conferência — e não no lugar dela. As duas medem coisas diferentes:
+        # `conferir_tools` responde "faltou alguma obrigatória, chamou alguma
+        # proibida" e alimenta o relatório do replay; o eval nativo grava em
+        # `ai.eval_runs`, que é o que o painel lê e o que o invariante 27 promete.
+        # Trocar uma pela outra perderia metade — a nossa cobre o "não deve chamar",
+        # que `expected_tool_calls` não expressa.
+        if self.db_evals is not None:
+            from qa.replay import evals as _evals
+
+            _evals.gravar_reliability(
+                caso, expectativa, coletor.runs,
+                db=self.db_evals, registro=self.registro_evals,
+            )
+
         faltando, proibidas = assercoes.conferir_tools(expectativa, chamadas)
         resultado.tools_faltando = list(faltando)
         resultado.tools_proibidas_chamadas = list(proibidas)
@@ -482,6 +517,31 @@ class Executor:
             rel.interrompido_por = "interrompido pelo operador (Ctrl-C)"
         finally:
             from datetime import datetime, timezone
+
+            # O juiz roda UMA vez por execução, e não por conversa: o alvo é a nossa
+            # redação fixa das três recusas, que é byte a byte a mesma em toda
+            # conversa recusada. No `finally` porque uma execução interrompida no meio
+            # ainda produziu texto para avaliar — e porque são três chamadas, não
+            # trezentas.
+            if self.db_evals is not None:
+                from qa.replay import evals as _evals
+
+                _evals.gravar_juiz_das_recusas(
+                    db=self.db_evals, registro=self.registro_evals,
+                )
+                # E então PERGUNTA AO BANCO quantas linhas existem, em vez de
+                # confiar no retorno: o Agno engole erro de escrita (loga um WARNING
+                # e devolve o resultado como se tivesse gravado), então um contador
+                # incrementado no retorno afirmaria gravações que nunca aconteceram.
+                _evals.conferir_gravacao(self._engine_de_evals(), self.registro_evals)
+                rel.evals = {
+                    "reliability_avaliados": self.registro_evals.reliability_avaliados,
+                    "reliability_passaram": self.registro_evals.reliability_passaram,
+                    "juiz_avaliados": self.registro_evals.juiz_avaliados,
+                    "juiz_passaram": self.registro_evals.juiz_passaram,
+                    "linhas_no_banco": self.registro_evals.linhas_no_banco,
+                    "erros": list(self.registro_evals.erros),
+                }
 
             rel.terminado_em = datetime.now(timezone.utc).isoformat(timespec="seconds")
             rel.segundos_de_espera = self.backoff.esperado_s  # type: ignore[union-attr]

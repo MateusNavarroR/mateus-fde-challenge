@@ -277,3 +277,27 @@ it("a vista do lead NÃO tem compositor — ver não é escrever", async () => {
   expect(container.querySelector('input[type="text"]')).toBeNull();
   expect(screen.queryByRole("button", { name: /enviar/i })).toBeNull();
 });
+
+it("as três formas de leitura rolam por dentro, e não esticam a página", async () => {
+  // Uma conversa longa empurrava as Cotações e os Handoffs para fora da tela — e eles
+  // ficam ABAIXO das mensagens, sendo metade da razão de a tela existir. O limite
+  // vive no CSS; o que o teste trava é o gancho de que ele depende, porque o dia em
+  // que alguém renomear a classe o estilo some sem nada ficar vermelho.
+  montarBackendFalso({
+    conversa: {
+      quotes: [], handoffs: [], perfil: {},
+      messages: [
+        { id: "m1", index: 0, autor: "lead", conteudo: "oi", status: "received", tipo: "text", quote_id: null, criado_em: T },
+      ],
+    },
+  });
+  const usuario = userEvent.setup();
+  const { container } = render(<DetalheConversa id="c1" />);
+  expect(await screen.findByTestId("transcricao")).toHaveClass("transcricao");
+
+  await usuario.click(screen.getByRole("button", { name: /razão/i }));
+  expect(container.querySelector(".razao")).not.toBeNull();
+
+  await usuario.click(screen.getByRole("button", { name: /como o lead viu/i }));
+  expect((await screen.findByTestId("vista-lead")).className).toMatch(/chat__thread/);
+});

@@ -204,7 +204,7 @@ export function DetalheConversa({ id }: { id: string }) {
           ))}
         </div>
       ) : (
-        <div>
+        <div className="razao">
           {mensagens.map((m) => (
             <div
               key={m.id}

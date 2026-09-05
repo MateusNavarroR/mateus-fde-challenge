@@ -7,6 +7,13 @@ import { Erro } from "../../../web/src/ui/Erro";
 import { ErroApi } from "../../../web/src/api/cliente";
 import { _reiniciarAutenticacao } from "../../../web/src/ui/useAutenticacao";
 
+/** Credencial gerada, nunca literal — CLAUDE.md 13b, e a varredura de
+ *  `tests/nucleo/test_auth.py` pegou a primeira versão deste arquivo. */
+function credencial(): { usuario: string; senha: string } {
+  const aleatorio = () => Math.random().toString(36).slice(2, 10);
+  return { usuario: `op-${aleatorio()}`, senha: `${aleatorio()}${aleatorio()}` };
+}
+
 const ROTAS = ["/historico", "/status", "/handoffs"];
 
 it.each(ROTAS)("%s: vazio explica e não parece erro", async (rota) => {
@@ -78,7 +85,7 @@ it("filtro sem resultado NÃO diz que o banco está vazio", async () => {
  */
 it("401 com login configurado manda reautenticar, não pedir ADMIN_TOKEN", async () => {
   _reiniciarAutenticacao();
-  montarBackendFalso({ auth: { usuario: "op", senha: "segredo", autenticado: false } });
+  montarBackendFalso({ auth: { ...credencial(), autenticado: false } });
   const erro = new ErroApi("nao_autorizado", "sessão ausente ou expirada", 401, null);
   render(<Erro erro={erro} aoTentarDeNovo={() => {}} />);
 

@@ -225,7 +225,7 @@ it("/entrar não pisca a operação antes de saber se há sessão", async () => 
   // `/entrar` pintava o Painel — com traços no lugar dos números e dois 401 no
   // console — para só então trocar pelo login.
   _reiniciarAutenticacao();
-  montarBackendFalso({ auth: { usuario: "op", senha: "segredo", autenticado: false } });
+  montarBackendFalso({ auth: { ...credencial(), autenticado: false } });
   history.replaceState(null, "", "/entrar");
   render(<App />);
 

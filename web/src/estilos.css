@@ -1424,6 +1424,19 @@ code {
   overflow-y: auto;
 }
 
+/* As TRÊS formas de leitura do histórico rolam por dentro. Sem isto, uma conversa
+   longa esticava a página inteira e o operador perdia o cabeçalho da conversa, as
+   cotações e os handoffs — que ficam ABAIXO das mensagens e são metade da razão de
+   a tela existir. A vista do lead já tinha o limite; a transcrição e a razão, que
+   são as formas mais usadas, não tinham. */
+.transcricao,
+.razao {
+  max-height: 34rem;
+  overflow-y: auto;
+  /* Espaço para a barra não cobrir o texto quando ela ocupa lugar (Windows, Linux). */
+  padding-right: 0.4rem;
+}
+
 .login__secoes {
   list-style: none;
   margin: 0 0 1.5rem;
@@ -1987,9 +2000,18 @@ code {
    na última bolha em vez de fixo na base. `min()` mantém a moldura cheia e o
    compositor na extremidade desde o primeiro turno, sem estourar telas baixas. */
 .simulador .chat {
-  height: min(calc(100dvh - 15rem), 42rem);
-  min-height: 28rem;
-  max-width: none;
+  /* ALTURA E LARGURA FIXAS, e é esse o ponto: com `min(calc(100dvh - 15rem), …)` a
+     moldura mudava de tamanho a cada janela e a cada altura de cabeçalho, então a
+     mesma tela nunca era a mesma tela duas vezes — o compositor e o botão de enviar
+     saíam do lugar entre uma sessão e outra. Uma janela de mensageiro tem formato
+     próprio, e ele não é função do monitor de quem olha.
+
+     O `max-height` continua, e só ele: numa tela baixa a moldura precisa ceder, ou
+     o compositor sai da área visível — que é pior que uma moldura menor. */
+  height: 40rem;
+  max-height: calc(100dvh - 6rem);
+  width: 100%;
+  max-width: 40rem;
   border: 1px solid var(--filete);
   /* `overflow: hidden` é o que faz o cabeçalho teal e o compositor respeitarem o
      arredondamento — sem ele os cantos vazam por baixo da moldura. */

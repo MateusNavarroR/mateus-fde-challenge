@@ -184,6 +184,12 @@ class Relatorio:
     estratificacao: dict[str, Any] = field(default_factory=dict)
     limiar_nao_entendi: float = LIMIAR_NAO_ENTENDI
     segundos_de_espera: float = 0.0
+    #: O que os evals NATIVOS do Agno gravaram em `ai.eval_runs` nesta execução.
+    #:
+    #: Vazio quando o replay rodou sem `--evals`, e essa distinção importa: um
+    #: relatório sem esta chave diz "não avaliei", enquanto zeros dentro dela dizem
+    #: "avaliei e nada passou". Eram indistinguíveis enquanto os evals não rodavam.
+    evals: dict[str, Any] = field(default_factory=dict)
 
     # ─── contagens ───────────────────────────────────────────────────────────
 

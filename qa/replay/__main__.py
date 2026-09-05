@@ -75,6 +75,12 @@ def montar_parser() -> argparse.ArgumentParser:
                    help="executa de verdade. Sem isto, só imprime a amostra e o custo.")
     p.add_argument("--saida", type=Path, default=None, help="onde escrever o relatório JSON.")
     p.add_argument(
+        "--evals", action="store_true",
+        help="roda os evals NATIVOS do Agno e grava em ai.eval_runs — é o que popula "
+             "o painel. Custa 3 chamadas de modelo (o juiz das recusas roda uma vez "
+             "por motivo, não por conversa); o ReliabilityEval não chama modelo nenhum.",
+    )
+    p.add_argument(
         "--continuar-no-402", action="store_true",
         help="não para no primeiro 402. O free tier do Ollama Cloud devolve 402 em três "
              "dos quatro modelos, e insistir só produz mais 402 — use com motivo.",
@@ -112,11 +118,20 @@ def main(argv: list[str] | None = None) -> int:
 
     import asyncio
 
+    db_evals = None
+    if args.evals:
+        from app.config import get_settings
+        from qa.replay.evals import db_de_evals
+
+        db_evals = db_de_evals(get_settings().database_url)
+        print("\nevals .......... ligados; gravam em ai.eval_runs (tabela criada pelo Agno)")
+
     executor = Executor(
         modo=Modo(args.modo),
         seed=args.seed,
         ano_corrente=args.ano_corrente,
         parar_no_402=not args.continuar_no_402,
+        db_evals=db_evals,
     )
     rel = asyncio.run(executor.executar(estratificacao))
 
