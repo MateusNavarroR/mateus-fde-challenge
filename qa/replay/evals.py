@@ -83,14 +83,26 @@ class Registro:
 
 
 def _passou(resultado: Any) -> bool:
-    """`eval_status == "PASSED"`, com o mesmo nome de chave que o painel filtra.
+    """Aprovado — e **as duas classes reportam isso de formas diferentes**.
 
-    Lido do `ReliabilityResult` do Agno instalado. Se um dia a chave mudar de nome, a
-    consulta do painel para de casar — e é por isso que existe um teste conferindo que
-    o valor gravado bate com o que `_evals()` procura, em vez de duas cópias da string
-    em lados opostos do sistema esperando não divergir.
+    `ReliabilityResult` tem `eval_status` (a chave que o painel filtra).
+    `AgentAsJudgeResult` não tem: ele traz `pass_rate` e uma lista `results` com
+    `passed` por caso. Assumir simetria foi o quarto tropeço da mesma família nesta
+    integração — e o mais silencioso de todos, porque não quebra nada: o eval roda,
+    grava, e o contador diz `0 passaram` sobre um resultado que passou com nota 9.
+    Medido: `pass_rate: 100.0` no banco, `juiz_passaram: 0` no relatório.
+
+    A ordem importa. `eval_status` primeiro, porque é o campo explícito; `pass_rate`
+    depois, e só quando existe — um `getattr` com default 0 trataria um resultado sem
+    o campo como reprovado, que é o erro simétrico.
     """
-    return str(getattr(resultado, "eval_status", "")).upper() == "PASSED"
+    status = getattr(resultado, "eval_status", None)
+    if status is not None:
+        return str(status).upper() == "PASSED"
+    taxa = getattr(resultado, "pass_rate", None)
+    if taxa is not None:
+        return float(taxa) >= 100.0
+    return False
 
 
 def gravar_reliability(

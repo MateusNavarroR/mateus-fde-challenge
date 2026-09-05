@@ -272,3 +272,27 @@ def _caso_com_tool_obrigatoria():
         tools_obrigatorias=("quote_plan",),
     )
     return caso, expectativa
+
+
+def test_as_DUAS_classes_reportam_aprovacao_de_formas_diferentes():
+    """O quarto tropeço da mesma família, e o mais silencioso: não quebra nada.
+
+    `ReliabilityResult` tem `eval_status`; `AgentAsJudgeResult` tem `pass_rate` e uma
+    lista `results` com `passed` por caso. Assumir simetria fazia o contador dizer
+    "0 passaram" sobre um julgamento que aprovou com nota 9 — medido no replay:
+    `pass_rate: 100.0` gravado no banco, `juiz_passaram: 0` no relatório.
+    """
+    reliability = type("R", (), {"eval_status": "PASSED"})()
+    juiz_ok = type("J", (), {"pass_rate": 100.0})()
+    juiz_ruim = type("J", (), {"pass_rate": 0.0})()
+    juiz_parcial = type("J", (), {"pass_rate": 66.7})()
+
+    assert evals._passou(reliability)
+    assert evals._passou(juiz_ok)
+    assert not evals._passou(juiz_ruim)
+    assert not evals._passou(juiz_parcial)
+
+    # `eval_status` vence quando existe, e um resultado sem NENHUM dos dois campos é
+    # reprovado — nunca aprovado por omissão.
+    assert not evals._passou(type("R", (), {"eval_status": "FAILED", "pass_rate": 100.0})())
+    assert not evals._passou(object())
