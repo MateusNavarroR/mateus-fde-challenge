@@ -44,6 +44,60 @@ function esquecer(): void {
   }
 }
 
+/*
+ * ─── O HISTÓRICO LOCAL DE CONVERSAS ──────────────────────────────────────────
+ *
+ * O simulador retomava só a ÚLTIMA conversa: quem clicava em "Nova conversa" perdia a
+ * anterior de vista, sem nenhuma forma de voltar a ela. Para exercitar o agente é
+ * justamente o contrário do que se quer — comparar dois caminhos exige ter os dois.
+ *
+ * **A lista vive no navegador, e essa é a decisão de privacidade.** O caminho óbvio
+ * seria listar as conversas por `GET /api/conversations`, e ele está errado por dois
+ * motivos: essa rota é de OPERAÇÃO e exige sessão (o chat é anônimo por desenho), e
+ * — pior — ela devolveria as conversas de TODO MUNDO. Um seletor no chat público
+ * mostrando a conversa de outro lead é vazamento, não conveniência.
+ *
+ * Cada navegador lista o que ele mesmo abriu. Um id de conversa aqui é uma capacidade
+ * que este navegador já tinha (está no `localStorage` desde que a conversa nasceu),
+ * então a lista não concede nada novo a ninguém.
+ */
+
+const CHAVE_HISTORICO = "autoseguro:conversas";
+const LIMITE_HISTORICO = 12;
+
+export type ConversaLocal = { id: string; aberta_em: string };
+
+export function historicoLocal(): readonly ConversaLocal[] {
+  try {
+    const bruto = localStorage.getItem(CHAVE_HISTORICO);
+    if (bruto === null) return [];
+    const lido: unknown = JSON.parse(bruto);
+    return Array.isArray(lido) ? (lido as ConversaLocal[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function lembrarConversa(id: string): void {
+  try {
+    const atual = historicoLocal().filter((c) => c.id !== id);
+    const nova = [{ id, aberta_em: new Date().toISOString() }, ...atual];
+    // Teto pequeno de propósito: isto é uma lista de atalhos para exercitar o agente,
+    // não um arquivo. O Histórico do admin é quem guarda tudo.
+    localStorage.setItem(CHAVE_HISTORICO, JSON.stringify(nova.slice(0, LIMITE_HISTORICO)));
+  } catch {
+    /* storage bloqueado: o seletor some, a conversa corrente continua funcionando */
+  }
+}
+
+export function esquecerHistoricoLocal(): void {
+  try {
+    localStorage.removeItem(CHAVE_HISTORICO);
+  } catch {
+    /* idem */
+  }
+}
+
 const CHAVE_SESSAO = "autoseguro:sessao";
 
 /**
@@ -155,9 +209,25 @@ export async function abrirSessao(): Promise<{ id: string; detalhe: Conversation
     },
   });
 
+  lembrarConversa(id);
   return { id, detalhe };
 }
 
+/**
+ * Volta para uma conversa que este navegador já abriu.
+ *
+ * Grava a corrente e devolve o id — quem chama recarrega a tela por ele. Não valida
+ * contra o backend de propósito: se a conversa não existir mais (banco recriado), o
+ * WebSocket fecha com 4404 e a tela já sabe tratar isso, sem uma ida extra à rede.
+ */
+export function retomarConversa(id: string): string {
+  gravar(id);
+  lembrarConversa(id);
+  return id;
+}
+
 export async function reiniciarSessao(): Promise<string> {
-  return novaConversa({ post: (url, corpo) => post<Conversation>(url, corpo) });
+  const id = await novaConversa({ post: (url, corpo) => post<Conversation>(url, corpo) });
+  lembrarConversa(id);
+  return id;
 }

@@ -8,8 +8,19 @@ import type {
 import { Bolha } from "./Bolha";
 import { BlocoCotacao } from "./BlocoCotacao";
 import { Digitando } from "./Digitando";
-import { abrirSessao, reiniciarSessao } from "./sessao";
+import { abrirSessao, historicoLocal, reiniciarSessao, retomarConversa } from "./sessao";
 import { useConversa } from "./useConversa";
+
+/** "14:03" para hoje, "05/09" para antes. O id curto ao lado desambigua. */
+function quando(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "anterior";
+  const hoje = new Date();
+  const mesmoDia = d.toDateString() === hoje.toDateString();
+  return mesmoDia
+    ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
 
 const ESTADO_LEGIVEL: Record<string, string> = {
   novo: "conversa aberta",
@@ -56,6 +67,10 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
       vivo = false;
     };
   }, [conversationId]);
+
+  // Recalculado a cada troca de conversa: `lembrarConversa` acabou de reordenar a
+  // lista, e um `useState` aqui mostraria a ordem anterior.
+  const anteriores = historicoLocal();
 
   const anexo = useRef<HTMLInputElement>(null);
   const { estado, enviar } = useConversa(id, historico, estadoInicial);
@@ -132,6 +147,43 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
         <button type="button" className="botao-fantasma" onClick={trocarDeConversa}>
           Nova conversa
         </button>
+        {/*
+          ESCOLHER QUAL CONVERSA CONTINUAR.
+          
+          Antes só existia a última: quem clicava em "Nova conversa" perdia a anterior
+          de vista, sem forma de voltar. Para exercitar o agente é o contrário do que
+          se quer — comparar dois caminhos exige ter os dois à mão.
+
+          A lista vem do NAVEGADOR, não da API. `GET /api/conversations` devolveria as
+          conversas de todo mundo, e um seletor no chat público mostrando a conversa de
+          outro lead é vazamento, não conveniência. Cada navegador lista o que ele
+          mesmo abriu — ids que ele já tinha.
+
+          Some quando há só uma: um seletor de um item é ruído.
+        */}
+        {anteriores.length > 1 ? (
+          <label className="chat__retomar">
+            <span className="so-leitor">Continuar uma conversa</span>
+            <select
+              data-testid="seletor-de-conversa"
+              value={id ?? ""}
+              onChange={(e) => {
+                const escolhida = e.target.value;
+                if (escolhida && escolhida !== id) {
+                  setHistorico(null);
+                  setEstadoInicial(null);
+                  setId(retomarConversa(escolhida));
+                }
+              }}
+            >
+              {anteriores.map((c, i) => (
+                <option key={c.id} value={c.id}>
+                  {i === 0 ? "mais recente" : quando(c.aberta_em)} · {c.id.slice(-6)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {/*
           A navegação é assimétrica de propósito: `chat → admin` existe e é a
           demonstração inteira da rastreabilidade. O inverso não existe.

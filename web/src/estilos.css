@@ -1420,6 +1420,35 @@ code {
 
 /* O campo ocupa o que sobra. Sem isto ele fica com a largura natural do input e o
    operador escreve numa fresta, com metade da moldura vazia ao lado. */
+/* A ação de encerrar fica ABAIXO da moldura, e não no cabeçalho: ela pertence ao fim
+   do trabalho, e o olho de quem termina de escrever já está aqui embaixo. */
+/* O seletor de conversa vive na barra de ações do chat, ao lado de "Nova conversa" —
+   as duas ações são a mesma pergunta ("qual conversa?"), vistas de lados opostos. */
+.chat__retomar select {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--filete);
+  border-radius: 4px;
+  background: var(--folha);
+  color: var(--tinta);
+  max-width: 12rem;
+}
+
+.simulador .chat__retomar select {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.12);
+  color: #eef6f4;
+}
+
+.atendimento__fecho {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .atendimento__compositor input {
   flex: 1;
   min-width: 0;

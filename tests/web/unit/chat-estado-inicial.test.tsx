@@ -14,9 +14,14 @@ import { WebSocketFalso } from "../fakes/websocket-falso";
 
 const abrirSessao = vi.fn();
 const reiniciarSessao = vi.fn();
+/** O histórico local, controlado pelo teste. É o insumo do seletor de conversas. */
+let historico: { id: string; aberta_em: string }[] = [];
+const retomada = vi.fn((id: string) => id);
 vi.mock("../../../web/src/chat/sessao", () => ({
   abrirSessao: () => abrirSessao(),
   reiniciarSessao: () => reiniciarSessao(),
+  historicoLocal: () => historico,
+  retomarConversa: (id: string) => retomada(id),
   CHAVE: "autoseguro.conversation_id",
 }));
 
@@ -34,6 +39,8 @@ const MENSAGENS = [
 beforeEach(() => {
   WebSocketFalso.reiniciar();
   vi.stubGlobal("WebSocket", WebSocketFalso);
+  historico = [];
+  retomada.mockClear();
 });
 
 afterEach(() => {
@@ -155,4 +162,50 @@ it("a conversa com atendente oferece a saída JUNTO do aviso, não só no topo",
   await waitFor(() => {
     expect(screen.getByRole("textbox", { name: /sua mensagem/i })).toBeEnabled();
   });
+});
+
+
+it("dá para escolher qual conversa continuar, entre as DESTE navegador", async () => {
+  /*
+   * Antes só existia a última: quem clicava em "Nova conversa" perdia a anterior de
+   * vista, sem forma de voltar. Para exercitar o agente é o contrário do que se quer —
+   * comparar dois caminhos exige ter os dois à mão.
+   *
+   * A lista vem do NAVEGADOR, e é decisão de privacidade, não de conveniência:
+   * `GET /api/conversations` devolveria as conversas de TODO MUNDO, e um seletor no
+   * chat público mostrando a conversa de outro lead é vazamento.
+   */
+  historico = [
+    { id: "conv_atual", aberta_em: T },
+    { id: "conv_antiga", aberta_em: T },
+  ];
+  abrirSessao.mockResolvedValue({
+    id: "conv_atual",
+    detalhe: { id: "conv_atual", state: "qualificando", perfil: {}, quotes: [],
+               handoffs: [], messages: MENSAGENS },
+  });
+
+  render(<PaginaChat />);
+
+  const seletor = await screen.findByTestId("seletor-de-conversa");
+  // As duas aparecem, e nenhuma outra: este navegador só conhece estas.
+  expect(within(seletor).getAllByRole("option")).toHaveLength(2);
+
+  const usuario = userEvent.setup();
+  await usuario.selectOptions(seletor, "conv_antiga");
+  expect(retomada).toHaveBeenCalledWith("conv_antiga");
+});
+
+
+it("com UMA conversa só, o seletor não aparece — um item é ruído", async () => {
+  historico = [{ id: "conv_unica", aberta_em: T }];
+  abrirSessao.mockResolvedValue({
+    id: "conv_unica",
+    detalhe: { id: "conv_unica", state: "qualificando", perfil: {}, quotes: [],
+               handoffs: [], messages: MENSAGENS },
+  });
+
+  render(<PaginaChat />);
+  await screen.findByRole("textbox", { name: /sua mensagem/i });
+  expect(screen.queryByTestId("seletor-de-conversa")).toBeNull();
 });

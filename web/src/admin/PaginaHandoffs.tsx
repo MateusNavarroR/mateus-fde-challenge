@@ -62,7 +62,11 @@ export function PaginaHandoffs() {
 
   const transicionar = (id: string, status: StatusHandoff) => {
     setFalhaNaTransicao(null);
-    void api
+    // DEVOLVE a promessa: quem navega depois de assumir precisa esperar o PATCH.
+    // Sem isto, `location.assign` cortava a página com a requisição em voo e o caso
+    // continuava `pendente` — o operador chegava ao atendimento com um handoff que
+    // ninguém tinha assumido.
+    return api
       .transicionarHandoff(id, status)
       .then(() => fila.recarregar())
       .catch((e: unknown) => {
@@ -137,16 +141,16 @@ export function PaginaHandoffs() {
                 type="button"
                 className={proximo === "resolvido" ? "botao botao--discreto" : "botao"}
                 onClick={() => {
-                  void transicionar(h.id, proximo);
                   // ASSUMIR ABRE A CONVERSA, e antes só mudava um rótulo.
                   //
                   // "Assumir" que apenas troca um status é um botão que promete
                   // trabalho e não entrega ferramenta: o operador ficava com o caso
                   // no nome e nenhum lugar para responder. A transição continua
                   // acontecendo — é ela que tira o caso da fila dos outros — e a
-                  // navegação é a consequência natural dela.
+                  // navegação é a consequência dela, **depois** de ela concluir.
+                  const ida = transicionar(h.id, proximo);
                   if (proximo === "assumido") {
-                    location.assign(`/handoffs/${h.conversation_id}`);
+                    void ida.then(() => location.assign(`/handoffs/${h.conversation_id}`));
                   }
                 }}
               >

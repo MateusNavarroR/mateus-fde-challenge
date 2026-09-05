@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/cliente";
+import type { StatusHandoff } from "../api/tipos";
 import type { ConversationDetail, Message } from "../api/tipos";
 import { Bolha } from "../chat/Bolha";
 import { Erro } from "../ui/Erro";
@@ -30,6 +31,7 @@ export function Atendimento({ id }: { id: string }) {
   const [enviando, setEnviando] = useState(false);
   const [recusa, setRecusa] = useState<string | null>(null);
   const [locais, setLocais] = useState<readonly Message[]>([]);
+  const [encerrando, setEncerrando] = useState(false);
   const esteira = useRef<HTMLDivElement | null>(null);
 
   const { dado, erro, recarregar } = useRecurso<ConversationDetail>(
@@ -54,6 +56,33 @@ export function Atendimento({ id }: { id: string }) {
   if (!dado) return <p className="rotulo">carregando a conversa…</p>;
 
   const encerrada = dado.state === "encaminhado";
+
+  /*
+   * O HANDOFF ABERTO desta conversa, para poder fechá-lo daqui.
+   *
+   * A tela nasceu sem esta ação, e a falta era gritante em uso: o operador assume o
+   * caso, atende, resolve o problema do lead — e não tem como dizer que terminou. Ele
+   * teria de voltar à fila, achar o mesmo caso no meio dos outros e só então marcar.
+   * A ação pertence a quem está fazendo o trabalho, no momento em que ele acaba.
+   *
+   * O `resolvido` é terminal: não volta para pendente, e por isso a tela não oferece
+   * desfazer — o que ela oferece é a confirmação de que aconteceu.
+   */
+  const aberto = (dado.handoffs ?? []).find((h) => h.status !== "resolvido") ?? null;
+
+  async function transicionar(status: StatusHandoff) {
+    if (aberto === null || encerrando) return;
+    setEncerrando(true);
+    setRecusa(null);
+    try {
+      await api.transicionarHandoff(aberto.id, status);
+      recarregar();
+    } catch (err: unknown) {
+      setRecusa(err instanceof Error ? err.message : "Não consegui aplicar a transição.");
+    } finally {
+      setEncerrando(false);
+    }
+  }
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
@@ -140,6 +169,38 @@ export function Atendimento({ id }: { id: string }) {
             </button>
           </form>
         </div>
+      </div>
+
+      <div className="handoff__acoes atendimento__fecho">
+        {aberto === null ? (
+          <p className="rotulo" data-testid="sem-handoff-aberto">
+            nenhum handoff aberto nesta conversa
+          </p>
+        ) : (
+          <>
+            <span className="rotulo" data-testid="status-do-handoff">
+              handoff <strong>{aberto.status}</strong> · {aberto.trigger}
+            </span>
+            {aberto.status === "pendente" ? (
+              <button
+                type="button"
+                className="botao"
+                disabled={encerrando}
+                onClick={() => void transicionar("assumido")}
+              >
+                Assumir
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="botao botao--discreto"
+              disabled={encerrando}
+              onClick={() => void transicionar("resolvido")}
+            >
+              {encerrando ? "Encerrando…" : "Marcar como resolvido"}
+            </button>
+          </>
+        )}
       </div>
 
       {recusa !== null ? (

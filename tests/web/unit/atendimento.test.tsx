@@ -73,3 +73,65 @@ it("o atendimento leva ao histórico completo, que é onde estão as provas", as
   expect(await screen.findByRole("link", { name: /histórico completo/i }))
     .toHaveAttribute("href", "/historico/c1");
 });
+
+it("dá para marcar como resolvido SEM voltar para a fila", async () => {
+  /*
+   * A tela nasceu sem esta ação, e a falta era gritante em uso: o operador assume o
+   * caso, atende, resolve o problema do lead — e não tinha como dizer que terminou.
+   * Teria de voltar à fila, achar o mesmo caso no meio dos outros e só então marcar.
+   * A ação pertence a quem está fazendo o trabalho, no momento em que ele acaba.
+   */
+  const srv = montarBackendFalso({
+    conversa: {
+      ...CONVERSA,
+      handoffs: [{ id: "h1", conversation_id: "c1", status: "assumido",
+                   trigger: "lead_pediu_atendente", disparado_por: "regra",
+                   reason: "", criado_em: T }],
+    },
+  });
+  const usuario = userEvent.setup();
+  render(<Atendimento id="c1" />);
+  await screen.findByTestId("esteira-do-atendimento");
+
+  expect(screen.getByTestId("status-do-handoff")).toHaveTextContent(/assumido/);
+  await usuario.click(screen.getByRole("button", { name: /marcar como resolvido/i }));
+
+  await waitFor(() => {
+    expect(srv.ultimoPatch?.[0]).toBe("/api/handoffs/h1");
+  });
+  expect(srv.ultimoPatch?.[1]).toMatchObject({ status: "resolvido" });
+});
+
+it("um handoff PENDENTE pode ser assumido daqui também", async () => {
+  // Quem chega pela URL direta, sem passar pela fila, não deve ficar sem a ação.
+  const srv = montarBackendFalso({
+    conversa: {
+      ...CONVERSA,
+      handoffs: [{ id: "h2", conversation_id: "c1", status: "pendente",
+                   trigger: "lead_pediu_atendente", disparado_por: "regra",
+                   reason: "", criado_em: T }],
+    },
+  });
+  const usuario = userEvent.setup();
+  render(<Atendimento id="c1" />);
+  await screen.findByTestId("esteira-do-atendimento");
+
+  await usuario.click(screen.getByRole("button", { name: /^assumir$/i }));
+  await waitFor(() => expect(srv.ultimoPatch?.[1]).toMatchObject({ status: "assumido" }));
+});
+
+it("conversa sem handoff aberto não oferece encerramento", async () => {
+  // O negativo: um botão de resolver sem nada a resolver mandaria um PATCH para
+  // lugar nenhum, e o erro apareceria como falha da tela.
+  montarBackendFalso({
+    conversa: {
+      ...CONVERSA,
+      handoffs: [{ id: "h3", conversation_id: "c1", status: "resolvido",
+                   trigger: "lead_pediu_atendente", disparado_por: "regra",
+                   reason: "", criado_em: T }],
+    },
+  });
+  render(<Atendimento id="c1" />);
+  expect(await screen.findByTestId("sem-handoff-aberto")).toBeVisible();
+  expect(screen.queryByRole("button", { name: /resolvido/i })).toBeNull();
+});
