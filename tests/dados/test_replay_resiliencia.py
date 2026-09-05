@@ -243,6 +243,7 @@ def _montar_executor(monkeypatch, roteiro, *, observacao=None, **kwargs):
 
     agente = AgenteFalso(roteiro)
     recebidas: list[tuple[str, str]] = []
+    persistidas: list[dict] = []
     monkeypatch.setattr(turno, "construir_agente", lambda ctx: agente)
 
     async def responder_falso(cid, texto, adaptador, chegada_do_lead=None, tipo="text"):
@@ -268,6 +269,15 @@ def _montar_executor(monkeypatch, roteiro, *, observacao=None, **kwargs):
     )
     monkeypatch.setattr(repo, "obter_conversa", lambda s, cid: None)
 
+    # A fala do lead passou a ser PERSISTIDA antes do turno, como em produção. A
+    # `SessaoFalsa` é mínima de propósito, então o dublê registra em vez de gravar —
+    # e o registro é o que permite afirmar que a fala foi persistida com o `tipo`
+    # certo, que é a correção que fez `MIDIA_SEM_TEXTO` voltar a ser alcançável.
+    monkeypatch.setattr(
+        repo, "gravar_mensagem",
+        lambda s, cid, **kw: persistidas.append(kw) or type("M", (), {"id": "m", "index": 0})(),
+    )
+
     executor = exec_mod.Executor(
         modo=exec_mod.Modo.DESFECHO,
         sessao_factory=SessaoFalsa,
@@ -277,6 +287,7 @@ def _montar_executor(monkeypatch, roteiro, *, observacao=None, **kwargs):
         **kwargs,
     )
     executor.recebidas = recebidas  # type: ignore[attr-defined]
+    executor.persistidas = persistidas  # type: ignore[attr-defined]
     return executor, agente
 
 
@@ -534,3 +545,49 @@ def test_a_costura_registra_o_run_com_erro_no_coletor(monkeypatch):
         "tratando a resposta do provedor como fala do agente"
     )
     assert coletor.falhas[0].classe is ClasseDeFalha.RATE_LIMIT
+
+
+def test_a_fala_do_lead_e_persistida_antes_do_turno(monkeypatch):
+    """**Era isto que tornava `MIDIA_SEM_TEXTO` inalcançável no replay.**
+
+    `repo.midias_do_lead()` conta `messages` com `autor='lead'` e `tipo != 'text'`. O
+    executor chamava `responder` direto e **nunca gravava a fala**, ao contrário do
+    `processar_turno_web` de produção — então o contador devolvia 0 sempre, e o
+    gatilho não tinha como disparar por mais que o `tipo` atravessasse o replay.
+
+    Medido numa execução completa: 157 mensagens do agente, 32 do sistema e **zero do
+    lead**. Quatro das cinco reprovações eram mídia não tratada, todas com o desfecho
+    de negócio CERTO — o agente acertava e o harness reprovava.
+
+    O segundo prejuízo era de evidência: os transcripts exportados mostravam só um
+    lado da conversa, e um transcript sem as perguntas não deixa ninguém entender por
+    que o agente respondeu aquilo.
+    """
+    import asyncio
+
+    from qa.replay import executor as exec_mod
+
+    executor, _ = _montar_executor(monkeypatch, ["ok"])
+    caso = _caso()
+    caso = type(caso)(
+        conversation_id=caso.conversation_id,
+        outcome=caso.outcome,
+        falas=(
+            Fala(0, "text", "oi"),
+            Fala(1, "image", "[imagem] foto-do-carro.jpg"),
+        ),
+        gabarito=caso.gabarito,
+        elegibilidade=caso.elegibilidade,
+    )
+
+    asyncio.run(executor.rodar_conversa(caso, exec_mod.Coletor()))
+
+    doLead = [p for p in executor.persistidas if p.get("autor") == "lead"]
+    assert doLead, (
+        "nenhuma fala do lead foi persistida — `midias_do_lead()` devolveria 0 e o "
+        "gatilho de mídia continuaria inalcançável"
+    )
+    assert {p["conteudo"] for p in doLead} >= {"oi", "[imagem] foto-do-carro.jpg"}
+    assert [p["tipo"] for p in doLead if p["conteudo"].startswith("[imagem]")] == ["image"], (
+        "a fala de mídia foi persistida como texto — o contador não a veria"
+    )

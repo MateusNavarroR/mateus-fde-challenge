@@ -23,6 +23,7 @@ import type {
   Handoff,
   PaginaConversas,
   QuoteHealth,
+  Resumo,
   Saude,
   StatusHandoff,
   Usage,
@@ -74,6 +75,7 @@ export const ROTAS = {
     return s ? `/api/conversations?${s}` : "/api/conversations";
   },
   conversa: (id: string) => `/api/conversations/${id}`,
+  resumo: () => "/api/resumo",
   status: (janela?: number) =>
     janela === undefined ? "/api/quote-health" : `/api/quote-health?janela=${janela}`,
   usage: (conversationId?: string) =>
@@ -244,6 +246,7 @@ export function patch<T>(url: string, corpo: unknown): Promise<T> {
 
 export const api = {
   saude: () => get<Saude>(ROTAS.health()),
+  resumo: () => get<Resumo>(ROTAS.resumo()),
   criarConversa: () => post<Conversation>(ROTAS.conversas(), { channel: "web" }),
   conversas: (params?: { state?: string; limit?: number; cursor?: string }) =>
     get<PaginaConversas>(ROTAS.conversas(params)),

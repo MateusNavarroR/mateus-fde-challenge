@@ -40,6 +40,7 @@ from app.api.schemas import (
     Erro,
     HandoffOut,
     QuoteHealth,
+    Resumo,
     Usage,
 )
 from app.persistence import repo
@@ -199,6 +200,18 @@ def usage(conversation_id: str | None = None, limit: int = 50,
     vigência gravada junto; recalcular na leitura reescreveria a história com o preço
     de hoje."""
     return Usage(**consultas.usage(s, conversation_id, min(limit, 200)))
+
+
+@app.get("/api/resumo", tags=["operacao"], response_model=Resumo,
+         summary="Os números do painel")
+def resumo(s: Session = Depends(sessao), _: None = Depends(exigir_admin)) -> Resumo:
+    """Contado no BANCO, não na tela.
+
+    Contar do lado do cliente exigiria paginar a lista inteira — `/api/conversations`
+    devolve no máximo 200 —, e um painel que mente por paginação é pior que painel
+    nenhum: ele parece informação.
+    """
+    return Resumo(**consultas.resumo_operacao(s))
 
 
 @app.get("/api/handoffs", tags=["operacao"], summary="Fila de handoff")

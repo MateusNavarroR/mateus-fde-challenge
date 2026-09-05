@@ -180,6 +180,25 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Usage" }
 
+  /api/resumo:
+    get:
+      tags: [operacao]
+      summary: Os números do painel
+      description: |
+        Contado no BANCO, uma consulta por métrica. Contar do lado da tela exigiria
+        paginar a lista inteira — `/api/conversations` devolve no máximo 200 —, e um
+        painel que mente por paginação é pior que painel nenhum: ele parece informação.
+
+        **Nenhum campo é um total sozinho.** As cotações vêm separadas por desfecho
+        porque recusa é decisão de negócio e falha é indisponibilidade; somá-las
+        esconderia exatamente a distinção que o produto existe para tratar.
+      responses:
+        "200":
+          description: os números
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resumo" }
+
   /api/handoffs:
     get:
       tags: [operacao]
@@ -275,6 +294,66 @@ components:
           schema: { $ref: "#/components/schemas/Erro" }
 
   schemas:
+
+    Resumo:
+      type: object
+      description: |
+        Os números do painel. Cada campo é um RECORTE declarado, não uma agregação
+        genérica — é o recorte que carrega a informação.
+      required:
+        [conversas, conversas_encaminhadas, mensagens_enviadas, mensagens_recebidas,
+         cotacoes_ok, cotacoes_recusadas, cotacoes_falhas, handoffs_pendentes,
+         handoffs_total]
+      properties:
+        conversas: { type: integer }
+        conversas_encaminhadas:
+          type: integer
+          description: Terminaram com uma pessoa.
+        mensagens_enviadas:
+          type: integer
+          description: |
+            O que SAIU (`agente` e `sistema`). Somar a fala do lead dobraria o número
+            sem significar nada.
+        mensagens_recebidas: { type: integer }
+        cotacoes_ok: { type: integer }
+        cotacoes_recusadas:
+          type: integer
+          description: 422 com motivo de negócio. **Não** é falha.
+        cotacoes_falhas:
+          type: integer
+          description: A API não respondeu depois de esgotadas as tentativas.
+        handoffs_pendentes: { type: integer }
+        handoffs_total: { type: integer }
+        cache:
+          type: object
+          description: |
+            A prova do prompt caching, com número. `turnos_sem_cache` é o campo que
+            distingue "o cache funciona dentro de uma conversa" de "o cache é do
+            PREFIXO e atravessa conversas": se o prefixo sobrevive, até o primeiro
+            turno de uma conversa nova lê do cache, e este número tende a zero.
+          required:
+            [turnos_medidos, tokens_do_cache, tokens_enviados, fracao_do_cache,
+             turnos_sem_cache]
+          properties:
+            turnos_medidos: { type: integer }
+            tokens_do_cache: { type: integer }
+            tokens_enviados: { type: integer }
+            fracao_do_cache:
+              type: [number, "null"]
+              description: |
+                `null` sem turno medido. 0% diria que o cache falhou onde a verdade é
+                que não houve o que medir — o Ollama não reporta cache.
+            turnos_sem_cache: { type: integer }
+        evals:
+          type: object
+          description: |
+            O que os módulos nativos do Agno gravaram em `ai.eval_runs` — schema do
+            próprio Agno, lido por SQL cru em vez de por um modelo que teríamos de
+            manter em sincronia com uma dependência.
+          required: [total, passaram]
+          properties:
+            total: { type: integer }
+            passaram: { type: integer }
 
     Erro:
       type: object

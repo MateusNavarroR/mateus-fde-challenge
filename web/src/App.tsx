@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
-import { Admin } from "./admin/Admin";
-import { PaginaChat } from "./chat/PaginaChat";
-import { Capa } from "./ui/Capa";
+import { DetalheConversa } from "./admin/DetalheConversa";
+import { PaginaConversas } from "./admin/PaginaConversas";
+import { PaginaHandoffs } from "./admin/PaginaHandoffs";
+import { PaginaStatus } from "./admin/PaginaStatus";
+import { Painel } from "./admin/Painel";
+import { Simulador } from "./chat/Simulador";
+import { Console, SECOES } from "./ui/Console";
 import { Login } from "./ui/Login";
 import { useAutenticacao } from "./ui/useAutenticacao";
 
@@ -51,11 +55,11 @@ export function App() {
   const auth = useAutenticacao();
 
   /*
-   * A GUARDA DA 2ª VIA, e a ordem das três condições é o conteúdo dela.
+   * A GUARDA DA OPERAÇÃO, e a ordem das três condições é o conteúdo dela.
    *
    * 1. Enquanto o estado é `desconhecido`, ninguém decide. Renderizar o login "por
    *    precaução" faria a instalação ABERTA — o caminho padrão, o do avaliador —
-   *    piscar um formulário de senha antes de mostrar o registro. Um flash desses
+   *    piscar um formulário de senha antes de mostrar o painel. Um flash desses
    *    ensina que existe uma senha que não existe.
    * 2. O login só aparece quando o backend disse `exigido` e `não autenticado`.
    * 3. **Esta guarda é conveniência, nunca segurança.** Quem manda é o
@@ -65,22 +69,68 @@ export function App() {
    */
   const barrado = auth.situacao === "conhecido" && auth.exigido && !auth.autenticado;
 
-  if (rota.startsWith("/entrar")) {
+  // As rotas antigas continuam funcionando. Elas estão em transcripts commitados, no
+  // README e em links que alguém já pode ter guardado — quebrar um link para renomear
+  // uma rota é custo sem benefício.
+  const destino = LEGADO[rota] ?? rota;
+  if (destino !== rota) {
+    history.replaceState(null, "", destino);
+  }
+
+  if (destino === "/entrar") {
     // Já entrou (ou a instalação é aberta): o balcão não tem por que existir.
-    return barrado ? <Login /> : <Admin rota="/admin/conversas" />;
+    return barrado ? <Login /> : <Operacao rota="/painel" />;
   }
 
-  if (rota.startsWith("/admin")) {
+  if (SECOES.some((s) => destino === s.href || destino.startsWith(`${s.href}/`))) {
     if (auth.situacao === "desconhecido") return <Aguardando />;
-    return barrado ? <Login destino={rota} /> : <Admin rota={rota} />;
+    return barrado ? <Login destino={destino} /> : <Operacao rota={destino} />;
   }
 
-  if (rota.startsWith("/chat")) return <PaginaChat />;
+  // A RAIZ é o login quando há credencial, e o painel quando não há.
+  //
+  // Não existe mais uma "capa" escolhendo entre duas vias: com a barra lateral, todas
+  // as seções ficam visíveis de qualquer tela, e uma folha de rosto no meio do caminho
+  // vira um clique a mais para chegar onde já dava para ver.
+  if (auth.situacao === "desconhecido") return <Aguardando />;
+  return barrado ? <Login /> : <Operacao rota="/painel" />;
+}
 
-  // A raiz DECIDE: apresenta as duas vias em vez de cair no chat por omissão.
-  // Caindo, a existência da segunda área ficava escondida de quem abre a
-  // aplicação pela primeira vez — que é exatamente o avaliador.
-  return <Capa />;
+/** As rotas antigas, apontando para as novas. Link guardado continua abrindo. */
+const LEGADO: Record<string, string> = {
+  "/": "/",
+  "/chat": "/simulador",
+  "/admin": "/painel",
+  "/admin/conversas": "/historico",
+  "/admin/status": "/status",
+  "/admin/handoffs": "/handoffs",
+};
+
+/**
+ * A casca com a guia lateral, e o que ela mostra em cada seção.
+ *
+ * O `Console` não conhece as páginas e as páginas não conhecem o `Console`: ele
+ * recebe a rota e as renderiza como filhos. É o que permite testar uma página sem
+ * montar a barra inteira, e trocar a barra sem tocar em nenhuma página.
+ */
+function Operacao({ rota }: { rota: string }) {
+  return (
+    <Console rota={rota}>
+      {rota.startsWith("/historico/") ? (
+        <DetalheConversa id={rota.slice("/historico/".length)} />
+      ) : rota === "/historico" ? (
+        <PaginaConversas />
+      ) : rota === "/simulador" ? (
+        <Simulador />
+      ) : rota === "/handoffs" ? (
+        <PaginaHandoffs />
+      ) : rota === "/status" ? (
+        <PaginaStatus />
+      ) : (
+        <Painel />
+      )}
+    </Console>
+  );
 }
 
 /**

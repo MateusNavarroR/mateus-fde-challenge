@@ -46,10 +46,18 @@ export function PaginaConversas() {
     <section>
       <div className="pagina__topo">
         <div>
-          <h1 className="pagina__titulo">Conversas</h1>
+          <h1 className="pagina__titulo">Histórico de mensagens</h1>
           <p className="pagina__subtitulo">
             Tudo que o agente conduziu, com o desfecho da última cotação. A linha leva ao
-            detalhe, com mensagens e tentativas.
+            detalhe, com cada mensagem por id, índice, autor e status.
+          </p>
+          <p className="pagina__subtitulo">
+            {/* Dizer que é só leitura evita a pergunta antes dela nascer: não há
+                aqui nenhum botão que responda pelo agente, e isso é decisão — quem
+                assume uma conversa faz isso na fila de handoff. */}
+            <strong>Só leitura.</strong> É por aqui que uma conversa vinda do
+            WhatsApp seria lida pela operação. Para agir sobre um caso, a fila está em{" "}
+            <a href="/handoffs">Handoffs</a>.
           </p>
         </div>
       </div>

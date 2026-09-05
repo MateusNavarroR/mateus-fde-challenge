@@ -99,6 +99,35 @@ def test_sobe_com_5432_e_8000_ocupadas_no_host():
     import socket
     import subprocess
 
+    # ⚠️ **Projeto PRÓPRIO, e isto não é detalhe.**
+    #
+    # Sem `-p`, o teste falava com a MESMA pilha que a pessoa está usando: subia por
+    # cima dela e, no `finally`, dava `down -v` — que apaga o volume. Aconteceu três
+    # vezes nesta máquina: rodar a suíte derrubava a aplicação aberta no navegador e
+    # **destruía as conversas gravadas**, sem nenhum aviso ligando uma coisa à outra.
+    #
+    # Um teste que exercita o compose precisa exercitar UMA CÓPIA dele. Com projeto
+    # separado, `down -v` no fim apaga só o que este teste criou — que é o que
+    # `down -v` deve significar.
+    PROJETO = ["-p", "autoseguro-teste-compose"]
+
+    # A 8080 é a única porta que o compose publica, então a cópia do teste precisa
+    # dela livre. Ocupada, o teste PULA com o motivo — que é honesto: ele não pode
+    # rodar, e derrubar a pilha de quem está usando para conseguir rodar seria
+    # exatamente o defeito que o projeto separado veio corrigir.
+    sonda = socket.socket()
+    try:
+        sonda.connect(("127.0.0.1", 8080))
+        pytest.skip(
+            "a porta 8080 já está em uso — provavelmente pelo `docker compose up` "
+            "desta máquina. Este teste sobe uma CÓPIA da pilha e precisa da porta; "
+            "derrube a sua com `docker compose down` para rodá-lo."
+        )
+    except OSError:
+        pass  # livre: é o que se quer
+    finally:
+        sonda.close()
+
     bloqueios = []
     try:
         for porta in (5432, 8000):
@@ -112,7 +141,7 @@ def test_sobe_com_5432_e_8000_ocupadas_no_host():
                 s.close()  # já ocupada por outro processo: melhor ainda para o teste
 
         r = subprocess.run(
-            ["docker", "compose", "up", "-d", "--wait", "--build"],
+            ["docker", "compose", *PROJETO, "up", "-d", "--wait", "--build"],
             cwd=RAIZ, capture_output=True, text=True, timeout=900,
         )
         assert r.returncode == 0, (
@@ -132,6 +161,7 @@ def test_sobe_com_5432_e_8000_ocupadas_no_host():
             assert resp.status == 200
             assert "text/html" in resp.headers["content-type"]
     finally:
-        subprocess.run(["docker", "compose", "down", "-v"], cwd=RAIZ, capture_output=True)
+        subprocess.run(["docker", "compose", *PROJETO, "down", "-v"],
+                       cwd=RAIZ, capture_output=True)
         for s in bloqueios:
             s.close()

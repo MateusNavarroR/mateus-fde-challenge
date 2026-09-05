@@ -146,3 +146,113 @@ def resumo_conversas(s: Session, state: str | None = None, limit: int = 50) -> l
             "ultima_cotacao_status": ultima_cot.status if ultima_cot else None,
         })
     return saida
+
+
+def _cache_do_prompt(s: Session) -> dict:
+    """A prova do prompt caching, com número — não com adjetivo.
+
+    Duas leituras, e a segunda é a que importa:
+
+    - **a fração do contexto que veio do cache**, que é a economia;
+    - **quantos turnos leram ZERO**, que é o que distingue "o cache funciona dentro
+      de uma conversa" de "o cache é do PREFIXO e atravessa conversas". Se o prefixo
+      sobrevive, até o primeiro turno de uma conversa nova lê do cache, e esse número
+      tende a zero. Medido no replay: 0 de 186.
+
+    `cache_read` é anulável de propósito — o Ollama não reporta —, então provider que
+    não reporta fica de fora da conta em vez de virar 0% e mentir.
+    """
+    linha = s.execute(
+        select(
+            func.count().label("turnos"),
+            func.coalesce(func.sum(TurnUsage.tokens_in), 0).label("enviados"),
+            func.coalesce(func.sum(TurnUsage.cache_read), 0).label("lidos"),
+            func.count().filter(TurnUsage.cache_read == 0).label("zerados"),
+        ).where(TurnUsage.cache_read.isnot(None))
+    ).one()
+
+    total = int(linha.enviados) + int(linha.lidos)
+    return {
+        "turnos_medidos": int(linha.turnos),
+        "tokens_do_cache": int(linha.lidos),
+        "tokens_enviados": int(linha.enviados),
+        # `None`, e não 0: sem turno medido não há fração, e 0% diria que o cache
+        # falhou onde a verdade é que não houve o que medir.
+        "fracao_do_cache": round(linha.lidos / total, 4) if total else None,
+        "turnos_sem_cache": int(linha.zerados),
+    }
+
+
+def _evals(s: Session) -> dict:
+    """O que os módulos nativos do Agno gravaram em `ai.eval_runs`.
+
+    A tabela é criada e escrita pelo próprio Agno, no schema `ai` — não é nossa, e por
+    isso é lida por SQL cru em vez de por um modelo do SQLAlchemy que teríamos de
+    manter em sincronia com uma dependência.
+
+    Ausente a tabela, devolve zeros em silêncio: o painel não pode quebrar porque
+    ninguém rodou avaliação ainda.
+    """
+    from sqlalchemy import text as _sql
+
+    try:
+        linha = s.execute(_sql("""
+            select count(*) as total,
+                   count(*) filter (where eval_data->>'eval_status' = 'PASSED') as passaram
+            from ai.eval_runs
+        """)).one()
+    except Exception:  # noqa: BLE001 — tabela ainda não existe
+        s.rollback()
+        return {"total": 0, "passaram": 0}
+    return {"total": int(linha.total), "passaram": int(linha.passaram)}
+
+
+def resumo_operacao(s: Session) -> dict:
+    """Os números do painel, numa consulta por métrica em vez de contar no cliente.
+
+    Contar do lado da tela exigiria paginar a lista inteira — o `/api/conversations`
+    devolve no máximo 200 —, e um painel que mente por paginação é pior que nenhum.
+
+    **O recorte de cada número é uma decisão, não uma agregação óbvia:**
+
+    - *mensagens enviadas* conta o que SAIU (`agente` e `sistema`), não o total. O que
+      o operador quer saber é quanto o agente falou, e somar a fala do lead dobraria o
+      número sem significar nada;
+    - *cotações* separa `ok` de `refused` de `failed`. Um total só esconderia
+      exatamente a distinção que o produto existe para tratar: recusa é desfecho de
+      negócio, falha é indisponibilidade;
+    - *handoffs* separa pendentes do total, porque pendente é fila e total é volume.
+    """
+    def _n(consulta) -> int:
+        return int(s.execute(consulta).scalar_one() or 0)
+
+    por_status = {
+        linha[0]: int(linha[1])
+        for linha in s.execute(
+            select(Quote.status, func.count()).group_by(Quote.status)
+        )
+    }
+
+    return {
+        "conversas": _n(select(func.count()).select_from(Conversation)),
+        "conversas_encaminhadas": _n(
+            select(func.count()).select_from(Conversation)
+            .where(Conversation.state == "encaminhado")
+        ),
+        "mensagens_enviadas": _n(
+            select(func.count()).select_from(Message)
+            .where(Message.autor.in_(("agente", "sistema")))
+        ),
+        "mensagens_recebidas": _n(
+            select(func.count()).select_from(Message).where(Message.autor == "lead")
+        ),
+        "cotacoes_ok": por_status.get("ok", 0),
+        "cotacoes_recusadas": por_status.get("refused", 0),
+        "cotacoes_falhas": por_status.get("failed", 0),
+        "handoffs_pendentes": _n(
+            select(func.count()).select_from(Handoff).where(Handoff.status == "pendente")
+        ),
+        "handoffs_total": _n(select(func.count()).select_from(Handoff)),
+        "cache": _cache_do_prompt(s),
+        "evals": _evals(s),
+    }

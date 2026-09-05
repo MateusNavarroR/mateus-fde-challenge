@@ -1,4 +1,3 @@
-import { Casca } from "../ui/Casca";
 import { useEffect, useRef, useState } from "react";
 import type {
   ConversationDetail,
@@ -109,9 +108,18 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
   );
 
   return (
-    <Casca via="chat" estado={estadoDaConversa}>
-      <div className="chat">
+    // Sem casca própria: quem dá a moldura é o `Console`, e o chat vive dentro do
+    // `Simulador`. A `Casca` aqui renderizava marca e navegação DENTRO da barra
+    // lateral — duas cascas empilhadas, com dois conjuntos de links para as mesmas
+    // seções.
+    <div className="chat">
       <div className="chat__acoes">
+        {/* O estado da conversa vinha na casca antiga. Ele é informação de PRODUTO —
+            "com a equipe" muda o que o lead pode fazer —, então acompanha as ações
+            em vez de sumir junto com a moldura. */}
+        <span className="chat__estado" data-testid="estado-da-conversa">
+          {estadoDaConversa}
+        </span>
         <button type="button" className="botao-fantasma" onClick={trocarDeConversa}>
           Nova conversa
         </button>
@@ -265,7 +273,6 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
           </button>
         </form>
       </footer>
-      </div>
-    </Casca>
+    </div>
   );
 }

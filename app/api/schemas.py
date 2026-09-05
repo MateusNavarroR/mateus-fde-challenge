@@ -177,3 +177,36 @@ class QuoteHealth(BaseModel):
 class Erro(BaseModel):
     error: str
     message: str
+
+
+class CacheDoPrompt(BaseModel):
+    """`fracao_do_cache` é anulável de propósito: sem turno medido não há fração, e
+    0% diria que o cache falhou onde a verdade é que não houve o que medir."""
+
+    turnos_medidos: int
+    tokens_do_cache: int
+    tokens_enviados: int
+    fracao_do_cache: float | None
+    turnos_sem_cache: int
+
+
+class EvalsResumo(BaseModel):
+    total: int
+    passaram: int
+
+
+class Resumo(BaseModel):
+    """Os números do painel. Cada campo é um recorte declarado, não uma agregação
+    genérica — ver `consultas.resumo_operacao` para o porquê de cada um."""
+
+    conversas: int
+    conversas_encaminhadas: int
+    mensagens_enviadas: int
+    mensagens_recebidas: int
+    cotacoes_ok: int
+    cotacoes_recusadas: int
+    cotacoes_falhas: int
+    handoffs_pendentes: int
+    handoffs_total: int
+    cache: CacheDoPrompt
+    evals: EvalsResumo

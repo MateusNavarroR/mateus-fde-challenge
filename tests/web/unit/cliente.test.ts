@@ -61,6 +61,7 @@ it("nenhuma rota é montada por concatenação solta de string", () => {
       "handoff",
       "handoffs",
       "health",
+      "resumo",
       "status",
       "usage",
       "wsChat",

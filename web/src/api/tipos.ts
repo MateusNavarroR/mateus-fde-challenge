@@ -256,6 +256,28 @@ export type FilaHandoffs = {
   pendentes: number;
 };
 
+/** Os números do painel. Cada campo é um recorte declarado — ver `/api/resumo`. */
+export type Resumo = {
+  conversas: number;
+  conversas_encaminhadas: number;
+  mensagens_enviadas: number;
+  mensagens_recebidas: number;
+  cotacoes_ok: number;
+  cotacoes_recusadas: number;
+  cotacoes_falhas: number;
+  handoffs_pendentes: number;
+  handoffs_total: number;
+  cache: {
+    turnos_medidos: number;
+    tokens_do_cache: number;
+    tokens_enviados: number;
+    /** `null` quando não há turno medido — o Ollama não reporta cache. */
+    fracao_do_cache: number | null;
+    turnos_sem_cache: number;
+  };
+  evals: { total: number; passaram: number };
+};
+
 export type Saude = {
   status: "ok";
   db: "ok" | "degraded";

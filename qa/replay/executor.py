@@ -215,6 +215,7 @@ class Executor:
         texto: str,
         adaptador,
         tipo: str = "text",
+        sessao=None,
     ) -> Falha | None:
         """Um turno, com retentativa. Devolve a falha que sobrou, ou `None`.
 
@@ -226,6 +227,30 @@ class Executor:
             from app.agent.turno import responder as responder_producao
 
             responder = responder_producao
+
+        # ⚠️ **A fala do lead é PERSISTIDA antes do turno**, como `processar_turno_web`
+        # faz em produção — e não era.
+        #
+        # O efeito medido: o replay gravava 157 mensagens do agente, 32 do sistema e
+        # **zero do lead**. `repo.midias_do_lead()` conta `messages` com `autor='lead'`
+        # e `tipo != 'text'`, então devolvia 0 sempre, e `MIDIA_SEM_TEXTO` não tinha
+        # como disparar por mais que o `tipo` atravessasse o replay. Foram 4 das 5
+        # reprovações de uma execução — todas com desfecho de negócio CERTO.
+        #
+        # Em produção o gatilho funciona, porque lá a fala é gravada. Era o harness
+        # que não exercitava o caminho inteiro.
+        #
+        # O segundo prejuízo era de evidência: os transcripts exportados mostravam só
+        # um lado da conversa, e um transcript sem as perguntas não deixa ninguém
+        # entender por que o agente respondeu aquilo.
+        if sessao is not None:
+            from app.persistence import repo as _repo
+
+            _repo.gravar_mensagem(
+                sessao, conversation_id, autor="lead", conteudo=texto,
+                status="received", tipo=tipo,
+            )
+            sessao.commit()
 
         tentativa = 0
         while True:
@@ -315,6 +340,7 @@ class Executor:
             # que parecia um anexo.
             falha = await self._turno(
                 coletor, conversation_id, fala.texto, adaptador, tipo=fala.tipo,
+                sessao=sessao,
             )
             if falha is not None:
                 return falha
@@ -328,7 +354,7 @@ class Executor:
                         break
                     marca = len(adaptador.enviadas)
                     falha = await self._turno(
-                        coletor, conversation_id, resposta, adaptador
+                        coletor, conversation_id, resposta, adaptador, sessao=sessao,
                     )
                     if falha is not None:
                         return falha
