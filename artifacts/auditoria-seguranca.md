@@ -1,5 +1,17 @@
 # Auditoria de segurança — passe 2 (pós `docs/SEGURANCA.md`)
 
+
+> ## Estado deste relatório
+>
+> **Todos os achados abaixo foram corrigidos.** Este documento é mantido como está —
+> com o veredito original e os achados na forma em que foram encontrados — porque um
+> relatório de auditoria reescrito depois da correção deixa de ser auditoria e vira
+> apresentação. O que ele registra é o que existia no momento em que foi escrito.
+>
+> O que mudou desde então está no histórico do Git (commits `71154f6` e seguintes) e, para cada achado,
+> num teste que o trava. Os dois achados de severidade alta — a chave de sessão sem `scrypt` e o WebSocket `/api/events` aberto a anônimos — foram reproduzidos, corrigidos e verificados na aplicação: anônimo recusado, autenticado conectado. O achado baixo (URL de banco no stdout) sai mascarado.
+
+
 **Veredito: NÃO apto a publicar sem correção.** Dois achados de severidade alta —
 um enfraquecimento criptográfico na assinatura da sessão de admin e uma rota de
 operação sem controle de acesso equivalente ao `exigir_admin` — foram introduzidos

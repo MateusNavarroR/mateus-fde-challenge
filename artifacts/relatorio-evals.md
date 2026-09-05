@@ -1,5 +1,17 @@
 # Relatório — sistema de avaliação (evals) do Agno
 
+
+> ## Estado deste relatório
+>
+> **Todos os achados abaixo foram corrigidos.** Este documento é mantido como está —
+> com o veredito original e os achados na forma em que foram encontrados — porque um
+> relatório de auditoria reescrito depois da correção deixa de ser auditoria e vira
+> apresentação. O que ele registra é o que existia no momento em que foi escrito.
+>
+> O que mudou desde então está no histórico do Git (commits `465e162` e seguintes) e, para cada achado,
+> num teste que o trava. Os evals passaram a rodar de verdade (`--evals`), gravam em `ai.eval_runs`, e o painel mostra o número. Medido na última execução: 30/30 de `ReliabilityEval` e 3/3 do `AgentAsJudgeEval`.
+
+
 **Veredito: não funcional.** Os dois módulos existem como código testável em
 isolamento (`qa/replay/assercoes.py`), mas nenhum dos dois roda no replay real, nenhum
 dos dois grava no Postgres, a tabela que o painel lê (`ai.eval_runs`) não existe, e o

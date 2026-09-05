@@ -1,5 +1,17 @@
 # Avaliação crítica — AutoSeguro (desafio FDE)
 
+
+> ## Estado deste relatório
+>
+> **Todos os achados abaixo foram corrigidos.** Este documento é mantido como está —
+> com o veredito original e os achados na forma em que foram encontrados — porque um
+> relatório de auditoria reescrito depois da correção deixa de ser auditoria e vira
+> apresentação. O que ele registra é o que existia no momento em que foi escrito.
+>
+> O que mudou desde então está no histórico do Git (commits `71154f6` e seguintes) e, para cada achado,
+> num teste que o trava. As três causas das 39 falhas num clone fresco foram corrigidas: a superfície da API deixou de depender de `web/dist` existir, os testes de trace pulam com motivo quando a tabela do Agno ainda não existe, e a suíte de dados pula com instrução quando o material do desafio não está ao lado. O número de commits varridos em `docs/SEGURANCA.md` foi corrigido de 34 para 50.
+
+
 Avaliação feita como quem chega do zero: worktree isolado, `.env` copiado do
 repositório principal, pilha própria via `docker compose -p avaliacao-critica`,
 suíte de testes rodada de verdade, dois cenários (feliz/degradado) reproduzidos

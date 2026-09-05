@@ -154,7 +154,11 @@ def test_so_transitorio_e_timeout_retentam(outcome, retentavel):
 def test_422_do_pydantic_nao_propaga_detalhe():
     """O corpo do 422 de validação ecoa o payload enviado — idade e CEP do lead.
     Ele não pode viajar para log nem para a tela."""
-    e = classificar_erro(422, {"detail": [{"input": {"idade": 80, "cep": "07000000"}}]})
+    # CEP do gerador: o valor não importa para a classificação, e um literal aqui
+    # violaria o invariante 13b tanto quanto num teste de mascaramento.
+    e = classificar_erro(
+        422, {"detail": [{"input": {"idade": 80, "cep": cep_de("07", com_hifen=False)}}]}
+    )
     assert e.detalhe_bruto is None
 
 

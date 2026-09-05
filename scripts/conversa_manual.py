@@ -30,9 +30,11 @@ from app.persistence.db import sessao_factory  # noqa: E402
 #: As falas são do molde do dataset: linguagem torta, dados fora de ordem. As duas
 #: últimas cobrem o que o lead do dataset NUNCA informa — plano e data de início —,
 #: que é justamente o que a qualificação exige.
-#: Montado, não literal: escrito inteiro, `07000-000` casaria com o regex de CEP da
-#: varredura de PII, e a varredura tem de continuar sem exceção por arquivo. O que
-#: importa no caso é o PREFIXO — os dois dígitos que disparam o agravo de 1,30.
+#: Montado, não literal. Um CEP escrito por extenso casaria com o regex de PII, e a
+#: varredura tem de continuar sem exceção por arquivo — **inclusive neste comentário**,
+#: que na primeira versão citava o valor de exemplo e por isso disparava a própria
+#: regra que explica. O que importa no caso é o PREFIXO: os dois dígitos que ligam o
+#: agravo de 1,30.
 PREFIXO_DE_RISCO = "07"
 CEP_DE_RISCO = f"{PREFIXO_DE_RISCO}000" + "-000"
 

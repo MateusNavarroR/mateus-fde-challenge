@@ -453,8 +453,12 @@ def test_token_de_verdade_continua_ligando_a_exigencia():
     """O negativo: normalizar vazio não pode desligar a proteção de quem a quer."""
     from app.config import Settings
 
-    cfg = Settings(admin_token="  s3gr3d0  ")
-    assert cfg.admin_token == "s3gr3d0", "espaços da borda saem; o valor fica"
+    # Do gerador, com os espaços em volta: o que este teste mede é o `strip`, e o
+    # VALOR é irrelevante — um literal aqui seria credencial embarcada num repositório
+    # público, e a varredura não abre exceção nem para o arquivo que testa autenticação.
+    valor = secrets.token_hex(8)
+    cfg = Settings(admin_token=f"  {valor}  ")
+    assert cfg.admin_token == valor, "espaços da borda saem; o valor fica"
     assert cfg.admin_exigido is True
 
 
@@ -473,7 +477,10 @@ def test_rest_e_websocket_concordam_sobre_o_mesmo_token(cliente, monkeypatch):
     # ⚠️ O valor CRU, sem `or None`. Escrever `token or None` aqui converteria `""`
     # em `None` no próprio teste e o faria pular exatamente o caso que ele existe
     # para cobrir — foi assim que ele nasceu, e passava com o bug presente.
-    for token, esperado_aberto in (("", True), ("s3gr3d0", False)):
+    # O token vem do gerador, não literal: `tests/nucleo/test_repo_publico.py` varre
+    # credenciais embarcadas e não abre exceção para quem as escreve — nem para este
+    # arquivo, que é justamente o que testa autenticação.
+    for token, esperado_aberto in (("", True), (secrets.token_hex(8), False)):
         monkeypatch.setattr(cfg, "admin_token", token)
 
         rest = cliente.get("/api/handoffs")
@@ -496,7 +503,7 @@ def test_um_token_vazio_apresentado_nao_abre_o_websocket(cliente, monkeypatch):
     vazio. Com um token de verdade configurado, apresentar vazio tem de fechar."""
     from app.config import get_settings
 
-    monkeypatch.setattr(get_settings(), "admin_token", "s3gr3d0")
+    monkeypatch.setattr(get_settings(), "admin_token", secrets.token_hex(8))
     with pytest.raises(Exception):
         with cliente.websocket_connect("/api/events?token="):
             pass

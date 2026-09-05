@@ -2,6 +2,7 @@
 
 import datetime as dt
 
+from tests.fixtures.pii import cep_de
 from app.agent.prompt import construir_bloco_volatil, construir_system
 from app.contracts.conversa import LeadProfile
 
@@ -37,7 +38,7 @@ def test_volatil_carrega_data_e_perfil():
 
 
 def test_volatil_diz_quando_pode_cotar():
-    p = LeadProfile(idade=35, veiculo_ano=2019, cep="01310100",
+    p = LeadProfile(idade=35, veiculo_ano=2019, cep=cep_de("01", com_hifen=False),
                     data_inicio=dt.date(2026, 10, 17), plano_id="completo")
     assert "pode cotar" in construir_bloco_volatil(p)
 

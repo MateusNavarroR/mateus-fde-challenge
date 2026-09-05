@@ -227,3 +227,55 @@ def test_binario_comprimido_nao_gera_falso_positivo():
         pytest.skip("nenhum PNG versionado ainda")
     problemas = [(p.name, c, tr) for p in reais for c, tr in _achados(p)]
     assert not problemas, problemas
+
+
+# ─── o invariante 13b, verificado em CÓDIGO e não só declarado ───────────────
+
+
+def test_nenhum_literal_de_pii_no_codigo_versionado():
+    """`CLAUDE.md` 13b: "nenhum literal de PII, nem sintético" — em CÓDIGO também.
+
+    ⚠️ **Este invariante era declarado e não era verificado.** A varredura irmã cobre o
+    que NÃO é código (docs, `ai-logs`, artefatos); o teste de credenciais cobre chave e
+    senha. Entre os dois havia um vão: CEP e CPF escritos à mão dentro de `.py` e
+    `.ts`. Um passe final antes da publicação encontrou sete arquivos assim — incluindo
+    dois COMENTÁRIOS que explicavam a regra citando o valor que ela proíbe.
+
+    As exceções abaixo não são lista de conveniência: são os dois arquivos cuja função
+    é justamente conter o padrão — o gerador semeado e o teste que planta PII para
+    provar que a varredura pega. Fora deles, o valor vem de `cep_de()` / `gerarPii()`.
+    """
+    import re
+
+    raiz = Path(__file__).resolve().parents[2]
+    # O gerador É a origem dos valores; o teste da varredura PRECISA plantar um.
+    donos_do_padrao = {
+        "tests/fixtures/pii.py",
+        "tests/web/fixtures/pii.ts",
+        "tests/nucleo/test_repo_publico.py",
+    }
+
+    # Só o que é inequivocamente PII escrita à mão: CEP e CPF pontuados. Datas
+    # compactas e hashes de lockfile não entram — foi o que tornou a varredura irmã
+    # ruidosa, e ruído treina a ignorar.
+    cep = re.compile(r"\b\d{5}-\d{3}\b")
+    cpf = re.compile(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b")
+
+    problemas = []
+    for sub in ("app", "qa", "scripts", "tests"):
+        for p in (raiz / sub).rglob("*"):
+            if p.suffix not in {".py", ".ts", ".tsx"} or not p.is_file():
+                continue
+            rel = str(p.relative_to(raiz))
+            if rel in donos_do_padrao:
+                continue
+            texto = p.read_text(encoding="utf-8")
+            for classe, padrao in (("cep", cep), ("cpf", cpf)):
+                m = padrao.search(texto)
+                if m:
+                    problemas.append(f"{rel}: {classe} literal → {m.group(0)}")
+
+    assert not problemas, (
+        "literal de PII em código (CLAUDE.md 13b) — use o gerador semeado de "
+        "`tests/fixtures/pii.py`:\n  " + "\n  ".join(problemas)
+    )

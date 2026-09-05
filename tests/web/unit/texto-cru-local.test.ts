@@ -3,7 +3,9 @@ import { estadoInicial, reduzir } from "../../../web/src/chat/useConversa";
 import { esquecerCru, gravarCru, lerCru } from "../../../web/src/chat/textoCruLocal";
 import { gerarPii } from "../fixtures/pii";
 
-const CPF = "111.222.333-44";
+// Do gerador semeado, não literal (CLAUDE.md 13b). A semente é fixa para o teste ser
+// determinístico; o VALOR nunca aparece no arquivo, que é o ponto da regra.
+const CPF = gerarPii(1312).cpf;
 const DIGITADO = `meu cpf é ${CPF}`;
 const MASCARADO = "meu cpf é [CPF]";
 
