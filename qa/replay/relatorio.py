@@ -123,7 +123,17 @@ class ResultadoConversa:
     preco_alcancavel: bool | None = None
     preco_exato: bool | None = None
 
+    #: O CASO do dataset contém mídia sem transcrição.
     tem_midia: bool = False
+    #: Quantas mídias foram DE FATO enviadas nesta execução.
+    #:
+    #: Diferente de `tem_midia`: o laço para no estado terminal, e em algumas conversas
+    #: a mídia do dataset vem depois da cotação — o vendedor humano cotou no turno 9,
+    #: nosso agente cota no 4, e os anexos nunca chegam a ser enviados. A política de
+    #: mídia não foi exercitada ali, e contar como falha mede o instrumento.
+    midias_enviadas: int = 0
+    #: `None` quando nenhuma mídia foi enviada: não é sucesso nem falha, é ausência
+    #: de caso.
     midia_tratada: bool | None = None
 
     #: Quantas vezes o lead objetou preço/franquia/concorrente nesta conversa.
@@ -236,7 +246,10 @@ class Relatorio:
         grupos: dict[str, list[ResultadoConversa]] = {}
         for r in self.resultados:
             grupos.setdefault(r.estrato, []).append(r)
-            if r.tem_midia:
+            # O grupo é de quem RECEBEU mídia, não de quem tinha mídia no caso: um
+            # grupo que inclui conversas onde a política nunca foi exercitada mede o
+            # laço do replay em vez do agente.
+            if r.midias_enviadas > 0:
                 grupos.setdefault("midia", []).append(r)
             if r.objecoes >= 1:
                 grupos.setdefault("objecao", []).append(r)

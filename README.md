@@ -329,10 +329,22 @@ números e uma rota nova para seis números é escopo por escopo.
 Isso deixou de ser aspiracional: os módulos nativos do Agno (`ReliabilityEval`,
 `AgentAsJudgeEval`) rodam de verdade dentro do replay (`qa/replay/evals.py`, flag
 `--evals`, gravando em `ai.eval_runs`) — não são só código testável que nenhum caminho
-chama. Medido: os 30 casos de `ReliabilityEval` passaram, e o `AgentAsJudgeEval` avaliou
-os três textos de recusa (`docs/TEXTOS.md` ⑤⑥⑦) com **nota 9**. Detalhe de metodologia e
-o histórico do defeito (a tabela nunca existia e o painel mostrava um traço em silêncio)
-em `docs/EVALS.md`.
+chama. Medido na última execução: **30/30 casos de `ReliabilityEval`** e **3/3 do
+`AgentAsJudgeEval`**, com 33 linhas gravadas em `ai.eval_runs` e zero erros.
+
+**E o juiz já derrubou um texto nosso** — não é enfeite. A recusa por idade terminava
+com «Deixei seu cadastro registrado do nosso lado», e ele deu nota 7 de 10, abaixo do
+limiar, porque a frase «pode ser interpretada como promessa implícita de acompanhamento
+futuro ou retorno». `docs/TEXTOS.md` justificava a frase pelo oposto. Ele estava certo:
+a intenção era uma, a leitura era outra. A frase saiu, e na execução seguinte os três
+textos passaram.
+
+É o tipo de defeito que **só um juiz de texto encontra**: a frase não tinha valor
+monetário, não prometia prazo e não sugeria trocar o condutor — nenhum teste
+determinístico a pegaria. Ela falhava na leitura.
+
+Detalhe de metodologia e o histórico do defeito (a tabela nunca existia e o painel
+mostrava um traço em silêncio) em `docs/EVALS.md`.
 
 A rastreabilidade também ganhou granularidade de **chamada**, não só de turno: a aba
 "Trace" do Histórico (`GET /api/conversations/{id}/traces`, lendo `ai.agno_runs`) mostra,
@@ -720,9 +732,26 @@ com o modelo no relatório JSON:
 | desfecho correto | 30/30 (100 %) | 28/30 (93,3 %) |
 | preço exato (14 conversas com prêmio calculável) | 14/14 | não medido nesta bateria |
 | extração — idade / veículo / CEP | 30/30 · 30/30 · 30/30 | não medido nesta bateria |
-| mídia tratada | 16/18 | 14/18 |
+| mídia tratada | **7/7** — ver a nota abaixo | não comparável (medida com o denominador antigo) |
 | tool proibida chamada | 0 | 0 |
-| turnos / tempo total | 213 / 698 s | 186 / 856 s |
+| turnos / tempo total | 208 / 609 s | 186 / 856 s |
+
+> **O denominador da mídia é 7, e não 18 — a nota importa mais que o número.**
+>
+> Dezoito conversas da amostra têm mídia no dataset. Só **sete** chegaram a receber
+> mídia na execução, e a razão é do laço do replay: ele para no estado terminal, e em
+> várias dessas conversas o anexo vem DEPOIS da cotação. O vendedor humano do dataset
+> cota no turno 9; o agente cota no 4, e os anexos dos turnos 6 e 7 nunca são enviados.
+>
+> A métrica antiga contava as 18 e reprovava o agente por não tratar o que ele nunca
+> recebeu — os "16/18" e "14/18" desta tabela em versões anteriores mediam o laço, não
+> o agente. Hoje `midia_tratada` é `None` quando nenhuma mídia foi enviada: não é
+> sucesso nem falha, é ausência de caso.
+>
+> Foi a **terceira vez** que este grupo apontou para o instrumento — antes, o `tipo`
+> que não atravessava o replay e a definição que exigia pedido de texto de toda
+> conversa. Fica registrado porque é o padrão, não o incidente: taxa ruim concentrada
+> num grupo é sinal de instrumento antes de ser sinal de agente.
 
 Ambos os relatórios estão em `qa/_saida/replay/` (`replay-sonnet.json` e
 `replay-desfecho.json`) — não versionados (ver `docs/EVALS.md`), reproduzíveis com o

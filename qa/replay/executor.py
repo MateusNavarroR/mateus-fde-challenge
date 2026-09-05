@@ -391,6 +391,11 @@ class Executor:
         for fala in caso.falas:
             coletor.message_index = fala.message_index
             marca = len(adaptador.enviadas)
+            if fala.e_midia_sem_transcricao:
+                # No COLETOR, e não numa variável local: `_injetar` devolve `Falha |
+                # None`, e o contador precisa chegar a `_conferir`, que é quem monta a
+                # métrica. O coletor já atravessa os dois.
+                coletor.midias_enviadas += 1
             # ⚠️ O `tipo` da fala vai junto, e sem ele o estrato de mídia mede a
             # coisa errada: uma fala `[documento] CNH_frente.pdf` chegava ao agente
             # como TEXTO comum, `messages.tipo` gravava `text`, e `MIDIA_SEM_TEXTO`
@@ -508,12 +513,29 @@ class Executor:
                 resultado.desfecho_esperado != str(assercoes.Desfecho.REFUSED)
                 or resultado.motivo_obtido == resultado.motivo_esperado
             )
-            resultado.midia_tratada = assercoes.tratou_midia(
-                [m["text"] for m in adaptador.enviadas],
-                encaminhou=obs.desfecho is assercoes.Desfecho.ENCAMINHADO,
-                midias=caso.midias,
-                desfecho_correto=correto,
-            )
+            # O DENOMINADOR É O QUE FOI ENVIADO, não o que o caso contém — e a
+            # diferença apareceu medindo.
+            #
+            # O laço para no estado terminal ("as falas seguintes são o lead
+            # continuando a negociar"), e em algumas conversas do dataset a mídia vem
+            # DEPOIS da cotação: o vendedor humano cotou no turno 9, nosso agente cota
+            # no 4, e os anexos dos turnos 6 e 7 nunca chegam a ser enviados. A métrica
+            # reprovava o agente por não ter tratado uma mídia que ele nunca recebeu —
+            # media o instrumento.
+            #
+            # `midia_tratada` fica `None` quando nenhuma mídia foi enviada: não é
+            # sucesso nem falha, é ausência de caso. Somar isso como falha inventaria
+            # um número ruim; somar como sucesso inventaria um bom.
+            resultado.midias_enviadas = coletor.midias_enviadas
+            if coletor.midias_enviadas == 0:
+                resultado.midia_tratada = None
+            else:
+                resultado.midia_tratada = assercoes.tratou_midia(
+                    [m["text"] for m in adaptador.enviadas],
+                    encaminhou=obs.desfecho is assercoes.Desfecho.ENCAMINHADO,
+                    midias=coletor.midias_enviadas,
+                    desfecho_correto=correto,
+                )
 
     # ─── a execução inteira ──────────────────────────────────────────────────
 

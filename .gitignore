@@ -32,3 +32,9 @@ dist/
 
 # ...mas os logs de IA sao entregavel — ver ai-logs/README.md
 !ai-logs/**
+
+# Downloads e capturas do Playwright MCP. São subprodutos de sessão, não artefato:
+# entraram no repositório uma vez e trouxeram junto coordenadas SVG com oito casas
+# decimais, que a varredura de PII acusa como CEP — com razão, porque ela não tem
+# como saber que oito dígitos ali são precisão de ponto flutuante.
+.playwright-mcp/

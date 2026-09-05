@@ -591,3 +591,59 @@ def test_a_fala_do_lead_e_persistida_antes_do_turno(monkeypatch):
     assert [p["tipo"] for p in doLead if p["conteudo"].startswith("[imagem]")] == ["image"], (
         "a fala de mídia foi persistida como texto — o contador não a veria"
     )
+
+
+def test_midia_que_NUNCA_foi_enviada_nao_conta_como_falha():
+    """O denominador é o que foi ENVIADO, não o que o caso do dataset contém.
+
+    O laço do replay para no estado terminal — "as falas seguintes são o lead
+    continuando a negociar" — e em várias conversas a mídia vem DEPOIS da cotação: o
+    vendedor humano do dataset cota no turno 9, nosso agente cota no 4, e os anexos
+    dos turnos 6 e 7 nunca chegam a ser enviados.
+
+    Medido: 3 das 18 conversas do grupo `midia` reprovavam por isso. A política de
+    mídia não foi exercitada ali, e contar como falha mede o LAÇO, não o agente —
+    exatamente o mesmo erro que já tinha acontecido duas vezes neste grupo (o `tipo`
+    que não atravessava, e a definição que exigia pedido de texto de toda conversa).
+
+    `None` é a resposta certa: não é sucesso nem falha, é ausência de caso. Somar
+    como falha inventa um número ruim; somar como sucesso inventa um bom.
+    """
+    from qa.replay.relatorio import ResultadoConversa
+
+    # Conversa cujo CASO tem mídia, mas onde nenhuma foi enviada.
+    r = ResultadoConversa(
+        conversation_id="c1", estrato="cotavel", outcome_dataset="ganho",
+        desfecho_esperado="ok", desfecho_obtido="ok",
+        tem_midia=True, midias_enviadas=0, midia_tratada=None,
+    )
+    assert r.passou, "reprovou por uma mídia que o agente nunca recebeu"
+
+    # E uma que RECEBEU mídia e não tratou continua reprovando.
+    ruim = ResultadoConversa(
+        conversation_id="c2", estrato="cotavel", outcome_dataset="ganho",
+        desfecho_esperado="ok", desfecho_obtido="ok",
+        tem_midia=True, midias_enviadas=2, midia_tratada=False,
+    )
+    assert not ruim.passou, "deixou passar uma política de mídia de fato violada"
+
+
+def test_o_grupo_midia_e_de_quem_RECEBEU_midia():
+    """A cobertura por grupo tem o mesmo problema, e a mesma correção.
+
+    Um grupo que inclui conversas onde a política nunca foi exercitada reporta uma
+    taxa sobre casos que não existiram.
+    """
+    from qa.replay.relatorio import Relatorio, ResultadoConversa
+
+    rel = Relatorio(modo="desfecho", modelo="x", seed=1)
+    rel.resultados = [
+        ResultadoConversa(conversation_id="a", estrato="cotavel", outcome_dataset="ganho",
+                          tem_midia=True, midias_enviadas=0),
+        ResultadoConversa(conversation_id="b", estrato="cotavel", outcome_dataset="ganho",
+                          tem_midia=True, midias_enviadas=2),
+    ]
+    grupos = rel.por_grupo
+    assert grupos["midia"]["n"] == 1, (
+        "o grupo contou uma conversa em que nenhuma mídia foi enviada"
+    )

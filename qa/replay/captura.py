@@ -41,6 +41,14 @@ class Coletor:
     falhas: list[Falha] = field(default_factory=list)
     conversation_id: str | None = None
     message_index: int | None = None
+    #: Mídias DE FATO enviadas nesta conversa.
+    #:
+    #: Diferente de "o caso tem mídia": o laço do replay para no estado terminal, e em
+    #: várias conversas a mídia do dataset vem depois da cotação — o vendedor humano
+    #: cotou no turno 9, nosso agente cota no 4, e os anexos nunca chegam a ser
+    #: enviados. Sem este contador, a métrica de mídia reprovava o agente por não ter
+    #: tratado o que ele nunca recebeu.
+    midias_enviadas: int = 0
 
     @property
     def ultimo_run(self) -> Any | None:
