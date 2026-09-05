@@ -159,11 +159,16 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
           outro lead é vazamento, não conveniência. Cada navegador lista o que ele
           mesmo abriu — ids que ele já tinha.
 
-          Some quando há só uma: um seletor de um item é ruído.
+          **Aparece com UMA conversa também**, e essa foi a segunda versão. Esconder
+          até haver duas parecia limpo e escondia justamente de quem precisava
+          descobrir: só se aprende que dá para voltar depois de já ter perdido uma
+          conversa de vista. Um controle que só surge quando o estrago está feito não
+          é discreto, é inútil — e o pedido original era literalmente "não está
+          intuitivo".
         */}
-        {anteriores.length > 1 ? (
+        {anteriores.length > 0 ? (
           <label className="chat__retomar">
-            <span className="so-leitor">Continuar uma conversa</span>
+            <span className="chat__retomar-rotulo">Conversa</span>
             <select
               data-testid="seletor-de-conversa"
               value={id ?? ""}

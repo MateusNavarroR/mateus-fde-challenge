@@ -1424,6 +1424,26 @@ code {
    do trabalho, e o olho de quem termina de escrever já está aqui embaixo. */
 /* O seletor de conversa vive na barra de ações do chat, ao lado de "Nova conversa" —
    as duas ações são a mesma pergunta ("qual conversa?"), vistas de lados opostos. */
+/* O rótulo é VISÍVEL, e não só para leitor de tela: um `select` solto ao lado de
+   "Nova conversa" não diz o que faz até você abrir. */
+.chat__retomar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.chat__retomar-rotulo {
+  font-family: var(--doc);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-tenue);
+}
+
+.simulador .chat__retomar-rotulo {
+  color: rgba(255, 255, 255, 0.75);
+}
+
 .chat__retomar select {
   font: inherit;
   font-size: 0.8rem;

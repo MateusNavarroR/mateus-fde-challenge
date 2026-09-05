@@ -19,6 +19,7 @@ import datetime as dt
 import uuid
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -66,8 +67,37 @@ def criar_ou_retomar_conversa(
         ).scalar_one_or_none()
         if existente is not None:
             return existente, False
-    else:
-        external_ref = f"{channel}:{uuid.uuid4().hex}"
+        # E AGORA A CORRIDA, que o `SELECT` acima sozinho não fecha.
+        #
+        # Entre ler e inserir há uma janela, e duas requisições simultâneas com o mesmo
+        # `external_ref` passam pelas duas: ambas não encontram nada, ambas inserem, e
+        # a segunda bate na `UNIQUE (channel, external_ref)` — HTTP 500 para o lead, na
+        # abertura da conversa.
+        #
+        # Não é hipotético. O React em modo de desenvolvimento monta cada componente
+        # duas vezes de propósito, e é assim que o defeito aparece no `vite dev`; em
+        # produção basta um duplo clique, duas abas, ou um F5 durante a abertura.
+        #
+        # A saída é o padrão de sempre para upsert com UNIQUE: **tentar inserir e, na
+        # colisão, reler**. O banco é quem arbitra — não há como perder a corrida
+        # duas vezes, porque depois do `rollback` a linha do vencedor já está lá.
+        try:
+            with s.begin_nested():
+                return criar_conversa(
+                    s, channel=channel, external_ref=external_ref
+                ), True
+        except IntegrityError:
+            ganhador = s.execute(
+                select(Conversation).where(
+                    Conversation.channel == channel,
+                    Conversation.external_ref == external_ref,
+                )
+            ).scalar_one_or_none()
+            if ganhador is None:  # pragma: no cover - a UNIQUE tornaria isto impossível
+                raise
+            return ganhador, False
+
+    external_ref = f"{channel}:{uuid.uuid4().hex}"
     return criar_conversa(s, channel=channel, external_ref=external_ref), True
 
 

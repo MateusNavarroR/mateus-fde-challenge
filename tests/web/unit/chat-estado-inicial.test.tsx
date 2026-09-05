@@ -197,12 +197,34 @@ it("dá para escolher qual conversa continuar, entre as DESTE navegador", async 
 });
 
 
-it("com UMA conversa só, o seletor não aparece — um item é ruído", async () => {
+it("com UMA conversa o seletor JÁ aparece — descoberta antes do estrago", async () => {
+  /*
+   * A primeira versão escondia o seletor até haver duas conversas. Parecia limpo e
+   * escondia de quem precisava descobrir: só se aprende que dá para voltar depois de
+   * já ter perdido uma conversa de vista. Um controle que só surge quando o estrago
+   * está feito não é discreto, é inútil.
+   */
   historico = [{ id: "conv_unica", aberta_em: T }];
   abrirSessao.mockResolvedValue({
     id: "conv_unica",
     detalhe: { id: "conv_unica", state: "qualificando", perfil: {}, quotes: [],
                handoffs: [], messages: MENSAGENS },
+  });
+
+  render(<PaginaChat />);
+  await screen.findByRole("textbox", { name: /sua mensagem/i });
+  expect(screen.getByTestId("seletor-de-conversa")).toBeVisible();
+  // E o rótulo é visível, não só para leitor de tela: um `select` solto ao lado de
+  // "Nova conversa" não diz o que faz até alguém abri-lo.
+  expect(screen.getByText("Conversa")).toBeVisible();
+});
+
+it("sem NENHUMA conversa ainda, não há o que escolher", async () => {
+  historico = [];
+  abrirSessao.mockResolvedValue({
+    id: "conv_nova",
+    detalhe: { id: "conv_nova", state: "novo", perfil: {}, quotes: [], handoffs: [],
+               messages: [] },
   });
 
   render(<PaginaChat />);

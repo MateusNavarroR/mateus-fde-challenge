@@ -1,6 +1,7 @@
 """Um turno por vez, e o relógio de demora do modelo."""
 
 import asyncio
+import uuid
 
 import pytest
 
@@ -95,3 +96,54 @@ async def test_turno_sem_fala_nao_entrega_nada(saidas):
     c = _conversa(mudo, saidas)
     await c.receber("oi")
     assert saidas == []
+
+
+@pytest.mark.db
+def test_duas_aberturas_SIMULTANEAS_devolvem_a_MESMA_conversa(engine_teste, monkeypatch):
+    """A corrida que o `SELECT` sozinho não fecha, e que virava HTTP 500 para o lead.
+
+    Entre ler e inserir há uma janela. Duas requisições com o mesmo `external_ref`
+    passam pelas duas: ambas não encontram nada, ambas inserem, e a segunda bate na
+    `UNIQUE (channel, external_ref)`. Não é hipotético — o React em desenvolvimento
+    monta cada componente duas vezes, e foi assim que o defeito apareceu no `vite dev`;
+    em produção basta um duplo clique, duas abas ou um F5 durante a abertura.
+
+    **O teste força a janela em vez de torcer por ela.** Chamar a função duas vezes em
+    sequência não reproduz nada: a segunda chamada encontra a linha já commitada e sai
+    pelo caminho feliz — foi a primeira versão deste teste, e ela passava com o bug
+    presente. Aqui um "outro processo" vence a corrida DENTRO da janela, entre o
+    `SELECT` e o `INSERT`, que é exatamente onde ela existe.
+    """
+    from sqlalchemy.orm import Session
+
+    from app.persistence import repo
+
+    ref = f"corrida-{uuid.uuid4().hex}"
+    original = repo.criar_conversa
+
+    def intruso(sessao, *, channel, external_ref):
+        # O concorrente insere e commita agora — a partir daqui o INSERT abaixo
+        # colide, que é o estado que o código precisa saber tratar.
+        monkeypatch.setattr(repo, "criar_conversa", original)
+        with Session(engine_teste) as outra:
+            original(outra, channel=channel, external_ref=external_ref)
+            outra.commit()
+        return original(sessao, channel=channel, external_ref=external_ref)
+
+    monkeypatch.setattr(repo, "criar_conversa", intruso)
+
+    with Session(engine_teste) as s:
+        conversa, criada = repo.criar_ou_retomar_conversa(
+            s, channel="web", external_ref=ref
+        )
+        s.commit()
+        id_perdedor = conversa.id
+
+    # Quem perdeu a corrida NÃO recebe erro: recebe a conversa do vencedor.
+    assert criada is False, "perder a corrida devolveu `criada=True`"
+    with Session(engine_teste) as s:
+        do_banco = repo.criar_ou_retomar_conversa(s, channel="web", external_ref=ref)[0]
+        assert do_banco.id == id_perdedor, (
+            "a conversa devolvida não é a que ficou no banco — o lead acabaria com "
+            "duas conversas para a mesma sessão"
+        )
