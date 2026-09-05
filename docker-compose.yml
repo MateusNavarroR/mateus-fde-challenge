@@ -85,12 +85,35 @@ services:
   # `docker compose --profile debug up` publica banco e quote-api no host. Fora
   # dele, nada além da 8080 é exposto — e o caminho padrão não tem conflito possível.
 
+  # ⚠️ SUBSTITUI o `db`, não acompanha. Ele ESTENDE `db` e herda o mesmo volume
+  # `pgdata` — dois Postgres no mesmo diretório de dados corrompem o banco. Use este
+  # serviço com o `db` parado, e só para inspecionar o banco com um cliente local.
+  #
+  # Para APENAS alcançar o banco da aplicação de fora sem parar nada, use o
+  # `db-porta` do profile `avaliacao` logo abaixo: ele não é outro Postgres, é só
+  # um encaminhamento de porta para o `db` que já está no ar.
   db-debug:
     extends:
       service: db
     profiles: ["debug"]
     ports:
       - "127.0.0.1:5432:5432"
+
+  # A porta do banco da APLICAÇÃO, publicada sob demanda e sem segundo Postgres.
+  #
+  # Existe porque `--evals-db` do replay precisa gravar no banco que o painel lê, e o
+  # `db` não publica porta no caminho padrão (é o que o mantém inalcançável da rede).
+  # Um encaminhamento de porta resolve sem tocar no dado: o mesmo processo Postgres,
+  # a mesma linha, alcançável em 127.0.0.1:15432 enquanto este serviço estiver de pé.
+  db-porta:
+    image: alpine/socat:1.8.0.0
+    profiles: ["avaliacao"]
+    depends_on:
+      db:
+        condition: service_healthy
+    command: tcp-listen:5432,fork,reuseaddr tcp-connect:db:5432
+    ports:
+      - "127.0.0.1:15432:5432"
 
   quote-api-debug:
     extends:

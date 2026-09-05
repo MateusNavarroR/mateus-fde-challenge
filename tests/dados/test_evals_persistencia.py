@@ -296,3 +296,29 @@ def test_as_DUAS_classes_reportam_aprovacao_de_formas_diferentes():
     # reprovado — nunca aprovado por omissão.
     assert not evals._passou(type("R", (), {"eval_status": "FAILED", "pass_rate": 100.0})())
     assert not evals._passou(object())
+
+
+def test_o_juiz_recebe_o_CASO_descrito_e_nao_o_nome_do_enum():
+    """Um juiz de modelo mede o que você lhe dá.
+
+    A primeira versão passava `idade_acima_do_limite` cru como entrada, e o juiz
+    reprovou o texto de recusa por causa disso — com razão. O nome é ambíguo (idade
+    de quem: do condutor ou do veículo?), e ele penalizou a mensagem por "assumir que
+    se trata do condutor sem indicação clara". A crítica era do INSTRUMENTO, não do
+    texto.
+
+    Reprovação mal fundamentada é pior que nenhuma: manda consertar o que estava certo.
+    """
+    from app.contracts.quote import MotivoRecusa
+
+    for motivo in MotivoRecusa:
+        caso = evals._caso_do_motivo(motivo)
+        assert str(motivo) not in caso, (
+            f"o nome do enum vazou para a entrada do juiz: {caso!r}"
+        )
+        assert len(caso) > 40, f"caso curto demais para julgar: {caso!r}"
+
+    # E a ambiguidade que causou a reprovação está resolvida NOS DOIS sentidos: cada
+    # caso diz de quem é a idade, e diz que o outro lado não é o problema.
+    assert "CONDUTOR" in evals._caso_do_motivo(MotivoRecusa.IDADE_ACIMA)
+    assert "VEÍCULO" in evals._caso_do_motivo(MotivoRecusa.VEICULO_ANTIGO)

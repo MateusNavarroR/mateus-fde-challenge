@@ -171,10 +171,7 @@ def gravar_juiz_das_recusas(*, db: Any, registro: Registro, model: Any = None) -
             continue
         try:
             juiz = assercoes.montar_juiz_da_recusa(model=model, db=db)
-            resultado = juiz.run(
-                input=f"Um lead foi recusado pelo motivo: {motivo}.",
-                output=texto,
-            )
+            resultado = juiz.run(input=_caso_do_motivo(motivo), output=texto)
         except Exception as e:  # noqa: BLE001 — ver `gravar_reliability`
             registro.erros.append(f"juiz[{motivo}]: {type(e).__name__}: {e}")
             continue
@@ -182,6 +179,36 @@ def gravar_juiz_das_recusas(*, db: Any, registro: Registro, model: Any = None) -
         registro.juiz_avaliados += 1
         if _passou(resultado):
             registro.juiz_passaram += 1
+
+
+#: O caso descrito em português, e não o nome do enum.
+#:
+#: A primeira versão passava `idade_acima_do_limite` cru como entrada, e o juiz
+#: reprovou o texto por isso — com razão: **o nome é ambíguo** (idade de quem, do
+#: condutor ou do veículo?), e ele penalizou a mensagem por "assumir que se trata do
+#: condutor sem indicação clara". A crítica era do INSTRUMENTO, não do texto: quem
+#: julga precisa saber qual é o caso para julgar se a resposta serve a ele.
+#:
+#: Um juiz de modelo mede o que você lhe dá. Entrada mal formada vira reprovação
+#: mal fundamentada — e uma reprovação mal fundamentada é pior que nenhuma, porque
+#: manda consertar o que estava certo.
+_CASOS = {
+    "idade_acima_do_limite": (
+        "O condutor principal tem 82 anos. A aceitação da seguradora vai até 75 anos "
+        "de idade do CONDUTOR. O veículo não é o problema."
+    ),
+    "idade_abaixo_do_minimo": (
+        "O condutor principal tem 17 anos, abaixo do mínimo de 18 para contratar."
+    ),
+    "veiculo_acima_de_20_anos": (
+        "O VEÍCULO tem 23 anos de uso. A aceitação vai até 20 anos de uso do veículo. "
+        "A idade do condutor está dentro do aceito."
+    ),
+}
+
+
+def _caso_do_motivo(motivo: Any) -> str:
+    return _CASOS.get(str(motivo), f"Um lead foi recusado pelo motivo: {motivo}.")
 
 
 def conferir_gravacao(engine: Any, registro: Registro) -> None:
