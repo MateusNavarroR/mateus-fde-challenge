@@ -122,6 +122,12 @@ número nenhum, porque parece informação.
 o relatório JSON grava o campo `modelo` em cada execução — a comparação entre providers
 só é honesta assim.
 
+⚠️ **O default da aplicação mudou para `anthropic:claude-sonnet-5` depois destas
+medições, e elas não foram refeitas.** Ficam como estão, com o modelo nomeado: um
+número medido com um modelo não vira número de outro por edição de texto. Quem quiser
+os valores do default atual roda o replay de novo — é uma linha, e o campo `modelo` do
+relatório dirá qual foi.
+
 O Ollama (`ollama:qwen2.5:7b`) foi validado por **smoke test de uma conversa completa**,
 e **não** foi submetido ao replay nem à suíte `live` inteira. Onde este repositório diz
 "validado" para o Ollama, é isso que quer dizer.

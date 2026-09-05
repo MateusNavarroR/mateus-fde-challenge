@@ -56,7 +56,7 @@ services:
     environment:
       APP_DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/autoseguro
       APP_QUOTE_API_URL: http://quote-api:8000
-      APP_LLM_MODEL: "${APP_LLM_MODEL:-anthropic:claude-opus-5}"
+      APP_LLM_MODEL: "${APP_LLM_MODEL:-anthropic:claude-sonnet-5}"
       # Sem default: quem não exportar, não sobe o caminho Anthropic.
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       # Opcional. Definido ⇒ exigido; ausente ⇒ a aplicação sobe e avisa no log.

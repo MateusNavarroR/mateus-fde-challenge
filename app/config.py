@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     #: Model-string do Agno. Só `anthropic:` e `ollama:` são validados por smoke test;
     #: os demais funcionam pela mesma string mas NÃO foram testados (CLAUDE.md 15).
-    llm_model: str = "anthropic:claude-opus-5"
+    llm_model: str = "anthropic:claude-sonnet-5"
 
     #: Opcional e exigido quando definido (CLAUDE.md 14c). Ausente por padrão para que
     #: o caminho de um comando não mude; presente, dá ao passe de segurança uma

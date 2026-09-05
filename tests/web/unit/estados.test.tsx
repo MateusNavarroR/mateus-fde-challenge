@@ -76,9 +76,8 @@ it("filtro sem resultado NÃO diz que o banco está vazio", async () => {
 /*
  * O 401 tem DUAS causas e a tela dizia sempre a mesma coisa.
  *
- * Com login configurado, um 401 é sessão expirada — e ela expira sozinha quando o
- * serviço reinicia, porque o salt do `scrypt` é sorteado a cada boot e a chave que
- * assina o cookie deriva dele. A tela oferecia um campo de `ADMIN_TOKEN` e afirmava
+ * Com login configurado, um 401 é sessão expirada. A tela oferecia um campo de
+ * `ADMIN_TOKEN` e afirmava
  * "o ADMIN_TOKEN está definido no backend": uma frase falsa sobre uma variável vazia,
  * mandando o operador procurar um segredo inexistente para um problema cuja resposta
  * é entrar de novo.

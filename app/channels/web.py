@@ -170,6 +170,18 @@ def registrar_websockets(app: FastAPI) -> None:
                                     quote_id=m.quote_id, autor=m.autor,
                                     index=m.index, status=m.status,
                                 )
+                        # O ESTADO vai junto com o replay, e não só as mensagens.
+                        #
+                        # Sem isto, um F5 numa conversa `encaminhado` devolvia o campo
+                        # liberado: o cliente só descobria o estado por
+                        # `GET /api/conversations/{id}`, que é rota de OPERAÇÃO e exige
+                        # sessão — e o chat é anônimo por desenho. Ou seja, para o lead
+                        # (que é quem importa aqui) o travamento nunca funcionava depois
+                        # de recarregar. O `hello` é o lugar certo: quem faz replay das
+                        # mensagens é quem sabe em que estado elas param.
+                        conv = repo.obter_conversa(s, conversation_id)
+                        if conv is not None:
+                            await adaptador.estado(conv.state)
                     continue
 
                 if msg.get("type") != "message":

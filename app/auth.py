@@ -31,10 +31,12 @@ Esta camada acrescenta o mecanismo de **gente**: usuário e senha, sessão em co
    do alcance do JavaScript da página.
 
 **A sessão não tem armazenamento.** O cookie carrega `usuario|expiração` assinado por
-HMAC com uma chave derivada do próprio hash da senha. Consequências desejadas: trocar
-a senha invalida toda sessão viva, e reiniciar o processo também — o custo é um login
-depois do `docker compose restart`, e o benefício é não haver tabela de sessão para
-crescer, vazar ou dessincronizar.
+HMAC com uma chave derivada da credencial. Consequência desejada: trocar a senha
+invalida toda sessão viva, sem lista de revogação. **Reiniciar o processo NÃO
+invalida** — isso já foi assim, por a chave depender do salt sorteado a cada boot, e
+era um efeito colateral vendido como decisão: cada `docker compose up` deslogava quem
+estivesse trabalhando. O benefício de não haver armazenamento continua: nenhuma
+tabela de sessão para crescer, vazar ou dessincronizar.
 
 Sem dependência nova: `hashlib`, `hmac` e `secrets` são da biblioteca padrão.
 """
@@ -96,6 +98,9 @@ class Credencial:
     usuario: str
     salt: bytes
     digest: bytes
+    #: Chave HMAC da assinatura do cookie. Calculada no boot, ANTES de a senha ser
+    #: apagada do processo — ver `chave_de_sessao` e `redefinir_credenciais`.
+    chave_de_sessao: bytes
 
     def confere(self, usuario: str, senha: str) -> bool:
         """Tempo constante nos dois campos, e **sem curto-circuito**.
@@ -109,19 +114,41 @@ class Credencial:
         senha_ok = hmac.compare_digest(_derivar(senha, self.salt), self.digest)
         return nome_ok & senha_ok
 
-    @property
-    def chave_de_sessao(self) -> bytes:
-        """Chave HMAC da assinatura do cookie, derivada do hash — **nunca** da senha.
-
-        Vem do digest com um rótulo de domínio, então: nada que assine um cookie pode
-        ser reusado para conferir uma senha, e trocar a senha muda a chave, o que
-        invalida toda sessão viva sem precisar de uma lista de revogação.
-        """
-        return hashlib.sha256(b"autoseguro/sessao/v1|" + self.salt + self.digest).digest()
 
 
 def _derivar(senha: str, salt: bytes) -> bytes:
     return hashlib.scrypt(senha.encode("utf-8"), salt=salt, **_SCRYPT)
+
+
+def _chave_de_sessao(usuario: str, senha: str) -> bytes:
+    """A chave que assina o cookie: **estável entre reinícios, presa à credencial.**
+
+    Antes ela vinha do `digest`, que depende de um salt sorteado a cada boot — então
+    todo `docker compose up` invalidava as sessões abertas. Estava escrito como
+    "consequência desejada", e não era: o que se quer é que **trocar a senha** derrube
+    as sessões, não que reiniciar o serviço derrube. As duas propriedades pareciam a
+    mesma porque a chave dependia do salt; separá-las custa esta função.
+
+    Deriva de `usuario|senha` com um rótulo de domínio próprio, o que preserva tudo
+    que importava:
+
+    - **trocar usuário ou senha muda a chave**, e toda sessão viva morre, sem lista de
+      revogação — a propriedade que de fato se queria;
+    - **nada que assine um cookie serve para conferir uma senha**: o rótulo é outro, e
+      um SHA-256 direto não é comparável ao `scrypt` que a conferência usa;
+    - **a senha continua saindo do processo.** Esta função roda uma vez, no boot, e o
+      texto puro é apagado logo depois — o que fica guardado é a chave, que não
+      permite recuperar a senha nem se passar pela conferência.
+
+    O `scrypt` da senha continua com salt aleatório: ele defende a conferência, e não
+    tem relação com a assinatura do cookie.
+    """
+    return hashlib.sha256(
+        b"autoseguro/sessao/v2|"
+        + usuario.encode("utf-8")
+        + b"|"
+        + senha.encode("utf-8")
+    ).digest()
 
 
 _credencial: Credencial | None = None
@@ -147,7 +174,13 @@ def redefinir_credenciais() -> Credencial | None:
         return None
 
     salt = secrets.token_bytes(16)
-    _credencial = Credencial(usuario=usuario, salt=salt, digest=_derivar(senha, salt))
+    _credencial = Credencial(
+        usuario=usuario,
+        salt=salt,
+        digest=_derivar(senha, salt),
+        # Calculada AQUI, com a senha ainda em mãos, e estável entre boots.
+        chave_de_sessao=_chave_de_sessao(usuario, senha),
+    )
 
     # A partir daqui a senha não existe mais neste processo. `del` no environ também
     # a remove do ambiente herdado por qualquer subprocesso.

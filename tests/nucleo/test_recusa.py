@@ -300,6 +300,19 @@ async def test_o_agente_nao_sugere_trocar_o_condutor(sessao, conversa, canal):
         "tenho 80 anos, meu carro é um Onix 2022, o cep aqui é " + cep_de("01") + ", "
         "quero o Completo, começando dia 17 de outubro"
     )
+    # **Um segundo turno quando o agente não cotou de primeira, e isto conserta uma
+    # intermitência real.** Ele às vezes confirma um campo antes de chamar a tool — é
+    # comportamento legítimo, e nada tem a ver com o que este teste prova. Sem esta
+    # insistência, a última asserção virava uma PRÉ-CONDIÇÃO disfarçada de asserção: o
+    # teste reprovava por o modelo ter escolhido perguntar, não por ele ter sugerido a
+    # troca de condutor. Medido: falhava na suíte completa e passava isolado.
+    #
+    # A insistência não afrouxa nada. As proibições valem sobre TUDO o que foi dito nos
+    # dois turnos, e o turno extra é justamente onde o agente teria mais chance de
+    # oferecer a saída errada.
+    if textos.RECUSA_IDADE_ACIMA not in canal.enviadas:
+        r = agente.run("é isso mesmo, pode cotar assim")
+
     dito = " ".join([*canal.enviadas, (r.content or "")]).lower()
 
     for proibido in ("no nome do seu", "no nome da sua", "coloque outra pessoa",
@@ -308,4 +321,7 @@ async def test_o_agente_nao_sugere_trocar_o_condutor(sessao, conversa, canal):
         assert proibido not in dito, f"o agente sugeriu: {proibido!r}"
 
     # E disse o motivo real, do template.
-    assert textos.RECUSA_IDADE_ACIMA in canal.enviadas
+    assert textos.RECUSA_IDADE_ACIMA in canal.enviadas, (
+        "o agente não chegou a cotar em dois turnos — sem a recusa não há o que medir; "
+        f"disse: {canal.enviadas!r}"
+    )

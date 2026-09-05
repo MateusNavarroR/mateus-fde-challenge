@@ -25,7 +25,7 @@ sobem na rede interna do compose.
 | Variável | Obrigatória | O que faz |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | **sim** | credencial do modelo. Sem ela o boot falha **alto**, e não no meio de uma conversa. |
-| `APP_LLM_MODEL` | não | model-string do Agno. Default `anthropic:claude-opus-5`; `ollama:qwen2.5:7b` também é validado. |
+| `APP_LLM_MODEL` | não | model-string do Agno. Default `anthropic:claude-sonnet-5`; `ollama:qwen2.5:7b` também é validado. |
 | `ADMIN_USER` + `ADMIN_PASSWORD` | não | ligam o login do `/admin`, com cookie `httpOnly` + `SameSite=Strict`. Ausentes, o admin abre direto. |
 | `ADMIN_TOKEN` | não | protege o `/admin` por cabeçalho, para CI e `curl`. Ver a ressalva em *Limitações*. |
 | `QUOTE_FAILURE_RATE`, `QUOTE_SLOW_RATE`, `QUOTE_SLOW_SECONDS`, `QUOTE_SEED` | não | a instabilidade simulada da `/quote`. Os defaults são os do desafio: 20% de falha, 10% lentas de 8 s. |
@@ -674,7 +674,8 @@ sozinho custa a confiança em tudo o mais que o README afirma.
 | Item | Situação |
 |---|---|
 | **Providers além de Anthropic e Ollama** | funcionam pela mesma model-string do Agno, e **não foram testados**. Não digo "suporta X" sem um smoke test que prove. |
-| **Ollama** | validado por smoke test de uma conversa completa; **não** foi submetido ao replay do dataset nem à suíte `live` inteira. Os números de avaliação deste README são todos de `anthropic:claude-opus-5`. |
+| **Ollama** | validado por smoke test de uma conversa completa; **não** foi submetido ao replay do dataset nem à suíte `live` inteira. |
+| **O default é `claude-sonnet-5`; os números medidos são de `claude-opus-5`** | o agente conversacional passou a rodar em Sonnet 5, que é o porte certo para esta tarefa e custa 2,5× menos. As medições de cache, custo e avaliação publicadas aqui foram feitas **antes** dessa troca, com Opus 5, e **não foram refeitas** — elas continuam válidas como o que são: uma medição daquele modelo, com o modelo nomeado em cada tabela. Reescrevê-las com outro nome seria falsificar evidência. Para reproduzir com o default atual, rode o replay de novo: o relatório grava o campo `modelo`. |
 | **Concorrência real de leads** | o semáforo de 8 e o teto de 40 chamadas lentas da `/quote` estão medidos, mas nunca houve mais de uma conversa simultânea de verdade. |
 | **Réplicas** | o rate limit é em memória, no processo. Com mais de uma réplica cada uma tem o seu contador, e o limite efetivo multiplica. |
 | **Navegadores** | Chromium, via Playwright. Firefox e Safari não foram abertos. |

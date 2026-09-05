@@ -837,3 +837,84 @@ async def test_run_bem_sucedido_continua_entregando_o_texto(sessao, conversa, mo
 
     await turno.responder(conversa.id, "oi", Canal())
     assert saiu == ["Boa! Me passa o ano do carro?"]
+
+
+@pytest.mark.anyio
+async def test_o_handoff_AVISA_A_TELA_que_a_conversa_fechou(sessao, conversa, monkeypatch):
+    """A cadeia existia inteira e não estava ligada — este teste é o que a liga.
+
+    `gatilhos.registrar` marca `state = "encaminhado"`, que é terminal: o agente para
+    de responder. O cliente sabia tratar isso (o reducer tem `entradaBloqueada`, a tela
+    tem a faixa de conversa encerrada, o adaptador tem o método `estado()`) e **nada
+    nunca chamava `estado()`**. Na prática, o lead ficava com o campo liberado numa
+    conversa que já não responde, digitando no vazio.
+
+    O teste assere sobre o CANAL, e não sobre o banco: o banco já estava certo antes,
+    e é justamente por isso que o defeito passou despercebido.
+    """
+    from app.agent import runner, turno
+
+    class AgenteMudo:
+        def run(self, _texto):
+            return type("R", (), {"content": "ok"})()
+
+    monkeypatch.setattr(turno, "construir_agente", lambda _ctx: AgenteMudo())
+
+    class CanalQueAnota:
+        name = "web"
+
+        def __init__(self) -> None:
+            self.estados: list[str] = []
+
+        async def send(self, *a, **kw):
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+        async def estado(self, state: str) -> None:
+            self.estados.append(state)
+
+    canal = CanalQueAnota()
+    await runner.processar_turno_web(
+        conversa.id, "quero falar com um atendente", canal,
+    )
+    sessao.commit()
+
+    assert canal.estados == ["encaminhado"], (
+        "o handoff foi gravado e a tela não foi avisada — é o defeito que deixava o "
+        "compositor liberado numa conversa encerrada"
+    )
+
+
+@pytest.mark.anyio
+async def test_um_turno_COMUM_nao_anuncia_estado_nenhum(sessao, conversa, monkeypatch):
+    """O negativo: sem ele, bastaria emitir `"encaminhado"` em todo turno para passar."""
+    from app.agent import runner, turno
+
+    class AgenteMudo:
+        def run(self, _texto):
+            return type("R", (), {"content": "qual a sua idade?"})()
+
+    monkeypatch.setattr(turno, "construir_agente", lambda _ctx: AgenteMudo())
+
+    class CanalQueAnota:
+        name = "web"
+
+        def __init__(self) -> None:
+            self.estados: list[str] = []
+
+        async def send(self, *a, **kw):
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+        async def estado(self, state: str) -> None:
+            self.estados.append(state)
+
+    canal = CanalQueAnota()
+    await runner.processar_turno_web(conversa.id, "oi, tudo bem?", canal)
+    sessao.commit()
+
+    assert canal.estados == []

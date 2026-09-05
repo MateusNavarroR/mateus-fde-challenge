@@ -126,7 +126,7 @@ async def responder(
         # No `finally` porque são cinco saídas diferentes e o custo do turno existe em
         # todas elas, inclusive quando o guardrail descarta o texto.
         try:
-            if await _encaminhar(s, conversation_id, ctx, texto, enviar_async):
+            if await _encaminhar(s, conversation_id, ctx, texto, enviar_async, adaptador):
                 return
 
             if ctx.ja_enviou:
@@ -158,7 +158,7 @@ async def responder(
                 await enviar_async(textos.FALHA_TECNICA)
                 return
             await _entregar_do_modelo(s, conversation_id, ctx, texto, saida,
-                                      enviar_async)
+                                      enviar_async, adaptador)
         finally:
             _gravar_uso(s, conversation_id, r)
             s.commit()
@@ -174,7 +174,9 @@ def _falhou(r) -> bool:
     return str(getattr(r, "status", "") or "").upper().endswith("ERROR")
 
 
-async def _entregar_do_modelo(s, conversation_id, ctx, texto, saida, enviar_async):
+async def _entregar_do_modelo(
+    s, conversation_id, ctx, texto, saida, enviar_async, adaptador=None
+):
     """O texto do modelo, com o descarte do guardrail no caminho de erro."""
     from app.persistence import repo
 
@@ -190,10 +192,12 @@ async def _entregar_do_modelo(s, conversation_id, ctx, texto, saida, enviar_asyn
         # Reavalia AGORA: a contagem acabou de mudar, e esperar o próximo turno
         # deixaria o lead sem resposta e sem handoff justamente no turno em que o
         # agente falhou duas vezes.
-        await _encaminhar(s, conversation_id, ctx, texto, enviar_async)
+        await _encaminhar(s, conversation_id, ctx, texto, enviar_async, adaptador)
 
 
-async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) -> bool:
+async def _encaminhar(
+    s, conversation_id: str, ctx, texto: str, enviar_async, adaptador=None
+) -> bool:
     """Avalia os sete gatilhos e, se algum casar, encaminha.
 
     As duas origens convergem aqui: o que o **modelo** pediu por `escalate_to_human`
@@ -259,6 +263,24 @@ async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) ->
         await enviar_async(
             textos.compor_handoff(str(trigger), assunto=gatilhos.assunto_do_texto(texto))
         )
+
+    # E AVISA A TELA que a conversa fechou.
+    #
+    # `gatilhos.registrar` marca `conv.state = "encaminhado"`, que é terminal: o agente
+    # para de responder (ver a guarda no topo de `responder`). O cliente sabe tratar
+    # esse estado — o reducer tem `entradaBloqueada`, a tela tem a faixa de conversa
+    # encerrada, o adaptador tem o método `estado()` — e **ninguém nunca o chamava**.
+    # Uma cadeia inteira construída e nunca ligada: o lead ficava com o campo liberado
+    # numa conversa que já não responde, digitando no vazio, e um F5 não mudava nada.
+    #
+    # Falhar aqui não pode derrubar o encaminhamento, que já foi gravado: é
+    # sinalização, como o `typing`.
+    estado = getattr(adaptador, "estado", None)
+    if estado is not None:
+        try:
+            await estado("encaminhado")
+        except Exception:  # noqa: BLE001 — ver acima
+            log.debug("StateEvent perdido; o handoff está gravado")
     return True
 
 

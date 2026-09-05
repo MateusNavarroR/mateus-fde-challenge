@@ -625,3 +625,79 @@ def test_APP_ENV_dev_continua_abrindo_a_documentacao(monkeypatch):
     finally:
         monkeypatch.setenv("APP_ENV", "prod")
         importlib.reload(main)
+
+
+def test_a_sessao_SOBREVIVE_a_um_reinicio_do_processo(monkeypatch):
+    """`docker compose up` não pode deslogar quem está trabalhando.
+
+    A chave que assina o cookie vinha do `digest`, que depende de um salt sorteado a
+    cada boot — então todo reinício invalidava as sessões abertas. Estava documentado
+    como "consequência desejada", e não era: o que se quer é que **trocar a senha**
+    derrube as sessões (teste abaixo), não que reiniciar derrube. As duas pareciam a
+    mesma propriedade só porque a chave dependia do salt.
+    """
+    usuario, senha = _credencial_efemera()
+    monkeypatch.setenv("ADMIN_USER", usuario)
+    monkeypatch.setenv("ADMIN_PASSWORD", senha)
+
+    primeira = auth.redefinir_credenciais()
+    assert primeira is not None
+    cookie = auth.emitir_sessao(primeira)
+
+    # O "reinício": o ambiente é o mesmo, o processo relê tudo do zero.
+    monkeypatch.setenv("ADMIN_PASSWORD", senha)
+    segunda = auth.redefinir_credenciais()
+    assert segunda is not None
+    assert segunda.salt != primeira.salt, "o salt do scrypt continua sorteado por boot"
+
+    assert auth.sessao_valida(cookie), (
+        "a sessão morreu no reinício — é o defeito que fazia o avaliador ser deslogado "
+        "a cada `docker compose up`"
+    )
+
+
+def test_trocar_a_senha_CONTINUA_invalidando_toda_sessao_viva():
+    """A propriedade que de fato se queria, e que não pode ter sido perdida no caminho.
+
+    Sem lista de revogação: a chave deriva da credencial, então a sessão assinada com
+    a senha antiga deixa de conferir no instante em que a senha muda.
+    """
+    usuario, senha = _credencial_efemera()
+    cred = auth.Credencial(
+        usuario=usuario,
+        salt=b"0" * 16,
+        digest=b"1" * 32,
+        chave_de_sessao=auth._chave_de_sessao(usuario, senha),
+    )
+    cookie = auth.emitir_sessao(cred)
+
+    _, outra = _credencial_efemera()
+    trocada = auth.Credencial(
+        usuario=usuario,
+        salt=b"0" * 16,
+        digest=b"1" * 32,
+        chave_de_sessao=auth._chave_de_sessao(usuario, outra),
+    )
+    assert trocada.chave_de_sessao != cred.chave_de_sessao
+
+    import hmac as _hmac
+    corpo, _, assinatura = cookie.partition(".")
+    esperado = _hmac.new(
+        trocada.chave_de_sessao, auth._desb64(corpo), __import__("hashlib").sha256
+    ).digest()
+    assert auth._b64(esperado) != assinatura, (
+        "o cookie da senha antiga ainda confere com a nova — trocar a senha deixou de "
+        "derrubar as sessões"
+    )
+
+
+def test_a_chave_de_sessao_NAO_serve_para_conferir_a_senha():
+    """Nada que assine um cookie pode ser reusado na conferência, e vice-versa.
+
+    Rótulo de domínio próprio, e algoritmos diferentes: a assinatura usa SHA-256
+    direto, a conferência usa `scrypt` com salt.
+    """
+    usuario, senha = _credencial_efemera()
+    chave = auth._chave_de_sessao(usuario, senha)
+    assert chave != auth._derivar(senha, b"0" * 16)
+    assert chave != __import__("hashlib").sha256(senha.encode()).digest()
