@@ -241,6 +241,70 @@ def listar_handoffs(status: str | None = None, limit: int = 50,
     return {"items": itens, "pendentes": pendentes}
 
 
+@app.post("/api/conversations/{conversation_id}/mensagens", tags=["operacao"],
+          status_code=201, responses={404: {"model": Erro}, 409: {"model": Erro}},
+          summary="O operador responde na conversa que assumiu")
+def responder_como_operador(
+    conversation_id: str, corpo: dict, s: Session = Depends(sessao),
+    _: None = Depends(exigir_admin),
+) -> dict:
+    """A outra ponta do handoff: a fila deixa de ser uma lista que ninguém atende.
+
+    **Só em conversa `encaminhado`, e o 409 é a regra e não uma checagem defensiva.**
+    Enquanto o agente conduz, ele é o único que fala pela empresa; deixar um humano
+    escrever por cima produziria duas vozes no mesmo turno e um lead sem saber com
+    quem está falando. Depois do encaminhamento o agente encerrou a participação —
+    `encaminhado` é terminal —, e é exatamente aí que o humano assume.
+
+    **Autor `operador`, e não `sistema`.** Os dois saem iguais para o lead, de
+    propósito: para quem está do outro lado é a mesma empresa falando. A distinção é
+    auditoria, e é justamente a pergunta que o admin existe para responder — isto aqui
+    foi um template determinístico ou uma pessoa escrevendo? Achatar os dois apagaria
+    a resposta.
+
+    O texto passa pelo mesmo mascaramento de PII na escrita que todo o resto: um
+    operador com pressa colando o CPF do lead não é hipótese, é rotina.
+    """
+    from app.channels.web import publicar_no_chat_sync
+    from app.persistence import repo
+
+    texto = (corpo.get("text") or "").strip()
+    if not texto:
+        return JSONResponse(status_code=422,
+                            content={"error": "texto_vazio", "message": "text é obrigatório"})
+
+    conversa = repo.obter_conversa(s, conversation_id)
+    if conversa is None:
+        return JSONResponse(status_code=404,
+                            content={"error": "nao_encontrado", "message": conversation_id})
+    if conversa.state != "encaminhado":
+        return JSONResponse(status_code=409, content={
+            "error": "conversa_nao_encaminhada",
+            "message": "o agente ainda conduz esta conversa; só se responde depois do handoff",
+        })
+
+    m = repo.gravar_mensagem(
+        s, conversation_id, autor="operador", conteudo=texto, status="sent",
+    )
+    s.commit()
+
+    # E CHEGA AO LEAD que está com a página aberta. Sem este push a resposta do
+    # atendente só apareceria no próximo F5 — que é o mesmo que não chegar.
+    publicar_no_chat_sync(conversation_id, {
+        "type": "message",
+        "message": {
+            "id": m.id, "index": m.index, "autor": m.autor, "tipo": m.tipo,
+            "conteudo": m.conteudo, "status": m.status, "quote_id": m.quote_id,
+            "criado_em": m.criado_em.isoformat(),
+        },
+    })
+    return {
+        "id": m.id, "index": m.index, "autor": m.autor, "tipo": m.tipo,
+        "conteudo": m.conteudo, "status": m.status, "quote_id": m.quote_id,
+        "criado_em": m.criado_em.isoformat(),
+    }
+
+
 @app.patch("/api/handoffs/{handoff_id}", tags=["operacao"], response_model=HandoffOut,
            responses={404: {"model": Erro}, 409: {"model": Erro}},
            summary="Assume ou resolve um handoff")

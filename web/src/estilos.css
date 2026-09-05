@@ -1400,6 +1400,31 @@ code {
 /* O sumário da porta: as cinco seções, com o mesmo romano carimbado da guia
    lateral. Sem marcador de lista — o ordinal JÁ é o marcador, e somar um bullet a
    ele seria numerar duas vezes a mesma coisa. */
+/* O atendimento: a moldura com compositor, do lado de quem responde. */
+.atendimento__moldura {
+  max-width: 42rem;
+}
+
+.atendimento__esteira {
+  height: 26rem;
+  overflow-y: auto;
+}
+
+.atendimento__compositor {
+  border-top: 1px solid var(--filete);
+  background: var(--fundo);
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.7rem;
+}
+
+/* O campo ocupa o que sobra. Sem isto ele fica com a largura natural do input e o
+   operador escreve numa fresta, com metade da moldura vazia ao lado. */
+.atendimento__compositor input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* O trace: uma ficha por resposta, e dentro dela as execuções numeradas. Rola por
    dentro como as outras formas, pelo mesmo motivo. */
 .trace {

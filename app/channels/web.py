@@ -94,6 +94,47 @@ _TIPOS = frozenset({"text", "image", "audio", "document"})
 #: Conexões de administração, para o push de `/api/events`.
 _admin: set[WebSocket] = set()
 
+#: Sockets de LEAD abertos, por conversa. Existe para o caminho inverso do normal.
+#:
+#: O adaptador do chat fala num socket só — o da requisição que o criou — e isso basta
+#: enquanto quem responde é o agente, que roda dentro daquele mesmo socket. Quando um
+#: operador assume a conversa, a mensagem nasce numa rota HTTP, em outro processo
+#: lógico, e precisa alcançar o lead que está com a página aberta. Sem este registro,
+#: a resposta do atendente só apareceria no próximo F5 — que é o mesmo que não chegar.
+#:
+#: Um `set` por conversa, e não um socket: a mesma conversa pode estar aberta em duas
+#: abas, e servir só uma delas seria pior que servir nenhuma.
+_chats: dict[str, set[WebSocket]] = {}
+
+
+async def publicar_no_chat(conversation_id: str, frame: dict) -> None:
+    """Empurra um frame para os leads conectados nesta conversa.
+
+    Silencioso quando não há ninguém ouvindo: o lead pode ter fechado a aba, e a
+    mensagem já está no banco — ele a recebe pelo replay do `hello` ao voltar.
+    """
+    texto = json.dumps(frame, ensure_ascii=False, default=str)
+    mortos = []
+    for ws in _chats.get(conversation_id, set()):
+        try:
+            await ws.send_text(texto)
+        except Exception:  # noqa: BLE001
+            mortos.append(ws)
+    for ws in mortos:
+        _chats.get(conversation_id, set()).discard(ws)
+
+
+def publicar_no_chat_sync(conversation_id: str, frame: dict) -> None:
+    """`publicar_no_chat` a partir de uma rota síncrona. Ver `publicar_sync`."""
+    if _laco is None:  # sem servidor rodando: teste de unidade, script
+        return
+    try:
+        asyncio.run_coroutine_threadsafe(
+            publicar_no_chat(conversation_id, frame), _laco
+        )
+    except Exception:  # noqa: BLE001  # pragma: no cover
+        log.debug("push no chat perdido; o lead recebe no replay do hello")
+
 #: O laço do servidor, capturado no boot. Uma rota síncrona roda no threadpool do
 #: AnyIO e não tem laço próprio: `get_event_loop()` de lá devolveria outro laço, ou
 #: nada. Guardar o certo no startup é a única forma de o push sair de uma rota `def`.
@@ -153,6 +194,7 @@ def registrar_websockets(app: FastAPI) -> None:
                 await ws.close(code=4404)
                 return
 
+        _chats.setdefault(conversation_id, set()).add(ws)
         try:
             while True:
                 bruto = await ws.receive_text()
@@ -216,6 +258,16 @@ def registrar_websockets(app: FastAPI) -> None:
 
         except WebSocketDisconnect:
             return
+        finally:
+            # Sai do registro SEMPRE — inclusive quando o laço morre por exceção.
+            # Um socket morto no conjunto vira uma tentativa de envio a cada mensagem
+            # de operador, e a limpeza preguiçosa de `publicar_no_chat` só acontece se
+            # alguém falar naquela conversa de novo.
+            vivos = _chats.get(conversation_id)
+            if vivos is not None:
+                vivos.discard(ws)
+                if not vivos:
+                    del _chats[conversation_id]
 
     @app.websocket("/api/events")
     async def eventos(ws: WebSocket) -> None:

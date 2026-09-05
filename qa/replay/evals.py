@@ -143,6 +143,16 @@ def gravar_juiz_das_recusas(*, db: Any, registro: Registro, model: Any = None) -
     from app.contracts.quote import MotivoRecusa
     from qa.replay import assercoes
 
+    # O JUIZ PRECISA DE MODELO EXPLÍCITO, e este default custou um replay inteiro.
+    #
+    # `AgentAsJudgeEval` sem `model=` cai no default do Agno, que é OpenAI: a execução
+    # morre com «Model authentication error from OpenAI API: OPENAI_API_KEY not set»
+    # depois de já ter gasto as conversas todas. O repositório valida Anthropic e
+    # Ollama, e a chave de OpenAI não existe aqui nem deveria — então o juiz roda no
+    # mesmo modelo da aplicação, que é o que também torna o número comparável.
+    if model is None:
+        model = _modelo_da_aplicacao()
+
     for motivo in MotivoRecusa:
         texto = textos.POR_MOTIVO.get(motivo)
         if not texto:
@@ -198,3 +208,24 @@ def conferir_gravacao(engine: Any, registro: Registro) -> None:
             f"{registro.total_avaliados} evals rodaram e o banco tem "
             f"{registro.linhas_no_banco} linhas — o Agno engoliu erro de escrita"
         )
+
+
+def _modelo_da_aplicacao():
+    """Instancia o modelo configurado em `LLM_MODEL`, para o juiz usar o mesmo.
+
+    Só a forma-classe da Anthropic é montada aqui; para as demais model-strings o Agno
+    resolve sozinho a partir do texto. Devolve `None` quando não sabe montar — aí o
+    erro do juiz vira uma linha em `registro.erros`, e não a morte do replay.
+    """
+    from app.config import get_settings
+
+    modelo_str = get_settings().llm_model
+    if modelo_str.startswith("anthropic:"):
+        from agno.models.anthropic import Claude
+
+        return Claude(id=modelo_str.split(":", 1)[1])
+    if modelo_str.startswith("ollama:"):
+        from agno.models.ollama import Ollama
+
+        return Ollama(id=modelo_str.split(":", 1)[1])
+    return None

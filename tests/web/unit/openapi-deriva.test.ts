@@ -142,6 +142,7 @@ it("ROTAS cobre exatamente a superfície declarada — nada montado por string s
       "eventos",
       "handoff",
       "handoffs",
+      "mensagensDoOperador",
       "health",
       "resumo",
       "status",

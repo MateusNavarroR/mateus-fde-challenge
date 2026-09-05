@@ -60,6 +60,7 @@ it("nenhuma rota é montada por concatenação solta de string", () => {
       "eventos",
       "handoff",
       "handoffs",
+      "mensagensDoOperador",
       "health",
       "resumo",
       "status",

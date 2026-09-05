@@ -16,6 +16,8 @@ type Config = {
   conversas?: { items: unknown[]; next_cursor?: string | null };
   conversa?: Record<string, unknown>;
   conversaErro?: number;
+  /** 409 no POST do operador, para o caminho de conversa não encaminhada. */
+  operadorErro?: number;
   /** `/api/conversations/{id}/traces`. Ausente = conversa sem execução registrada. */
   traces?: { items: unknown[] };
   status?: Record<string, unknown>;
@@ -87,6 +89,8 @@ export function montarBackendFalso(config: Config = {}) {
     : (config.conversas ?? { items: [], next_cursor: null });
 
   let autenticado = config.auth?.autenticado ?? false;
+  /** O que o operador enviou, para o teste assertar sobre o corpo e não só sobre a tela. */
+  const postsDoOperador: { text: string }[] = [];
 
   const responder = (corpo: unknown, status = 200): Response =>
     new Response(JSON.stringify(corpo), {
@@ -169,6 +173,19 @@ export function montarBackendFalso(config: Config = {}) {
     }
     // ANTES do detalhe: `/api/conversations/c1/traces` também casa o regex do
     // detalhe, e sem esta linha o trace receberia o corpo da conversa.
+    if (/^\/api\/conversations\/[^/]+\/mensagens/.test(url) && init?.method === "POST") {
+      const corpo = JSON.parse(String(init?.body ?? "{}"));
+      postsDoOperador.push(corpo);
+      if (config.operadorErro) {
+        return responder({ error: "conversa_nao_encaminhada", message: "com o agente" },
+                         config.operadorErro);
+      }
+      return responder({
+        id: `msg_op_${postsDoOperador.length}`, index: 90 + postsDoOperador.length,
+        autor: "operador", tipo: "text", conteudo: corpo.text, status: "sent",
+        quote_id: null, criado_em: new Date(0).toISOString(),
+      }, 201);
+    }
     if (/^\/api\/conversations\/[^/]+\/traces/.test(url)) {
       return responder(config.traces ?? { items: [] });
     }
@@ -222,6 +239,9 @@ export function montarBackendFalso(config: Config = {}) {
     },
     get socketsAbertos() {
       return WebSocketFalso.criadas;
+    },
+    get postsDoOperador() {
+      return postsDoOperador;
     },
     chamadas(prefixo: string): number {
       return chamadasPorUrl.filter((u) => u.startsWith(prefixo)).length;

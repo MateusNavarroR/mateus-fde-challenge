@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { DetalheConversa } from "./admin/DetalheConversa";
 import { PaginaConversas } from "./admin/PaginaConversas";
+import { Atendimento } from "./admin/Atendimento";
 import { PaginaHandoffs } from "./admin/PaginaHandoffs";
 import { PaginaStatus } from "./admin/PaginaStatus";
 import { Painel } from "./admin/Painel";
@@ -159,7 +160,9 @@ function resolverLegado(rota: string): string {
 export function Operacao({ rota }: { rota: string }) {
   return (
     <Console rota={rota}>
-      {rota.startsWith("/historico/") ? (
+      {rota.startsWith("/handoffs/") ? (
+        <Atendimento id={rota.slice("/handoffs/".length)} />
+      ) : rota.startsWith("/historico/") ? (
         <DetalheConversa id={rota.slice("/historico/".length)} />
       ) : rota === "/historico" ? (
         <PaginaConversas />

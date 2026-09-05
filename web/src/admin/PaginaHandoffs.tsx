@@ -136,11 +136,29 @@ export function PaginaHandoffs() {
                 key={proximo}
                 type="button"
                 className={proximo === "resolvido" ? "botao botao--discreto" : "botao"}
-                onClick={() => transicionar(h.id, proximo)}
+                onClick={() => {
+                  void transicionar(h.id, proximo);
+                  // ASSUMIR ABRE A CONVERSA, e antes só mudava um rótulo.
+                  //
+                  // "Assumir" que apenas troca um status é um botão que promete
+                  // trabalho e não entrega ferramenta: o operador ficava com o caso
+                  // no nome e nenhum lugar para responder. A transição continua
+                  // acontecendo — é ela que tira o caso da fila dos outros — e a
+                  // navegação é a consequência natural dela.
+                  if (proximo === "assumido") {
+                    location.assign(`/handoffs/${h.conversation_id}`);
+                  }
+                }}
               >
                 {ACAO[proximo]}
               </button>
             ))}
+            {h.status === "assumido" ? (
+              // Quem já assumiu volta ao atendimento sem ter de reabrir a fila.
+              <a className="botao" href={`/handoffs/${h.conversation_id}`}>
+                Abrir o atendimento
+              </a>
+            ) : null}
           </div>
         </article>
       ))}

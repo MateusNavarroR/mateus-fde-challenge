@@ -42,13 +42,26 @@ it("o digitando fica aceso durante as três mensagens do turno degradado", async
   expect(screen.queryByTestId("digitando")).toBeNull();
 });
 
-it("o campo trava e explica quando o estado vira encaminhado", async () => {
+it("encaminhado AVISA e não trava — quem encerrou foi o agente, não a conversa", async () => {
+  /*
+   * Este teste travava o comportamento contrário, e estava certo enquanto ninguém
+   * podia assumir a fila: sem atendimento humano, um campo aberto deixaria o lead
+   * falando sozinho.
+   *
+   * Com o atendimento implementado, travar vira um beco: o operador escreve "oi, aqui
+   * é a Ana" e o lead não tem como responder. `encaminhado` significa que o AGENTE
+   * encerrou a participação — a guarda no topo de `responder` garante que nada do que
+   * o lead escrever daqui em diante vai ao modelo. É mensagem para a pessoa que
+   * assumiu, e é ela quem lê.
+   */
   const srv = montarServidorFalso();
   render(<PaginaChat conversationId="c1" />);
   await srv.emitir({ type: "state", state: "encaminhado" });
-  expect(screen.getByRole("textbox")).toBeDisabled();
-  // Por que travou, não só que travou.
+
+  expect(screen.getByRole("textbox")).toBeEnabled();
+  // E diz o que mudou: sem isto, o lead não sabe que trocou de interlocutor.
   expect(screen.getByText(/atendente/i)).toBeVisible();
+  expect(screen.getByText(/quem responde daqui em diante é uma pessoa/i)).toBeVisible();
 });
 
 it("mostra o aviso de reconexão e o esconde ao voltar", async () => {

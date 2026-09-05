@@ -195,6 +195,53 @@ paths:
                               duracao_ms: { type: number }
                               erro: { type: boolean }
 
+  /api/conversations/{conversation_id}/mensagens:
+    post:
+      tags: [operacao]
+      summary: O operador responde na conversa que assumiu
+      description: |
+        A outra ponta do handoff: sem isto a fila é uma lista que ninguém atende.
+
+        **Só em conversa `encaminhado`** — enquanto o agente conduz, ele é o único que
+        fala pela empresa, e duas vozes no mesmo turno deixam o lead sem saber com quem
+        está falando. Fora desse estado, `409`.
+
+        A mensagem é gravada com autor **`operador`**, distinguível no histórico tanto
+        do template determinístico (`sistema`) quanto do modelo (`agente`) — para o
+        lead os três saem iguais, de propósito; a distinção é auditoria. O texto passa
+        pelo mesmo mascaramento de PII na escrita que todo o resto.
+
+        A entrega ao lead é imediata, pelo WebSocket do chat, para quem estiver com a
+        página aberta; quem não estiver a recebe no replay do `hello`.
+      parameters:
+        - { name: conversation_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1 }
+      responses:
+        "201":
+          description: a mensagem gravada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NaoEncontrado" }
+        "409":
+          description: a conversa ainda está com o agente
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+        "422":
+          description: texto vazio
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Erro" }
+
   /api/quote-health:
     get:
       tags: [operacao]

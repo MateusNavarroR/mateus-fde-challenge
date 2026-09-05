@@ -42,10 +42,9 @@ afterEach(() => {
   reiniciarSessao.mockReset();
 });
 
-it("abrir uma conversa `encaminhado` já mostra a tela travada, sem esperar o socket", async () => {
-  // O socket não recebe nenhum frame de propósito: numa conversa terminal o backend
-  // para de responder, então o frame `state` NUNCA chega. Se a tela dependesse dele,
-  // o lead veria "conversa aberta" e digitaria no vazio — que foi o que aconteceu.
+it("abrir uma conversa `encaminhado` já anuncia o atendimento, sem esperar o socket", async () => {
+  // O estado precisa estar na tela desde o primeiro quadro. O que mudou foi a
+  // consequência dele: avisa, não trava — ver `pagina-chat.test.tsx`.
   abrirSessao.mockResolvedValue({
     id: "c1",
     detalhe: { id: "c1", state: "encaminhado", perfil: {}, quotes: [], handoffs: [],
@@ -54,10 +53,8 @@ it("abrir uma conversa `encaminhado` já mostra a tela travada, sem esperar o so
 
   render(<PaginaChat />);
 
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: /sua mensagem/i })).toBeDisabled();
-  });
-  expect(screen.getByText(/A equipe assume daqui/i)).toBeVisible();
+  expect(await screen.findByText(/está com um atendente/i)).toBeVisible();
+  expect(screen.getByRole("textbox", { name: /sua mensagem/i })).toBeEnabled();
 });
 
 it("uma conversa em andamento continua com a entrada liberada", async () => {
@@ -92,9 +89,7 @@ it("«Nova conversa» depois de um handoff devolve um compositor VIVO", async ()
   const usuario = userEvent.setup();
   render(<PaginaChat />);
 
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: /sua mensagem/i })).toBeDisabled();
-  });
+  expect(await screen.findByText(/está com um atendente/i)).toBeVisible();
 
   await usuario.click(screen.getByRole("button", { name: /nova conversa/i }));
 
@@ -103,7 +98,7 @@ it("«Nova conversa» depois de um handoff devolve um compositor VIVO", async ()
   });
   expect(screen.getByRole("button", { name: /anexar mídia/i })).toBeEnabled();
   // E as bolhas da conversa anterior não podem ficar: são de OUTRA conversa.
-  expect(screen.queryByText(/A equipe assume daqui/i)).toBeNull();
+  expect(screen.queryByText(/está com um atendente/i)).toBeNull();
 });
 
 
@@ -136,7 +131,7 @@ it("uma mensagem de texto NÃO ganha rótulo de anexo", async () => {
 });
 
 
-it("a conversa travada oferece a saída JUNTO do campo, não só no topo", async () => {
+it("a conversa com atendente oferece a saída JUNTO do aviso, não só no topo", async () => {
   // Achado na vistoria: entrando pela capa — que promete "fale com o agente e peça
   // uma cotação" — dá para cair numa conversa `encaminhado` de sessão anterior, com
   // o campo morto. A saída existia, a três centímetros dali e sem relação visual com
@@ -152,7 +147,7 @@ it("a conversa travada oferece a saída JUNTO do campo, não só no topo", async
   const usuario = userEvent.setup();
   render(<PaginaChat />);
 
-  const aviso = await screen.findByText(/o campo abaixo está travado/i);
+  const aviso = await screen.findByText(/está com um atendente/i);
   const acao = within(aviso).getByRole("button", { name: /conversa nova/i });
 
   await usuario.click(acao);

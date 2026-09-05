@@ -75,7 +75,7 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
 
   const submeter = () => {
     const texto = rascunho.trim();
-    if (texto.length === 0 || estado.entradaBloqueada) return;
+    if (texto.length === 0) return;
     enviar(texto);
     setRascunho("");
   };
@@ -206,10 +206,24 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
           era a ação estar onde a pessoa está olhando quando descobre que não pode
           escrever.
         */}
+        {/*
+          AVISA, E NÃO TRAVA — e a diferença apareceu quando o atendimento humano
+          passou a existir de verdade.
+
+          `encaminhado` significa que o AGENTE encerrou a participação, não que a
+          conversa acabou. Enquanto ninguém podia assumir a fila, travar o campo era
+          defensável: o lead não ficava falando sozinho. Agora que um operador
+          responde pela mesma conversa, travar transforma o handoff num beco — a
+          pessoa escreve "oi, aqui é a Ana" e o lead não tem como responder.
+
+          O que ele digita daqui em diante fica registrado e **não vai ao modelo**:
+          a guarda no topo de `responder` ignora conversa encaminhada. É mensagem
+          para a pessoa que assumiu, e é ela quem lê.
+        */}
         {estado.entradaBloqueada ? (
           <p className="chat__travado">
-            Já passei sua conversa pra um atendente da equipe. A equipe assume daqui — por
-            isso o campo abaixo está travado.{" "}
+            Sua conversa está com um atendente da equipe. Pode escrever normalmente —
+            quem responde daqui em diante é uma pessoa.{" "}
             <button
               type="button"
               className="chat__travado-acao"
@@ -250,7 +264,6 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
           <button
             type="button"
             className="compositor__anexo"
-            disabled={estado.entradaBloqueada}
             onClick={() => anexo.current?.click()}
             aria-label="Anexar mídia"
             title="Anexar mídia"
@@ -263,7 +276,6 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
             placeholder="Escreva aqui…"
             rows={1}
             value={rascunho}
-            disabled={estado.entradaBloqueada}
             onChange={(e) => setRascunho(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -275,7 +287,7 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
           <button
             type="submit"
             className="compositor__enviar"
-            disabled={estado.entradaBloqueada || rascunho.trim().length === 0}
+            disabled={rascunho.trim().length === 0}
           >
             Enviar
           </button>
