@@ -1,6 +1,6 @@
 # Decisões fechadas
 
-As opções e os trade-offs que levaram até aqui estão em `docs/DECISOES-ABERTAS.md`,
+As opções e os trade-offs que levaram até aqui estão nas sessões de `ai-logs/`,
 mantido como registro do que foi considerado e descartado. **Este documento é o
 contrato.** O que está aqui não se reabre; o que mudar, muda por decisão nova e escrita.
 

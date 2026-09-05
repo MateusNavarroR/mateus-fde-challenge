@@ -816,7 +816,6 @@ promete:
 | `docs/API-COTACAO.md` | o mapeamento medido da `/quote`: bancada, taxonomia de erro, regras de preço, o dataset conferido contra elas |
 | `docs/POLITICA-RESILIENCIA.md` | a política técnica completa, com a medição que justifica cada parâmetro |
 | `docs/DECISOES-FECHADAS.md` | o contrato de comportamento |
-| `docs/DECISOES-ABERTAS.md` | o registro do que foi considerado e descartado |
 | `docs/SEGURANCA.md` | o passe de segurança: achados, correções, riscos aceitos e **os falsos positivos** |
 | `docs/TEXTOS.md` | os textos determinísticos, origem única |
 | `docs/EVALS.md` | metodologia de avaliação, cobertura por grupo, e qual modelo produziu qual número |

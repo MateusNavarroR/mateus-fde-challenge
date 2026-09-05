@@ -1,6 +1,6 @@
 /**
  * Gera PII válida em formato, no momento do teste — a porta do TypeScript para a
- * regra de `docs/planos/00-fixtures-pii.md`.
+ * regra do invariante 13b do `CLAUDE.md`.
  *
  * **Nenhum valor daqui é literal no repositório.** Eles nascem em memória e
  * morrem no fim da execução, e é o que permite que a varredura do portão de

@@ -2,7 +2,7 @@
 
 > Esta é a **parte técnica**: timeout, retry, backoff, breaker e taxonomia. O que o
 > agente **diz ao lead** enquanto isso acontece é decisão aberta nº2
-> (`docs/DECISOES-ABERTAS.md`) — e é ela que consome esta política, não o contrário.
+> (`docs/DECISOES-FECHADAS.md`) — e é ela que consome esta política, não o contrário.
 >
 > Todo número abaixo é derivado de uma medição em `docs/API-COTACAO.md`. Onde há
 > escolha, o trade-off está declarado.

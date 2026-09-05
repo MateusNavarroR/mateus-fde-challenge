@@ -2,7 +2,7 @@
 
 **Nenhum valor daqui é literal no repositório.** Eles nascem em memória e morrem no fim
 da execução — é o que permite que a varredura do portão de segurança seja absoluta, sem
-lista de exceções (CLAUDE.md 13b, docs/planos/00-fixtures-pii.md).
+lista de exceções (CLAUDE.md 13b).
 
 As duas alternativas que isto substitui:
 

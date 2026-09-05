@@ -72,7 +72,7 @@ a API — se algo aqui divergir dele, ele vence.
     `07XXX-XXX`, que preserva o prefixo — que é o que importa — e não casa o regex.
 13b. **Nenhum literal de PII, nem sintético.** Testes que exercitam mascaramento usam o
     **gerador semeado** de `tests/fixtures/pii.py`, que produz valor válido em formato
-    em tempo de execução (`docs/planos/00-fixtures-pii.md`). O regex é exercitado no
+    em tempo de execução. O regex é exercitado no
     formato real, a varredura de segurança não tem o que achar, e **não existe lista de
     exceções** — que é a mesma porta perigosa que se recusa no guardrail. Nenhum golden
     file com a saída do gerador, que traria o literal de volta pela porta dos fundos.
@@ -227,8 +227,9 @@ Paralelismo quebra o determinismo.
   cegas.
 - Ao final de cada fatia: o que ficou pronto, o comando que provou isso e a saída, e o
   que ficou de fora.
-- Antes de implementar uma frente, existe uma **spec aprovada** e um **plano** em
-  `docs/planos/`. Se o plano divergir da spec, a spec manda.
+- Antes de implementar uma frente, existe uma **spec aprovada**. Os planos por fatia
+  saíram do repositório na publicação — eram registro de processo, e `ai-logs/` já o
+  cobre com folga; se o plano divergir da spec, a spec manda.
 - No máximo duas frentes ativas por vez, em arquivos disjuntos.
 - Para decisão técnica, confirmar na documentação oficial (MCP `agno-docs`, MCP
   `langfuse-docs`, docs do FastAPI). Se divergir, a documentação oficial vence.
