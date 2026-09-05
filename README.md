@@ -74,7 +74,7 @@ Cada linha aqui tem código rodando e teste que a sustenta. O que não tem está
 - `artifacts/transcript-degradado.md` mostra a sequência com o tempo em cada linha.
 
 **Handoff**
-- sete gatilhos como dados, com precedência declarada e um teste cada;
+- oito gatilhos como dados, com precedência declarada e um teste cada;
 - a fila distingue **regra determinística** de **decisão do modelo**;
 - recusa da `/quote` **não** vira handoff, e o motivo está no contrato.
 

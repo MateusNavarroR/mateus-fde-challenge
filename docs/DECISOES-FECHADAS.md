@@ -173,9 +173,27 @@ encaminha na segunda.
 | 2 | `guardrail` | injeção de prompt, abuso | alto | encerra e registra |
 | 3 | `lead_pediu` | o lead pede uma pessoa | — | encaminha |
 | 4 | `cotacao_indisponivel` | job de cotação terminou `failed` | alto | encaminha |
-| 5 | `extracao_falhou` | 2ª falha de extração no mesmo campo | médio | encaminha |
-| 6 | `objecao_fora_da_alcada` | o lead **repete** a objeção de preço | baixo | encaminha na 2ª |
-| 7 | `midia_sem_texto` | o lead **insiste** em mídia depois de pedirmos texto | baixo | encaminha na 2ª |
+| 5 | `lead_aceitou_cotacao` | verbo de aceite **mais** cotação já entregue | — | encaminha para consultor |
+| 6 | `extracao_falhou` | 2ª falha de extração no mesmo campo | médio | encaminha |
+| 7 | `objecao_fora_da_alcada` | o lead **repete** a objeção de preço | baixo | encaminha na 2ª |
+| 8 | `midia_sem_texto` | o lead **insiste** em mídia depois de pedirmos texto | baixo | encaminha na 2ª |
+
+**O 5 é o único handoff que é boa notícia**, e ele entrou depois — o aceite caía em
+`lead_pediu_atendente`, que é falso em duas direções: o lead não pediu atendente, e a
+resposta ("já passei sua conversa pra um atendente") respondia a uma pergunta que ele
+não fez. Como é o desfecho do fluxo feliz, era a última coisa que o lead lia quando
+tudo tinha funcionado.
+
+A causa estava no nosso próprio template, não no modelo: ele fechava com *"Quer que eu
+siga com a emissão?"* — e **emissão não existe neste sistema**. A API legada tem três
+rotas (`/health`, `/planos`, `/quote`); contratar exige pagamento, aceite formal e
+documento, nada disso no escopo do desafio. O template passou a convidar para a
+*contratação*, e o gatilho passa para um consultor, dizendo por quê.
+
+A guarda tem **duas metades, e as duas são necessárias**: verbo de aceite explícito
+(nunca um "sim" solto, que responde qualquer pergunta da qualificação) **e** cotação
+`ok` no banco (sem ela não há o que aceitar). É determinístico — as duas metades são
+conferíveis no transcript —, então não é um gatilho do modelo.
 
 Fila estimada: **~8 %** dos leads.
 

@@ -86,7 +86,11 @@ def render(p: QuotePayload, data_inicio: dt.date | None = None) -> str:
         f"⚠️ {_lista(car.coberturas).capitalize()} começam a valer {car.dias} dias "
         "depois do início da vigência.",
         "",
-        "Quer que eu siga com a emissão?",
+        # NÃO "quer que eu siga com a emissão?": não existe emissão neste sistema, e
+        # a API legada tem três rotas — `/health`, `/planos`, `/quote`. Prometer o que
+        # não se pode fazer era pior do que uma alucinação do modelo, porque estava no
+        # nosso próprio template. O convite continua, dizendo o passo real.
+        "Quer seguir com a contratação?",
     ]
     return "\n".join(linhas)
 

@@ -219,6 +219,7 @@ async def _encaminhar(
         violacoes_guardrail=repo.violacoes_de_guardrail(s, conversation_id),
         # Do BANCO, incluindo a mensagem deste turno, que já foi gravada.
         midias_apos_pedido=repo.midias_do_lead(s, conversation_id),
+        tem_cotacao_ok=repo.tem_cotacao_ok(s, conversation_id),
     )
     avaliado = gatilhos.avaliar(contexto)
     do_modelo = next((h for h in ctx.handoffs if h.get("disparado_por") == "modelo"), None)

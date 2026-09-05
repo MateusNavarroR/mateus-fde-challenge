@@ -157,11 +157,27 @@ def observar(sessao, conversation_id: str) -> Observacao:
         )
 
     if handoff is not None:
+        # `lead_aceitou_cotacao` NÃO é um desvio do desfecho — é a consequência dele.
+        #
+        # O gatilho nasce de uma cotação entregue e aceita: o fluxo feliz inteiro
+        # aconteceu. Contá-lo como `encaminhado` faria toda conversa que dá certo até o
+        # fim aparecer como se tivesse escapado do agente, e a taxa de acerto cairia
+        # medindo o INSTRUMENTO em vez do agente. O trigger continua registrado, para
+        # quem quiser contar quantos aceites houve.
+        aceitou = (
+            str(handoff.trigger) == "lead_aceitou_cotacao"
+            and cotacao is not None
+            and cotacao.status == "ok"
+        )
+        if not aceitou:
+            return Observacao(
+                desfecho=assercoes.Desfecho.ENCAMINHADO,
+                trigger_handoff=handoff.trigger,
+                motivo=handoff.trigger,
+                **base,
+            )
         return Observacao(
-            desfecho=assercoes.Desfecho.ENCAMINHADO,
-            trigger_handoff=handoff.trigger,
-            motivo=handoff.trigger,
-            **base,
+            desfecho=assercoes.Desfecho.OK, trigger_handoff=handoff.trigger, **base,
         )
     if cotacao is not None and cotacao.status == "ok":
         return Observacao(desfecho=assercoes.Desfecho.OK, **base)

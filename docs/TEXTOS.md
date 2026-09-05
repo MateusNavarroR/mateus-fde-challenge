@@ -118,7 +118,20 @@ O handoff é **sempre um prefixo opcional mais o ④**. Determinístico, quatro 
 | `cotacao_indisponivel` | ③ |
 | `assunto_sensivel` (sinistro, saúde) | ⑧a |
 | `assunto_sensivel` (jurídico, reclamação) | ⑧b |
+| `lead_aceitou_cotacao` | ⑫ — e **sem** o ④ (ver abaixo) |
 | `lead_pediu`, `extracao_falhou`, `objecao_fora_da_alcada`, `midia_sem_texto`, `guardrail` | nenhum |
+
+### ⑫ O lead aceitou a cotação — o único encaminhamento que é boa notícia
+
+> Boa! Pra fechar a contratação eu passo você pra um consultor da equipe: a emissão da
+> apólice precisa de uma pessoa pra confirmar os dados e o pagamento.
+
+**É o único caminho que não termina no ④.** A despedida diz "a equipe assume daqui",
+que no aceite soaria como se algo tivesse dado errado — e esta é a última mensagem de
+uma conversa que funcionou do começo ao fim.
+
+"Consultor", e não "atendente": quem fecha contratação faz outra coisa. Sem prazo, pela
+mesma razão de sempre.
 
 Isso mantém o descarte do texto do modelo **sem exceção**: o lead recebe uma composição
 de textos fixos, nunca uma frase gerada, em todo caminho de encaminhamento.

@@ -215,3 +215,23 @@ def test_argumento_divergente_do_perfil_e_bad_request(ctx, sessao):
 def test_estado_da_conversa_vira_cotado(ctx, sessao):
     make_quote_plan(ctx)("completo", 28, 2019, cep_de("07"), "2026-10-17")
     assert repo.obter_conversa(sessao, ctx.conversation_id).state == "cotado"
+
+
+def test_o_template_NAO_promete_emissao(sessao, conversa):
+    """A frase que causava o handoff errado estava no NOSSO template, não no modelo.
+
+    A API legada tem três rotas — `/health`, `/planos`, `/quote` — e emissão não existe
+    em lugar nenhum do escopo. "Quer que eu siga com a emissão?" era uma promessa que o
+    sistema não podia cumprir, escrita por nós: o lead aceitava, e o aceite virava
+    "lead pediu atendente" com a mensagem errada. O convite continua — é ele que fecha
+    a venda — dizendo o passo que de fato existe.
+    """
+    from app.quote.renderer import render_de_payload
+
+    req = QuoteRequest(plano_id="completo", idade=28, veiculo_ano=2019,
+                       cep=cep_de("07"), data_inicio=dt.date(2026, 10, 17))
+    q = executar_job(sessao, conversa.id, req)
+    texto = render_de_payload(q.payload)
+
+    assert "emiss" not in texto.lower()
+    assert "contratação" in texto.lower()

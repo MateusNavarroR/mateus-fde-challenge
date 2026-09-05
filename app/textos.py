@@ -40,6 +40,20 @@ DESPEDIDA = (
     "A equipe assume daqui."
 )
 
+# ⑫ — o lead aceitou a cotação. **O único prefixo de handoff que é boa notícia.**
+#
+# Todos os outros encaminham porque algo saiu do lugar; este encaminha porque deu certo,
+# e o texto precisa soar assim. Antes o aceite caía na despedida crua ("já passei sua
+# conversa pra um atendente"), que responde a um pedido de socorro que o lead não fez —
+# e é a última coisa que ele lê quando tudo funcionou.
+#
+# "Consultor", e não "atendente": quem fecha contratação faz outra coisa. E nenhuma
+# promessa de prazo, pela mesma razão de sempre — ninguém aqui controla a agenda dele.
+ACEITE_DA_COTACAO = (
+    "Boa! Pra fechar a contratação eu passo você pra um consultor da equipe: "
+    "a emissão da apólice precisa de uma pessoa pra confirmar os dados e o pagamento."
+)
+
 # ⑪ — falha técnica nossa. Duas coisas que ele NUNCA faz: expor o erro e sugerir que
 # o lead fez algo errado.
 #
@@ -112,7 +126,7 @@ POR_MOTIVO: dict[str, str] = {
 def compor_handoff(trigger: str, *, assunto: str | None = None) -> str:
     """O handoff é sempre **um prefixo opcional mais a despedida**.
 
-    Tabela de quatro linhas, determinística — o que mantém o descarte do texto do
+    Tabela de cinco linhas, determinística — o que mantém o descarte do texto do
     modelo sem exceção em todo caminho de encaminhamento.
     """
     if trigger == "cotacao_indisponivel":
@@ -120,4 +134,9 @@ def compor_handoff(trigger: str, *, assunto: str | None = None) -> str:
     if trigger == "assunto_sensivel":
         prefixo = SENSIVEL_SINISTRO if assunto in ("sinistro", "saude") else SENSIVEL_JURIDICO
         return f"{prefixo}\n\n{DESPEDIDA}"
+    if trigger == "lead_aceitou_cotacao":
+        # O único caminho que NÃO termina na despedida: ela diz "a equipe assume
+        # daqui", que no aceite soaria como se algo tivesse dado errado. Aqui o texto
+        # já nomeia o próximo passo, e é o passo que o lead pediu.
+        return ACEITE_DA_COTACAO
     return DESPEDIDA

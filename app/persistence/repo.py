@@ -246,6 +246,27 @@ def violacoes_de_guardrail(s: Session, conversation_id: str) -> int:
     )
 
 
+def tem_cotacao_ok(s: Session, conversation_id: str) -> bool:
+    """Já existe cotação ENTREGUE nesta conversa.
+
+    Do banco, como as demais contagens que alimentam gatilho: um booleano passado por
+    argumento é um valor que o chamador escolhe, e o handoff deixaria de ser auditável
+    a partir do transcript.
+
+    É metade da guarda de `LEAD_ACEITOU_COTACAO` — sem cotação não há o que aceitar, e
+    um "pode seguir" antes dela é só o lead mandando continuar a conversa.
+    """
+    from app.persistence.models import Quote
+
+    return bool(
+        s.execute(
+            select(Quote.id)
+            .where(Quote.conversation_id == conversation_id, Quote.status == "ok")
+            .limit(1)
+        ).first()
+    )
+
+
 def midias_do_lead(s: Session, conversation_id: str) -> int:
     """Quantas mensagens de mídia o lead já mandou nesta conversa.
 

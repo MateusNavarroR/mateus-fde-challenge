@@ -1,4 +1,4 @@
-"""Os sete gatilhos de handoff — como dados, não como `if` espalhado.
+"""Os oito gatilhos de handoff — como dados, não como `if` espalhado.
 
 É isso que torna o critério "explícito e defensável", que é o texto do enunciado. O
 que reprova não é ser generoso ou econômico com a fila: é o gatilho implícito, que
@@ -50,6 +50,21 @@ _PEDIU_ATENDENTE = re.compile(
     r"supervisor|ger[êe]nte|prefiro falar com)\b",
     re.IGNORECASE,
 )
+#: O lead aceita a cotação e quer contratar.
+#:
+#: **Verbo de aceite explícito, e nunca um "sim" solto.** O agente pergunta muita coisa
+#: ao longo da qualificação, e um "sim" isolado responde qualquer uma delas — casar com
+#: ele encaminharia conversas no meio do funil, que é o oposto do que este gatilho faz.
+#: A segunda metade da guarda é `tem_cotacao_ok`: sem cotação entregue não existe o que
+#: aceitar, e "pode seguir" antes dela é só o lead mandando continuar a conversa.
+_ACEITOU_COTACAO = re.compile(
+    r"\b(pode (emitir|seguir com a (emiss[ãa]o|contrata[çc][ãa]o)|fechar)|"
+    r"quero (contratar|fechar|esse plano|essa)|vamos fechar|bora fechar|"
+    r"fechado|fechou|aceito (essa|a cota[çc][ãa]o|o plano)|"
+    r"topo|manda o boleto|como (fa[çc]o|eu fa[çc]o) (pra|para) (contratar|fechar)|"
+    r"quero contratar|segue com a emiss[ãa]o|siga com a emiss[ãa]o)\b",
+    re.IGNORECASE,
+)
 _OBJECAO_PRECO = re.compile(
     r"\b(caro|salgad|abusiv|apertad|n[ãa]o cabe no bolso|fora do or[çc]amento|"
     r"desconto|mais barato|baratinho|pesou)\w*",
@@ -73,6 +88,10 @@ class Contexto:
     objecoes_de_preco: int = 0
     #: Quantas mensagens de mídia o lead mandou depois de pedirmos texto.
     midias_apos_pedido: int = 0
+    #: Já existe cotação entregue nesta conversa (job `ok`).
+    #:
+    #: Metade da guarda de `LEAD_ACEITOU_COTACAO`: sem cotação não há o que aceitar.
+    tem_cotacao_ok: bool = False
 
 
 def _assunto_sensivel(c: Contexto) -> str | None:
@@ -90,6 +109,7 @@ REGRAS: list[tuple[HandoffTrigger, str]] = [
     (HandoffTrigger.GUARDRAIL, "violação de guardrail repetida na conversa"),
     (HandoffTrigger.LEAD_PEDIU, "o lead pediu para falar com uma pessoa"),
     (HandoffTrigger.COTACAO_INDISPONIVEL, "a cotação não respondeu depois de esgotadas as tentativas"),
+    (HandoffTrigger.LEAD_ACEITOU_COTACAO, "o lead aceitou a cotação e quer contratar"),
     (HandoffTrigger.EXTRACAO_FALHOU, "não consegui ler o mesmo campo duas vezes"),
     (HandoffTrigger.OBJECAO_FORA_DA_ALCADA, "o lead repetiu a objeção de preço"),
     (HandoffTrigger.MIDIA_SEM_TEXTO, "o lead insistiu em mídia depois de pedirmos por texto"),
@@ -107,6 +127,10 @@ def casa(trigger: HandoffTrigger, c: Contexto) -> bool:
         return bool(_PEDIU_ATENDENTE.search(c.texto_do_lead))
     if trigger is HandoffTrigger.COTACAO_INDISPONIVEL:
         return c.cotacao_falhou
+    if trigger is HandoffTrigger.LEAD_ACEITOU_COTACAO:
+        # As DUAS metades. Só o verbo encaminharia um "fechado" dito no meio da
+        # qualificação; só a cotação encaminharia toda conversa que chegou a cotar.
+        return c.tem_cotacao_ok and bool(_ACEITOU_COTACAO.search(c.texto_do_lead))
     if trigger is HandoffTrigger.EXTRACAO_FALHOU:
         # Por CAMPO, não global: falhar uma vez no CEP e uma na idade não é
         # "falhou duas vezes".

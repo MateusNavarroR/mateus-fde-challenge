@@ -359,3 +359,64 @@ def test_duas_midias_exigem_pedido_de_texto_ou_encaminhamento():
         ["Consegue me mandar por texto?"], encaminhou=False, midias=2,
         desfecho_correto=False,
     )
+
+
+class _SessaoFalsa:
+    """O mínimo que `observar` usa: `get` para a conversa, `execute(select(...))` para
+    o handoff e a cotação. Escrito contra a forma REAL da função — a primeira versão
+    deste dublê implementava `query()`, que `observar` não chama, e o teste morria no
+    dublê em vez de medir o comportamento."""
+
+    def __init__(self, cotacao, handoff):
+        self._cotacao, self._handoff = cotacao, handoff
+
+    def get(self, _modelo, _id):  # noqa: ANN001
+        return type("C", (), {"state": "encaminhado", "idade": None, "veiculo_ano": None,
+                              "cep": None, "plano_id": None, "data_inicio": None})()
+
+    def execute(self, stmt):  # noqa: ANN001
+        alvo = self._handoff if "handoffs" in str(stmt).lower() else self._cotacao
+        return type("R", (), {"scalars": lambda _s=None: type(
+            "S", (), {"first": lambda _x=None: alvo})()})()
+
+
+def _cotacao_ok():
+    return type("Q", (), {"status": "ok", "premio_mensal": 494.58, "motivo_recusa": None,
+                          "req_plano_id": "completo", "req_idade": 28,
+                          "req_veiculo_ano": 2019, "req_cep": cep_de("01", com_hifen=False)})()
+
+
+def test_o_aceite_da_cotacao_NAO_derruba_o_desfecho_ok():
+    """O gatilho `lead_aceitou_cotacao` é a consequência do fluxo feliz, não um desvio.
+
+    O handoff vence todos os outros desfechos em `observar`, e isso está certo para os
+    sete gatilhos que existem porque algo saiu do lugar. Para o aceite não: a conversa
+    cotou, o lead aceitou, e tudo funcionou até o fim. Contá-la como `encaminhado`
+    faria a taxa de acerto cair medindo o INSTRUMENTO em vez do agente — e cairia
+    justamente nas conversas que deram mais certo.
+    """
+    from qa.replay.executor import observar
+
+    ho = type("H", (), {"trigger": "lead_aceitou_cotacao"})()
+    obs = observar(_SessaoFalsa(_cotacao_ok(), ho), "conv_x")
+
+    assert str(obs.desfecho) == "ok"
+    # E o gatilho continua registrado: quem quiser contar aceites tem o número.
+    assert obs.trigger_handoff == "lead_aceitou_cotacao"
+
+
+def test_um_handoff_de_VERDADE_continua_derrubando_o_desfecho():
+    """O negativo: sem ele, bastaria ignorar todo handoff para o teste acima passar."""
+    from qa.replay.executor import observar
+
+    ho = type("H", (), {"trigger": "lead_pediu_atendente"})()
+    assert str(observar(_SessaoFalsa(_cotacao_ok(), ho), "conv_x").desfecho) == "encaminhado"
+
+
+def test_o_aceite_SEM_cotacao_ok_ainda_e_encaminhamento():
+    """A guarda tem duas metades aqui também: se não houve cotação entregue, o que quer
+    que tenha gerado aquele handoff não foi um fluxo feliz."""
+    from qa.replay.executor import observar
+
+    ho = type("H", (), {"trigger": "lead_aceitou_cotacao"})()
+    assert str(observar(_SessaoFalsa(None, ho), "conv_x").desfecho) == "encaminhado"

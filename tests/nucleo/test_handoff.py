@@ -46,11 +46,16 @@ def test_um_teste_por_gatilho(trigger, contexto, custo):
     assert gatilhos.avaliar(contexto)[0] is trigger
 
 
-def test_os_sete_gatilhos_tem_regra():
+def test_todo_gatilho_do_enum_tem_regra():
     """Se alguém acrescentar um membro ao enum e esquecer a regra, o gatilho existiria
-    no contrato e nunca dispararia."""
+    no contrato e nunca dispararia.
+
+    A contagem é conferida contra o enum, e não contra um literal: um número escrito à
+    mão vira mais uma linha para editar a cada gatilho novo, e foi o que aconteceu ao
+    entrar o oitavo.
+    """
     assert {t for t, _ in gatilhos.REGRAS} == set(HandoffTrigger)
-    assert len(gatilhos.REGRAS) == 7
+    assert len(gatilhos.REGRAS) == len(HandoffTrigger) == 8
 
 
 # ─── o que NÃO é gatilho — vale tanto quanto ─────────────────────────────────
@@ -441,14 +446,19 @@ def test_o_modelo_so_pode_pedir_os_dois_gatilhos_de_julgamento(sessao, conversa)
     assert len(ctx.handoffs) == 2, "gatilho de contagem não pode entrar por write-back"
 
 
-def test_a_fronteira_cobre_todos_os_sete_gatilhos():
+def test_a_fronteira_cobre_TODOS_os_gatilhos():
     """Se alguém acrescentar um gatilho ao enum, ele cai de um lado ou do outro — não
     fica num limbo em que a tool aceita sem que ninguém tenha decidido."""
     from app.agent.tools import _DO_MODELO
 
     assert _DO_MODELO < {str(t) for t in HandoffTrigger}
     contados = {str(t) for t in HandoffTrigger} - _DO_MODELO
-    assert len(contados) == 5
+    assert len(contados) == len(HandoffTrigger) - len(_DO_MODELO)
+    # `lead_aceitou_cotacao` é DETERMINÍSTICO: verbo de aceite mais cotação entregue,
+    # os dois conferíveis no banco. Deixá-lo ao modelo seria pedir a ele a única coisa
+    # que a contagem já sabe — e um "fechado" dito no meio da qualificação viraria
+    # handoff sem que houvesse o que fechar.
+    assert "lead_aceitou_cotacao" in contados
 
 
 # ─── `extracao_falhou` conta ao longo da CONVERSA, e conta uma vez ───────────
@@ -918,3 +928,80 @@ async def test_um_turno_COMUM_nao_anuncia_estado_nenhum(sessao, conversa, monkey
     sessao.commit()
 
     assert canal.estados == []
+
+
+# ─── `lead_aceitou_cotacao` — o único handoff que é boa notícia ───────────────
+
+
+@pytest.mark.parametrize("fala", [
+    "sim, pode seguir com a emissão",
+    "quero contratar",
+    "vamos fechar",
+    "pode emitir",
+    "fechado, manda o boleto",
+    "aceito essa cotação",
+])
+def test_o_aceite_da_cotacao_encaminha(fala):
+    """O desfecho mais visível do fluxo feliz: é a última coisa que o lead lê quando
+    tudo deu certo.
+
+    Antes ele caía em `lead_pediu_atendente` — falso em duas direções: o lead não pediu
+    atendente, e a resposta ("já passei sua conversa pra um atendente") respondia a uma
+    pergunta que ele não fez.
+    """
+    c = Contexto(texto_do_lead=fala, tem_cotacao_ok=True)
+    assert gatilhos.casa(HandoffTrigger.LEAD_ACEITOU_COTACAO, c)
+
+
+@pytest.mark.parametrize("fala", [
+    "sim",
+    "ok",
+    "isso",
+    "pode ser",
+    "beleza",
+])
+def test_um_SIM_solto_nao_e_aceite(fala):
+    """O negativo que mais importa.
+
+    O agente pergunta muita coisa na qualificação — idade, ano, CEP, data, plano — e um
+    "sim" isolado responde qualquer uma delas. Casar com ele encaminharia conversas no
+    meio do funil, que é o oposto do que este gatilho faz.
+    """
+    c = Contexto(texto_do_lead=fala, tem_cotacao_ok=True)
+    assert not gatilhos.casa(HandoffTrigger.LEAD_ACEITOU_COTACAO, c)
+
+
+def test_sem_cotacao_entregue_nao_ha_o_que_aceitar():
+    """A outra metade da guarda. "Pode seguir" antes da cotação é só o lead mandando
+    continuar a conversa — encaminhar ali abortaria a qualificação."""
+    c = Contexto(texto_do_lead="pode seguir com a emissão", tem_cotacao_ok=False)
+    assert not gatilhos.casa(HandoffTrigger.LEAD_ACEITOU_COTACAO, c)
+
+
+def test_pedir_atendente_vence_o_aceite():
+    """Precedência: um pedido explícito de pessoa é mais específico sobre o que o lead
+    quer do que o aceite, e os dois podem casar na mesma frase."""
+    c = Contexto(
+        texto_do_lead="quero fechar, mas prefiro falar com uma pessoa antes",
+        tem_cotacao_ok=True,
+    )
+    principal, _, secundarios = gatilhos.avaliar(c)
+    assert principal is HandoffTrigger.LEAD_PEDIU
+    assert HandoffTrigger.LEAD_ACEITOU_COTACAO in secundarios
+
+
+def test_o_texto_do_aceite_NAO_e_a_despedida_crua():
+    """Todos os outros gatilhos encaminham porque algo saiu do lugar; este encaminha
+    porque deu certo, e o texto precisa soar assim.
+
+    "A equipe assume daqui", no aceite, soaria como se algo tivesse falhado — e é a
+    última mensagem de uma conversa que funcionou do começo ao fim.
+    """
+    texto = textos.compor_handoff("lead_aceitou_cotacao")
+    assert texto == textos.ACEITE_DA_COTACAO
+    assert textos.DESPEDIDA not in texto
+    assert "consultor" in texto.lower()
+    # Sem promessa de prazo, pela mesma razão de sempre: ninguém aqui controla a
+    # agenda de quem vai atender.
+    for prazo in ("minutos", "horas", "hoje", "logo mais", "em breve"):
+        assert prazo not in texto.lower()

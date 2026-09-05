@@ -158,7 +158,7 @@ class ConversationState(StrEnum):
 
 
 class HandoffTrigger(StrEnum):
-    """Os sete gatilhos de handoff, como dados e não como `if` espalhado.
+    """Os oito gatilhos de handoff, como dados e não como `if` espalhado.
 
     **A ordem da declaração É a precedência.** Quando dois disparam no mesmo turno,
     o primeiro vence e os demais são gravados como secundários — a fila mostra um
@@ -182,6 +182,19 @@ class HandoffTrigger(StrEnum):
     LEAD_PEDIU = "lead_pediu_atendente"
     #: custo alto — o job de cotação terminou `failed`
     COTACAO_INDISPONIVEL = "cotacao_indisponivel"
+    #: o lead aceitou a cotação e quer contratar
+    #:
+    #: **Não é um pedido de socorro, e por isso não podia continuar entrando como
+    #: `lead_pediu_atendente`.** O template da cotação convida a seguir com a
+    #: contratação, o lead aceita, e o sistema respondia "já passei sua conversa pra um
+    #: atendente" — resposta a uma pergunta que ele não fez, com o rótulo errado na
+    #: fila. Este é o desfecho mais visível do fluxo feliz: é a última coisa que o lead
+    #: lê quando tudo dá certo.
+    #:
+    #: Depois de `COTACAO_INDISPONIVEL` porque, se a cotação falhou, não há o que
+    #: aceitar; depois de `LEAD_PEDIU` porque um pedido explícito de pessoa é mais
+    #: específico sobre o que o lead quer do que o aceite.
+    LEAD_ACEITOU_COTACAO = "lead_aceitou_cotacao"
     #: custo médio — 2ª falha de extração no MESMO campo
     EXTRACAO_FALHOU = "extracao_falhou"
     #: custo baixo — o lead REPETE a objeção de preço

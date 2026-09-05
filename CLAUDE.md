@@ -156,7 +156,7 @@ Paralelismo quebra o determinismo.
     recota. Registrar fato que o lead trouxe ≠ sugerir o caminho.
 22. **Handoff graduado por custo do erro**, precedência por lista fixa (primeiro que
     casa vence, secundários gravados junto), e **depois de encaminhar o agente encerra
-    a participação**. Sete gatilhos, um teste cada — a tabela está no contrato.
+    a participação**. Oito gatilhos, um teste cada — a tabela está no contrato.
 23. **Cotação: bloco compacto, uma mensagem, todo o texto de template.** Preço na
     primeira linha, carência com marcador próprio, franquia sempre, agravo de CEP
     nunca, e no dia 1 dizer que o primeiro mês já é integral.
