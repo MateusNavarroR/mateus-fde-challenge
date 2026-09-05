@@ -150,12 +150,27 @@ com o setor de exceções".
 
 > Infelizmente não consigo seguir com essa cotação: a nossa aceitação vai até 75 anos de
 > idade do condutor. Acima disso a apólice não é emitida, e não é algo que eu consiga
-> contornar por aqui. Deixei seu cadastro registrado do nosso lado. Sinto muito não
-> poder ajudar dessa vez.
+> contornar por aqui. Sinto muito não poder ajudar dessa vez.
 
 "Não é algo que eu consiga contornar por aqui" fecha, no texto, a porta que o modelo
-abriria sozinho. "Deixei seu cadastro registrado do nosso lado" é verdade — a conversa
-está no banco e aparece no admin — e não promete retorno de ninguém.
+abriria sozinho.
+
+**A frase «Deixei seu cadastro registrado do nosso lado» saiu, e quem a derrubou foi o
+juiz.** Este documento justificava a frase pelo oposto — "é verdade, e não promete
+retorno de ninguém". O `AgentAsJudgeEval` deu nota 7 de 10, abaixo do limiar, com o
+motivo: *«pode ser interpretada como promessa implícita de acompanhamento futuro ou
+retorno, o que vai de encontro à regra de não prometer retorno de atendente»*.
+
+Ele estava certo, e a distinção é entre INTENÇÃO e LEITURA. A frase era verdadeira — a
+conversa está no banco e aparece no admin. Mas um lead que acaba de ouvir "não" e lê
+"deixei seu cadastro registrado" entende que alguém vai olhar aquilo depois, e ninguém
+vai. É a mesma promessa vazia que o resto do texto se esforça para não fazer, entrando
+pela porta dos fundos.
+
+Vale registrar como achado de método: **este é o tipo de defeito que só um juiz de
+texto encontra.** Nenhum teste determinístico o pegaria — a frase não tem valor
+monetário, não promete prazo, não sugere trocar o condutor. Ela falha na leitura, e ler
+é o que o juiz faz.
 
 **Sem oferta de reenquadramento.** O agente nunca sugere trocar o condutor principal:
 se quem dirige de fato tem 78 anos, declarar outra pessoa é declaração falsa, e a conta

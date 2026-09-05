@@ -12,6 +12,16 @@ bonito.
 
 ---
 
+> **Os diagramas são imagens versionadas, e o Mermaid fica ao lado como fonte.**
+>
+> Um bloco ` ```mermaid ` só vira desenho em quem sabe renderizá-lo — o GitHub sabe,
+> um editor sem extensão não. Como este documento existe para ser lido por quem abre o
+> repositório pela primeira vez, e essa pessoa pode estar lendo em qualquer lugar, cada
+> diagrama entra como **SVG** (`docs/diagramas/`) com a fonte logo abaixo, dobrada.
+>
+> Os SVGs são gerados da própria fonte, não desenhados à mão: editar o Mermaid e
+> re-renderizar é o fluxo, e é o que impede as duas versões de divergirem.
+
 ## 1 · Mapa de módulos
 
 ```
@@ -97,6 +107,11 @@ Conferido contra `app/channels/web.py` (`registrar_websockets`), `app/agent/runn
 (`processar_turno_web`), `app/agent/turno.py` (`responder`), `app/agent/tools.py`
 (`make_quote_plan`) e `app/quote/job.py` (`executar_job`).
 
+![Fluxo de uma mensagem](diagramas/01-fluxo-da-mensagem.svg)
+
+<details>
+<summary>fonte Mermaid deste diagrama</summary>
+
 ```mermaid
 sequenceDiagram
     actor Lead
@@ -143,6 +158,8 @@ sequenceDiagram
     Turno->>DB: INSERT turn_usage (finally — sempre, mesmo sem mensagem própria)
 ```
 
+</details>
+
 Pontos que o diagrama não pode omitir, porque são onde o comportamento não é óbvio:
 
 - **A tool nunca devolve o preço ao modelo.** `quote_plan` renderiza e envia por
@@ -168,6 +185,11 @@ Pontos que o diagrama não pode omitir, porque são onde o comportamento não é
 
 Conferido contra `app/quote/job.py` (`executar_job`, `finalizar`) e
 `app/contracts/quote.py` (`QuoteJobStatus`, `QuoteOutcome`).
+
+![Máquina de estados do job de cotação](diagramas/02-estados-do-job.svg)
+
+<details>
+<summary>fonte Mermaid deste diagrama</summary>
 
 ```mermaid
 stateDiagram-v2
@@ -203,6 +225,8 @@ stateDiagram-v2
     failed_sem_tentativa --> [*]
 ```
 
+</details>
+
 Notas de correspondência com o código:
 
 - **`refused` só existe quando o corpo é `{"error":"cotacao_recusada"}` E o motivo
@@ -223,6 +247,11 @@ Notas de correspondência com o código:
 
 Conferido contra `app/contracts/quote.py` (`classificar_erro`) e
 `app/quote/client.py`/`app/quote/breaker.py`.
+
+![Resiliência da /quote](diagramas/03-resiliencia.svg)
+
+<details>
+<summary>fonte Mermaid deste diagrama</summary>
 
 ```mermaid
 flowchart TD
@@ -252,6 +281,8 @@ flowchart TD
     BR3 --> NEG
 ```
 
+</details>
+
 O que este fluxograma prova em relação ao README:
 
 - **Só `transient` e `timeout` alimentam o circuit breaker** — `refused` e
@@ -269,6 +300,11 @@ Conferido contra `app/handoff/gatilhos.py` (`REGRAS`, `casa`, `avaliar`) e
 `app/agent/turno.py` (`_encaminhar`). A ordem das caixas abaixo é literalmente a ordem
 da lista `REGRAS` no código — mudar a ordem no diagrama sem mudar o código seria
 exatamente o tipo de divergência que este documento existe para não ter.
+
+![Gatilhos de handoff e precedência](diagramas/04-gatilhos-de-handoff.svg)
+
+<details>
+<summary>fonte Mermaid deste diagrama</summary>
 
 ```mermaid
 flowchart TD
@@ -295,6 +331,8 @@ flowchart TD
     Reg -.->|"depois, sob ação humana"| Op["operador assume em /atendimento<br/>POST .../mensagens (autor=operador)"]
 ```
 
+</details>
+
 Duas linhas do próprio código que o diagrama simplifica e vale citar:
 
 - **Só `assunto_sensivel` e `lead_pediu_atendente` podem vir do modelo** (via
@@ -316,6 +354,11 @@ Duas linhas do próprio código que o diagrama simplifica e vale citar:
 
 Conferido contra `db/migrations/0001_inicial.sql` a `0006_lead_aceitou_cotacao.sql`
 e `app/persistence/models.py`.
+
+![Modelo de dados](diagramas/05-modelo-de-dados.svg)
+
+<details>
+<summary>fonte Mermaid deste diagrama</summary>
 
 ```mermaid
 erDiagram
@@ -396,6 +439,8 @@ erDiagram
         date pricing_vigencia
     }
 ```
+
+</details>
 
 Duas colunas que existem por um motivo não óbvio, e vale registrar aqui em vez de só
 no comentário do modelo:

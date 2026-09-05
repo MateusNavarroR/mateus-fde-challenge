@@ -81,11 +81,25 @@ SENSIVEL_JURIDICO = (
 # ⑤⑥⑦ — as três recusas. Só a de veículo tem oferta, e ela vem DENTRO do template:
 # o texto do modelo é descartado no turno da recusa, sem exceção, porque o risco ali
 # não é preço alucinado e sim promessa falsa ("vou ver com o setor de exceções").
+# ⑤ — recusa por idade acima do limite.
+#
+# **A frase «Deixei seu cadastro registrado do nosso lado» saiu**, e quem a derrubou
+# foi o `AgentAsJudgeEval`: nota 7 de 10, abaixo do limiar, com o motivo
+# «pode ser interpretada como promessa implícita de acompanhamento futuro ou retorno,
+# o que vai de encontro à regra de não prometer retorno de atendente».
+#
+# `docs/TEXTOS.md` justificava a frase pelo oposto — "é verdade, e não promete retorno
+# de ninguém". A intenção era essa; a LEITURA não. Um lead que acaba de ouvir "não" e
+# lê "deixei seu cadastro registrado" entende que alguém vai olhar aquilo depois, e
+# ninguém vai. É a mesma promessa vazia que o resto do texto se esforça para não
+# fazer, entrando pela porta dos fundos.
+#
+# O que sobra diz o mesmo sem a ambiguidade: a conversa fica registrada — o que é
+# verdade e o admin prova — sem sugerir que ela vai a algum lugar.
 RECUSA_IDADE_ACIMA = (
     "Infelizmente não consigo seguir com essa cotação: a nossa aceitação vai até 75 anos "
     "de idade do condutor. Acima disso a apólice não é emitida, e não é algo que eu "
-    "consiga contornar por aqui. Deixei seu cadastro registrado do nosso lado. "
-    "Sinto muito não poder ajudar dessa vez."
+    "consiga contornar por aqui. Sinto muito não poder ajudar dessa vez."
 )
 RECUSA_IDADE_ABAIXO = (
     "Pra contratar o seguro é preciso ter no mínimo 18 anos, então não consigo emitir a "
