@@ -1397,6 +1397,60 @@ code {
   text-wrap: balance;
 }
 
+/* O sumário da porta: as cinco seções, com o mesmo romano carimbado da guia
+   lateral. Sem marcador de lista — o ordinal JÁ é o marcador, e somar um bullet a
+   ele seria numerar duas vezes a mesma coisa. */
+/* A vista de leitura da conversa, dentro do admin. Reusa a paleta do WhatsApp
+   escopada em `.simulador`, e por isso a raiz carrega as DUAS classes: a paleta vem
+   de uma, o enquadramento desta tela vem da outra. Sem compositor, e sem altura de
+   viewport — aqui a conversa é conteúdo de uma página que rola, não uma janela. */
+.vista-lead__moldura {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--filete);
+  max-width: 46rem;
+}
+
+.vista-lead__aviso {
+  margin: 0;
+  padding: 0.55rem 0.9rem;
+  background: #075e54;
+  color: #e9f5f2;
+  letter-spacing: 0.06em;
+}
+
+.vista-lead .chat__thread {
+  max-height: 34rem;
+  overflow-y: auto;
+}
+
+.login__secoes {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0.9rem 0 0;
+  border-top: 1px solid var(--filete);
+  display: grid;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: var(--tinta-fraca);
+  line-height: 1.45;
+}
+
+.login__secao {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.login__romano {
+  font-family: var(--doc);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--carimbo);
+  text-align: center;
+}
+
 .login__form {
   display: grid;
   gap: 0.85rem;

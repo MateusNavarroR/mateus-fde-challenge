@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { ErroApi, gravarToken } from "../api/cliente";
+import { useAutenticacao } from "./useAutenticacao";
 
 /**
  * Erro é estado de produto: uma tela em branco é a pior resposta possível a um
@@ -13,8 +14,40 @@ import { ErroApi, gravarToken } from "../api/cliente";
 export function Erro({ erro, aoTentarDeNovo }: { erro: unknown; aoTentarDeNovo: () => void }) {
   const idCampo = useId();
   const [token, setToken] = useState("");
+  const auth = useAutenticacao();
   const api = erro instanceof ErroApi ? erro : null;
   const tipo = api?.tipo ?? "erro";
+
+  /*
+   * UM 401 TEM DUAS CAUSAS DIFERENTES, e a tela dizia sempre a mesma coisa.
+   *
+   * Quando o login está configurado (`ADMIN_USER`/`ADMIN_PASSWORD`), um 401 significa
+   * que a SESSÃO acabou — e ela acaba também quando o serviço reinicia, porque o salt
+   * do `scrypt` é sorteado a cada boot e a chave que assina o cookie deriva dele
+   * (`app/auth.py`). Nesse caso a tela oferecia um campo de `ADMIN_TOKEN` e afirmava
+   * "o ADMIN_TOKEN está definido no backend" — uma frase falsa sobre uma variável
+   * vazia, mandando o operador procurar um segredo que não existe para resolver um
+   * problema cuja resposta é entrar de novo.
+   *
+   * O campo de token continua, e continua certo, para a outra causa: instalação sem
+   * login, com `ADMIN_TOKEN` definido. Aí não há sessão nenhuma para renovar.
+   */
+  if (tipo === "nao_autorizado" && auth.situacao === "conhecido" && auth.exigido) {
+    return (
+      <div className="erro" role="alert">
+        <p className="erro__titulo">Sua sessão de operação expirou</p>
+        <p className="erro__texto">
+          Entre de novo para continuar. A sessão também termina quando o serviço
+          reinicia: a chave que assina o cookie é derivada de um salt sorteado a cada
+          boot, então um <code>docker compose up</code> encerra as sessões abertas —
+          é por isso que isso acontece sem você ter feito nada.
+        </p>
+        <a className="botao" href="/entrar">
+          Entrar de novo
+        </a>
+      </div>
+    );
+  }
 
   if (tipo === "nao_autorizado") {
     return (

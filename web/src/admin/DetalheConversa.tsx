@@ -6,6 +6,7 @@ import { Vazio } from "../ui/Vazio";
 import { cepMascarado, hora } from "../ui/formatar";
 import { useRecurso } from "../ui/useRecurso";
 import { LinhaDoTempoCotacao } from "./LinhaDoTempoCotacao";
+import { Bolha } from "../chat/Bolha";
 
 const DINHEIRO = /(R\$\s*[\d.,]+)|([\d.,]+\s*reais\b)/i;
 
@@ -14,6 +15,21 @@ function suspeita(m: Message): boolean {
   const temQuote = m.quote_id !== null && m.quote_id !== undefined && m.quote_id !== "";
   return DINHEIRO.test(m.conteudo) && !temQuote;
 }
+
+/**
+ * As três formas de ler a MESMA lista de mensagens, e cada uma responde a uma
+ * pergunta diferente:
+ *
+ * - **transcrição** — "o que aconteceu com esse lead", com id e status por bolha;
+ * - **como o lead viu** — a moldura da conversa, em leitura. É a forma que faltava:
+ *   pelo handoff, o operador precisa ver a conversa como ela chegou ao lead antes de
+ *   assumi-la, e uma tabela com metadados não mostra isso. Aqui não há compositor, e
+ *   isso é a decisão, não uma pendência: a navegação `admin → chat` foi recusada
+ *   porque por ela o operador assumiria o lugar do LEAD numa conversa que já tem
+ *   handoff. **Ver não é escrever** — esta forma dá a vista e não dá a caneta;
+ * - **razão** — a lista crua com `index`, para quando a pergunta é sobre a ordem.
+ */
+type Forma = "transcricao" | "lead" | "razao";
 
 const ROTULO_CAMPO: Record<string, string> = {
   idade: "idade",
@@ -32,7 +48,7 @@ const ROTULO_CAMPO: Record<string, string> = {
  * duas pontas têm teste, senão alguém "uniformiza" e a auditoria se perde.
  */
 export function DetalheConversa({ id }: { id: string }) {
-  const [forma, setForma] = useState<"transcricao" | "razao">("transcricao");
+  const [forma, setForma] = useState<Forma>("transcricao");
   const { dado, erro, recarregar } = useRecurso<ConversationDetail>(
     () => api.conversa(id),
     [id],
@@ -104,7 +120,11 @@ export function DetalheConversa({ id }: { id: string }) {
         aconteceu com esse lead", não "qual o id da terceira mensagem".
       */}
       <div className="alternador" role="group" aria-label="Forma de leitura">
-        {([["transcricao", "Transcrição"], ["razao", "Razão"]] as const).map(
+        {([
+          ["transcricao", "Transcrição"],
+          ["lead", "Como o lead viu"],
+          ["razao", "Razão"],
+        ] as const).map(
           ([chave, rotulo]) => (
             <button
               key={chave}
@@ -122,6 +142,26 @@ export function DetalheConversa({ id }: { id: string }) {
         <Vazio titulo="Nenhuma mensagem">
           A conversa existe mas ninguém falou ainda.
         </Vazio>
+      ) : forma === "lead" ? (
+        /* A moldura de leitura. `.chat__thread` é a MESMA classe da conversa do
+           lead — traz o papel, o espaçamento e o alinhamento das bolhas (que é
+           `align-self`, e portanto depende do contêiner flex certo). O que ela não
+           traz é o `chat__rodape`, o compositor, e isso é a decisão. */
+        <div className="simulador vista-lead">
+          <div className="vista-lead__moldura">
+            <p className="vista-lead__aviso rotulo">
+              somente leitura — a conversa como o lead a viu
+            </p>
+            <div className="chat__thread" data-testid="vista-lead">
+              {mensagens.map((m) => (
+                <Bolha
+                  key={m.id}
+                  mensagem={{ ...m, pendente: false, suspeitaDeBug: suspeita(m) }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       ) : forma === "transcricao" ? (
         <div className="transcricao" data-testid="transcricao">
           {mensagens.map((m) => (

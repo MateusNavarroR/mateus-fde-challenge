@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 import { Operacao } from "../../../web/src/App";
 import { montarBackendFalso } from "../fakes/backend-falso";
+import { Erro } from "../../../web/src/ui/Erro";
+import { ErroApi } from "../../../web/src/api/cliente";
+import { _reiniciarAutenticacao } from "../../../web/src/ui/useAutenticacao";
 
 const ROTAS = ["/historico", "/status", "/handoffs"];
 
@@ -61,4 +64,38 @@ it("filtro sem resultado NÃO diz que o banco está vazio", async () => {
   expect(filtrado).toHaveTextContent(/fechado/);
   expect(filtrado).toHaveTextContent(/filtro/i);
   expect(filtrado).not.toHaveTextContent(/banco está no ar e vazio/i);
+});
+
+/*
+ * O 401 tem DUAS causas e a tela dizia sempre a mesma coisa.
+ *
+ * Com login configurado, um 401 é sessão expirada — e ela expira sozinha quando o
+ * serviço reinicia, porque o salt do `scrypt` é sorteado a cada boot e a chave que
+ * assina o cookie deriva dele. A tela oferecia um campo de `ADMIN_TOKEN` e afirmava
+ * "o ADMIN_TOKEN está definido no backend": uma frase falsa sobre uma variável vazia,
+ * mandando o operador procurar um segredo inexistente para um problema cuja resposta
+ * é entrar de novo.
+ */
+it("401 com login configurado manda reautenticar, não pedir ADMIN_TOKEN", async () => {
+  _reiniciarAutenticacao();
+  montarBackendFalso({ auth: { usuario: "op", senha: "segredo", autenticado: false } });
+  const erro = new ErroApi("nao_autorizado", "sessão ausente ou expirada", 401, null);
+  render(<Erro erro={erro} aoTentarDeNovo={() => {}} />);
+
+  expect(await screen.findByRole("link", { name: /entrar de novo/i })).toHaveAttribute(
+    "href", "/entrar",
+  );
+  expect(screen.queryByLabelText(/ADMIN_TOKEN/)).toBeNull();
+  expect(screen.getByRole("alert")).not.toHaveTextContent(/ADMIN_TOKEN está definido/);
+});
+
+it("401 SEM login configurado continua pedindo o token — a outra causa é real", async () => {
+  _reiniciarAutenticacao();
+  // Sem `auth` no fake, `/api/auth/estado` responde `exigido: false`: é a instalação
+  // sem login, onde o campo de token é a resposta certa.
+  montarBackendFalso({});
+  const erro = new ErroApi("nao_autorizado", "token ausente", 401, null);
+  render(<Erro erro={erro} aoTentarDeNovo={() => {}} />);
+
+  expect(await screen.findByLabelText(/ADMIN_TOKEN/)).toBeVisible();
 });

@@ -222,3 +222,58 @@ it("404 mostra o estado de erro, não uma tela em branco", async () => {
   render(<DetalheConversa id="fantasma" />);
   expect(await screen.findByRole("alert")).toHaveTextContent(/não encontrad/i);
 });
+
+/*
+ * A vista "Como o lead viu". Ela existe porque, ao assumir um handoff, o operador
+ * precisa ver a conversa como ela CHEGOU ao lead antes de entrar nela — e uma tabela
+ * com id e status não mostra isso. Os dois testes abaixo travam as duas metades da
+ * decisão: a vista dá a leitura, e não dá a caneta.
+ */
+it("a vista do lead mostra as respostas do agente, não só o que o lead escreveu", async () => {
+  montarBackendFalso({
+    conversa: {
+      quotes: [], handoffs: [], perfil: {},
+      messages: [
+        { id: "m1", index: 0, autor: "lead", conteudo: "quanto fica?", status: "received", tipo: "text", quote_id: null, criado_em: T },
+        { id: "m2", index: 1, autor: "agente", conteudo: "me diz sua idade", status: "sent", tipo: "text", quote_id: null, criado_em: T },
+        { id: "m3", index: 2, autor: "sistema", conteudo: "um atendente vai assumir", status: "sent", tipo: "text", quote_id: null, criado_em: T },
+      ],
+    },
+  });
+  const usuario = userEvent.setup();
+  render(<DetalheConversa id="c1" />);
+  await screen.findByTestId("transcricao");
+
+  await usuario.click(screen.getByRole("button", { name: /como o lead viu/i }));
+
+  const vista = await screen.findByTestId("vista-lead");
+  // As TRÊS mensagens, e é o ponto: uma vista que mostrasse só o lead repetiria o
+  // defeito que ela veio corrigir.
+  expect(within(vista).getByText(/quanto fica/i)).toBeVisible();
+  expect(within(vista).getByText(/me diz sua idade/i)).toBeVisible();
+  expect(within(vista).getByText(/atendente vai assumir/i)).toBeVisible();
+});
+
+it("a vista do lead NÃO tem compositor — ver não é escrever", async () => {
+  // A navegação `admin → chat` foi recusada porque por ela o operador assumiria o
+  // lugar do LEAD numa conversa que já tem handoff. Esta vista dá a leitura sem dar
+  // essa porta, e é este teste que impede alguém de "completá-la" com um campo de
+  // texto seis meses depois.
+  montarBackendFalso({
+    conversa: {
+      quotes: [], handoffs: [], perfil: {},
+      messages: [
+        { id: "m1", index: 0, autor: "lead", conteudo: "oi", status: "received", tipo: "text", quote_id: null, criado_em: T },
+      ],
+    },
+  });
+  const usuario = userEvent.setup();
+  const { container } = render(<DetalheConversa id="c1" />);
+  await screen.findByTestId("transcricao");
+  await usuario.click(screen.getByRole("button", { name: /como o lead viu/i }));
+
+  await screen.findByTestId("vista-lead");
+  expect(container.querySelector("textarea")).toBeNull();
+  expect(container.querySelector('input[type="text"]')).toBeNull();
+  expect(screen.queryByRole("button", { name: /enviar/i })).toBeNull();
+});

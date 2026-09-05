@@ -126,7 +126,17 @@ it("o push recarrega do backend, não monta o item a partir do frame", async () 
   expect(srv.chamadas("/api/handoffs")).toBe(antes + 1);
 });
 
-it("cada item leva à conversa de origem — e não ao /chat", async () => {
+it("cada item leva à conversa de origem, numa rota VIVA — e não ao /chat", async () => {
+  /*
+   * Este teste travava `/admin/conversas/c7`, que já não existia: o mapa de rotas
+   * antigas casa por igualdade, então a rota SEM id abria e a rota COM id — a única
+   * que aparece num link real — caía no fallback e mostrava o Painel. O teste ficou
+   * verde o tempo inteiro porque conferia a string do `href`, e não se o destino
+   * levava a algum lugar.
+   *
+   * A asserção agora é sobre a rota viva, e há um segundo teste, no `console`,
+   * exigindo que o legado com id continue resolvendo.
+   */
   montarBackendFalso({
     handoffs: {
       pendentes: 1,
@@ -138,7 +148,7 @@ it("cada item leva à conversa de origem — e não ao /chat", async () => {
   const { container } = render(<PaginaHandoffs />);
   expect(await screen.findByRole("link", { name: /c7/ })).toHaveAttribute(
     "href",
-    "/admin/conversas/c7",
+    "/historico/c7",
   );
   expect(container.querySelectorAll('a[href^="/chat"]')).toHaveLength(0);
 });

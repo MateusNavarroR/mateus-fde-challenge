@@ -114,9 +114,11 @@ Paralelismo quebra o determinismo.
 
 ## Decisões fechadas (não reabrir)
 
-- Backend **FastAPI + Agno + Postgres**. Frontend **React**: `/chat`,
-  `/admin/conversas`, `/admin/status`, `/admin/handoffs`, mais o painel de custo.
-  Criação com `/frontend-design`, revisão com `/impeccable`.
+- Backend **FastAPI + Agno + Postgres**. Frontend **React**: `/painel`, `/historico`,
+  `/simulador`, `/handoffs`, `/status`, mais o painel de custo dentro de `/status`.
+  As rotas antigas (`/chat`, `/admin`, `/admin/conversas`, `/admin/status`,
+  `/admin/handoffs`) continuam resolvendo, redirecionadas — um link já compartilhado
+  não quebra. Criação com `/frontend-design`, revisão com `/impeccable`.
 - Multiprovider por **model-string do Agno** (`LLM_MODEL="anthropic:..."`,
   `"ollama:qwen2.5:7b"`). Forma-classe só onde a string não expõe o necessário
   (prompt caching da Anthropic, `http_client`).
@@ -188,6 +190,10 @@ Paralelismo quebra o determinismo.
 
 - Fatias verticais, cada uma rodando ao final. Cada fatia é sessão nova, começando por
   ler este arquivo e o plano dela.
+- Para o mapa de módulos, os contratos internos e os diagramas de fluxo (mensagem,
+  job de cotação, resiliência, handoff, dados), `docs/ARQUITETURA.md` — revisado
+  contra o código, não contra a intenção. Comece por lá antes de navegar `app/` às
+  cegas.
 - Ao final de cada fatia: o que ficou pronto, o comando que provou isso e a saída, e o
   que ficou de fora.
 - Antes de implementar uma frente, existe uma **spec aprovada** e um **plano** em

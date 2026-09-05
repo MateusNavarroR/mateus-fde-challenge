@@ -72,12 +72,19 @@ export function App() {
   // As rotas antigas continuam funcionando. Elas estão em transcripts commitados, no
   // README e em links que alguém já pode ter guardado — quebrar um link para renomear
   // uma rota é custo sem benefício.
-  const destino = LEGADO[rota] ?? rota;
+  const destino = resolverLegado(rota);
   if (destino !== rota) {
     history.replaceState(null, "", destino);
   }
 
   if (destino === "/entrar") {
+    // A guarda de "ainda não sei" vem ANTES da decisão, e faltava aqui. Sem ela,
+    // `barrado` é falso no primeiro render — o estado ainda não chegou — e `/entrar`
+    // pintava o Painel inteiro, com traços no lugar dos números e dois 401 no
+    // console, antes de trocar pelo login. É o mesmo flash que a guarda das seções
+    // existe para evitar, na direção contrária: lá era o login piscando numa
+    // instalação aberta, aqui é a operação piscando para quem não entrou.
+    if (auth.situacao === "desconhecido") return <Aguardando />;
     // Já entrou (ou a instalação é aberta): o balcão não tem por que existir.
     return barrado ? <Login /> : <Operacao rota="/painel" />;
   }
@@ -104,6 +111,32 @@ const LEGADO: Record<string, string> = {
   "/admin/status": "/status",
   "/admin/handoffs": "/handoffs",
 };
+
+/**
+ * Resolve uma rota antiga, **inclusive quando ela leva um id atrás**.
+ *
+ * O `LEGADO` sozinho é um mapa de igualdade, e por isso `/admin/conversas` abria e
+ * `/admin/conversas/conv_x` não: a rota com id não casava nenhuma entrada, não casava
+ * nenhuma seção, e caía no fallback — o Painel. Quem clicava no id de um handoff para
+ * ver a conversa era mandado de volta ao começo, sem erro nem explicação. O comentário
+ * acima já prometia que "as rotas antigas continuam funcionando"; ele valia para as
+ * cinco sem sufixo e para nenhuma das que de fato apareciam num link real.
+ */
+function resolverLegado(rota: string): string {
+  const exata = LEGADO[rota];
+  if (exata !== undefined) return exata;
+  // O prefixo MAIS LONGO vence, e não o primeiro que casa. `/admin/conversas/conv_x`
+  // começa com `/admin` e com `/admin/conversas`; pela ordem de inserção o primeiro
+  // ganhava e a rota virava `/painel/conversas/conv_x`, que também não existe —
+  // trocando um destino errado por outro. Um teste pegou.
+  let melhor: string | null = null;
+  for (const antiga of Object.keys(LEGADO)) {
+    if (rota.startsWith(`${antiga}/`) && (melhor === null || antiga.length > melhor.length)) {
+      melhor = antiga;
+    }
+  }
+  return melhor === null ? rota : LEGADO[melhor] + rota.slice(melhor.length);
+}
 
 /**
  * A casca com a guia lateral, e o que ela mostra em cada seção.

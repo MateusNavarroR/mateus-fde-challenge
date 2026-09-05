@@ -123,7 +123,7 @@ export function PaginaHandoffs() {
             <span className="selo selo--neutro" data-testid="disparado-por">
               {ORIGEM[h.disparado_por] ?? h.disparado_por}
             </span>
-            <a href={`/admin/conversas/${h.conversation_id}`}>{h.conversation_id}</a>
+            <a href={`/historico/${h.conversation_id}`}>{h.conversation_id}</a>
             <span className="rotulo">{instante(h.criado_em)}</span>
           </div>
 

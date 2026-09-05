@@ -4,6 +4,7 @@ import { expect, it } from "vitest";
 import { App } from "../../../web/src/App";
 import { ROTAS_AUTENTICACAO } from "../../../web/src/api/cliente";
 import { montarBackendFalso } from "../fakes/backend-falso";
+import { _reiniciarAutenticacao } from "../../../web/src/ui/useAutenticacao";
 
 /**
  * A entrada e o balcão da 2ª via.
@@ -204,8 +205,10 @@ it("a tela diz o que fazer quando não há login: não há recuperação de senh
   // e no rodapé que explica o que acontece sem ela. As duas são intencionais.
   expect((await screen.findAllByText(/ADMIN_USER/)).length).toBeGreaterThan(0);
   expect(screen.queryByRole("link", { name: /esqueci/i })).toBeNull();
-  // E o balcão não é um beco: dá para voltar à 1ª via.
-  expect(screen.getByRole("link", { name: /1ª via/i })).toHaveAttribute("href", "/chat");
+  // E o balcão não é um beco: o chat simulado é público e a tela diz isso.
+  expect(screen.getByRole("link", { name: /chat simulado/i })).toHaveAttribute(
+    "href", "/simulador",
+  );
 });
 
 it("as rotas de autenticação são exatamente três e saem do mesmo inventário", () => {
@@ -215,4 +218,17 @@ it("as rotas de autenticação são exatamente três e saem do mesmo inventário
   for (const fn of Object.values(ROTAS_AUTENTICACAO)) {
     expect(fn()).toMatch(/^\/api\/auth\//);
   }
+});
+
+it("/entrar não pisca a operação antes de saber se há sessão", async () => {
+  // `barrado` é falso enquanto o estado é `desconhecido`, então sem a guarda o
+  // `/entrar` pintava o Painel — com traços no lugar dos números e dois 401 no
+  // console — para só então trocar pelo login.
+  _reiniciarAutenticacao();
+  montarBackendFalso({ auth: { usuario: "op", senha: "segredo", autenticado: false } });
+  history.replaceState(null, "", "/entrar");
+  render(<App />);
+
+  expect(screen.queryByRole("heading", { name: /^painel$/i })).toBeNull();
+  expect(await screen.findByRole("button", { name: /entrar/i })).toBeVisible();
 });

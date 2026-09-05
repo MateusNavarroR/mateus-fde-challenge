@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { ErroApi, api } from "../api/cliente";
 import { reconsultarAutenticacao } from "./useAutenticacao";
+import { SECOES } from "./Console";
 
 /**
  * A porta da 2ª via.
@@ -84,13 +85,29 @@ export function Login({ destino = "/admin/conversas" }: { destino?: string }) {
             tela — o que ela comunica já está dito em texto logo abaixo. */}
         <div className="login__picote" aria-hidden="true" />
 
-        <p className="capa__ordinal login__ordinal">2ª via · registro</p>
+        <p className="capa__ordinal login__ordinal">controle de acesso · operação</p>
         <h2 className="login__titulo">Requisição de acesso ao arquivo</h2>
         <p className="capa__linha">
           Esta instalação pede credencial para a área de operação. Ela é a{" "}
           <code>ADMIN_USER</code> e a <code>ADMIN_PASSWORD</code> definidas no ambiente
           de quem subiu o serviço.
         </p>
+
+        {/* O que existe atrás da porta, nomeado antes de ela abrir. Uma tela de login
+            que só diz "entre" obriga quem chega a adivinhar se vale a pena procurar a
+            credencial — e aqui quem chega é um avaliador com pressa. Os ordinais são
+            os mesmos da guia lateral, lidos da MESMA constante: a lista ensina a
+            navegação que ele encontra do outro lado, e não pode divergir dela. */}
+        <ol className="login__secoes">
+          {SECOES.map((secao) => (
+            <li key={secao.href} className="login__secao">
+              <span className="login__romano" aria-hidden="true">{secao.ordinal}</span>
+              <span>
+                <strong>{secao.nome}</strong> — {secao.linha}
+              </span>
+            </li>
+          ))}
+        </ol>
 
         <form className="login__form" onSubmit={enviar} noValidate>
           <span className="campo">
@@ -143,7 +160,8 @@ export function Login({ destino = "/admin/conversas" }: { destino?: string }) {
           Não há cadastro nem recuperação de senha: a credencial vive no ambiente do
           serviço. Sem <code>ADMIN_USER</code> e <code>ADMIN_PASSWORD</code> definidas,
           esta tela não existe e a operação abre direto.{" "}
-          <a href="/chat">Voltar para a 1ª via</a>.
+          <a href="/simulador">O chat simulado é público</a> e não pede credencial: é a
+          conversa do lead, e um lead não faz login para pedir cotação.
         </p>
       </div>
     </div>

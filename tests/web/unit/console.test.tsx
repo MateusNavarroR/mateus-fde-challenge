@@ -14,6 +14,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { Console, SECOES } from "../../../web/src/ui/Console";
+import { App } from "../../../web/src/App";
 import { montarBackendFalso } from "../fakes/backend-falso";
 
 const CHAVE_COLAPSO = "autoseguro.barra_colapsada";
@@ -132,4 +133,19 @@ it("NÃO existe deep link de uma conversa para o simulador (decisão fechada §8
     (a) => (a.getAttribute("href") ?? "").length > "/simulador".length,
   );
   expect(comId).toHaveLength(0);
+});
+
+/*
+ * As rotas antigas COM id. O mapa de legado casa por igualdade, e por isso
+ * `/admin/conversas` abria enquanto `/admin/conversas/conv_x` — a única forma que de
+ * fato aparecia num link, o do handoff para a sua conversa — não casava nada, não era
+ * seção, e caía no fallback: o Painel. Quem clicava era mandado de volta ao começo,
+ * sem erro e sem explicação.
+ */
+it("uma rota antiga COM id resolve para a nova, e não para o Painel", async () => {
+  montarBackendFalso({});
+  history.replaceState(null, "", "/admin/conversas/conv_x");
+  render(<App />);
+  await screen.findByRole("navigation", { name: /seções/i });
+  expect(location.pathname).toBe("/historico/conv_x");
 });

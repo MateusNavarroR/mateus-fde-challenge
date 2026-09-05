@@ -6,7 +6,8 @@ conversa: é **o que o agente faz quando a `/quote` não responde** e **como ele
 um número que não veio da API**.
 
 Este README é sobre as decisões e o porquê de cada uma. O mapa de módulos, os contratos
-internos e as invariantes de implementação estão em `docs/ARQUITETURA.md`.  ⚠️ *ainda não escrito — ver `<!-- PREENCHER NO FIM -->`*
+internos, os diagramas revisados contra o código e as invariantes de implementação
+estão em `docs/ARQUITETURA.md`.
 
 ---
 
@@ -253,7 +254,7 @@ avaliação depende do canal; ambos exigiriam credenciais e webhook público que
 o repositório não tem; e o tempo foi investido no que é avaliado — resiliência da
 `/quote`, critério de encaminhamento e rastreabilidade.
 
-A porta está documentada em `docs/ARQUITETURA.md`. Um adaptador da Cloud API  ⚠️ *ainda não escrito — ver `<!-- PREENCHER NO FIM -->`*
+A porta está documentada em `docs/ARQUITETURA.md` §7. Um adaptador da Cloud API
 implementaria `send`/`receive` sobre webhook, com validação de assinatura, deduplicação
 por id de mensagem e a janela de 24 horas. Um adaptador Baileys, sobre socket persistente
 — este com a ressalva de ser não-oficial e fora dos termos de uso do WhatsApp.
@@ -715,7 +716,7 @@ também não há visualização de mídia.
 
 | Documento | O que tem |
 |---|---|
-| `docs/ARQUITETURA.md` | mapa de módulos, contratos internos, invariantes de implementação |  ⚠️ *ainda não escrito — ver `<!-- PREENCHER NO FIM -->`*
+| `docs/ARQUITETURA.md` | mapa de módulos, contratos internos, invariantes de implementação, e os cinco diagramas Mermaid revisados contra o código |
 | `docs/API-COTACAO.md` | o mapeamento medido da `/quote`: bancada, taxonomia de erro, regras de preço, o dataset conferido contra elas |
 | `docs/POLITICA-RESILIENCIA.md` | a política técnica completa, com a medição que justifica cada parâmetro |
 | `docs/DECISOES-FECHADAS.md` | o contrato de comportamento |
