@@ -9,6 +9,7 @@ Fonte das medições: `docs/API-COTACAO.md` e `docs/POLITICA-RESILIENCIA.md`.
 
 from __future__ import annotations
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +29,10 @@ class Settings(BaseSettings):
     #: Opcional e exigido quando definido (CLAUDE.md 14c). Ausente por padrão para que
     #: o caminho de um comando não mude; presente, dá ao passe de segurança uma
     #: resposta em código em vez de "risco aceito" em prosa.
+    #:
+    #: **Vazio é ausente.** Ver o validador abaixo — no shell e no compose não existe
+    #: diferença entre "não defini" e `ADMIN_TOKEN=`, e tratar as duas coisas
+    #: diferente foi o que quebrou o caminho padrão.
     admin_token: str | None = None
 
     # ─── cliente da /quote ───────────────────────────────────────────────────
@@ -85,6 +90,27 @@ class Settings(BaseSettings):
     #: demora do modelo é anômala, não projetada: 6,5 s ainda é latência plausível e
     #: avisar ali produziria "só um instante" seguido da resposta 0,2 s depois.
     aviso_sem_cotacao_s: float = 10.0
+
+    @field_validator("admin_token", mode="after")
+    @classmethod
+    def _vazio_e_ausente(cls, v: str | None) -> str | None:
+        """`ADMIN_TOKEN=` (vazio) significa **não configurado**, e não "token vazio".
+
+        Sem isto, o `docker-compose.yml` — que passa `${ADMIN_TOKEN:-}` e portanto
+        injeta string vazia quando a variável não existe — ligava a exigência de
+        token com um token vazio. Medido no caminho padrão de um comando:
+
+        - `GET /api/handoffs` sem cabeçalho → **200**, porque `exigir_admin` compara
+          `"" == ""` e considera o token válido;
+        - `WS /api/events` sem query → **403**, porque ali a comparação era contra
+          `None` e o ausente não vira `""`;
+        - `WS /api/events?token=` → **101**.
+
+        Ou seja: uma proteção que quebrava o tempo real do admin e não protegia nada,
+        já que `?token=` vazio abria. A normalização é na origem porque o defeito não
+        era de nenhum dos dois consumidores — era do valor.
+        """
+        return v.strip() or None if v is not None else None
 
     @property
     def admin_exigido(self) -> bool:

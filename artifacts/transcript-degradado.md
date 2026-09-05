@@ -26,8 +26,8 @@ sequência exata de requisições)* — a seed sozinha não basta.
 
 O disparo é de dentro da tool de propósito: um watchdog na camada de conversa dispararia **durante** a geração do modelo e produziria «só um instante» seguido da resposta 0,2 s depois. Para a demora que não é da cotação existe um segundo relógio, aos 10 s, na camada de conversa.
 
-- Conversa: `conv_cc22b8da36ec44c0`
-- Gerado em: 2026-09-05T03:54:27+00:00
+- Conversa: `conv_6f9613cc5df5473a`
+- Gerado em: 2026-09-05T05:33:01+00:00
 - `[+Xs]` é o tempo desde o início da conversa; `Δ` é o tempo desde a mensagem do
   lead naquele turno — é a coluna que a política de espera governa.
 
@@ -35,41 +35,45 @@ O disparo é de dentro da tool de propósito: um watchdog na camada de conversa 
 
 ```
 [  +0.0s]           lead     Oi, queria fazer um seguro pro meu carro
-[  +2.7s]  Δ +2.7s  agente   Opa, tudo bem? Posso te ajudar sim.
+[  +5.5s]  Δ +5.5s  agente   Oi! Bem-vindo à AutoSeguro 😊
                              
-                             Pra começar, me passa a idade do condutor principal e o ano do carro?
-[  +2.7s]           lead     e um Onix 2019
-[  +5.8s]  Δ +3.1s  agente   Boa, Onix 2019 anotado.
+                             Pra te passar o valor certinho preciso de umas informações rápidas.
                              
-                             E a idade do condutor principal, qual é?
-[  +5.8s]           lead     tenho 28 anos, cep [CEP]
-[ +10.1s]  Δ +4.3s  agente   Show, 28 anos e CEP [CEP] registrados.
+                             Começando: qual a sua idade e o ano do carro?
+[  +5.5s]           lead     e um Onix 2019
+[ +10.3s]  Δ +4.8s  agente   Boa, Onix 2019 anotado.
                              
-                             Falta pouco: a partir de quando você quer que o seguro comece? E qual plano te interessa?
+                             E a sua idade? Me passa também o CEP de onde o carro costuma dormir.
+[ +10.3s]           lead     tenho 28 anos, cep [CEP]
+[ +16.0s]  Δ +5.7s  agente   Perfeito, tudo anotado.
                              
+                             Faltam só duas coisas:
+                             
+                             1) Quando você quer que o seguro comece a valer?
+                             2) Qual plano te interessa?
                              - **Essencial**: colisão, roubo e furto
                              - **Completo**: tudo do Essencial + terceiros e vidros
                              - **Premium**: tudo do Completo + carro reserva e assistência 24h (é o de menor franquia)
-[ +10.1s]           lead     qual a diferença dos planos?
-[ +17.4s]  Δ +7.3s  agente   A diferença é o que cada um cobre:
+[ +16.0s]           lead     qual a diferença dos planos?
+[ +23.9s]  Δ +7.9s  agente   Boa pergunta! Vou pelo que cada um cobre:
                              
-                             **Essencial** — o básico: colisão, roubo e furto. Se bater ou levarem o carro, tá coberto. Mas se você bater em outro carro, o prejuízo do outro é por sua conta.
+                             **Essencial** — o básico bem coberto: colisão, roubo e furto. Protege o seu carro, mas não cobre dano que você cause em terceiros nem vidros.
                              
-                             **Completo** — tudo do Essencial + danos a terceiros (o carro do outro) e vidros (para-brisa, vidro lateral, farol). É o mais escolhido, porque parabrisa trincado é o que mais acontece no dia a dia.
+                             **Completo** — tudo do Essencial + **danos a terceiros** (se você bater em outro carro ou machucar alguém) e **vidros** (para-brisa, vidros laterais, retrovisores, faróis). É o mais escolhido, porque para-brisa trincado é bem comum.
                              
-                             **Premium** — tudo do Completo + carro reserva enquanto o seu tá na oficina e assistência 24h (guincho, chaveiro, pane seca). É também o de menor franquia — franquia é a parte que você paga do conserto quando aciona o seguro. Quanto menor, menos sai do seu bolso na hora do sinistro.
+                             **Premium** — tudo do Completo + **carro reserva** (você não fica a pé enquanto o seu está na oficina) e **assistência 24h** (guincho, pane seca, chaveiro, bateria). É também o de **menor franquia** dos três — franquia é aquela parte que você paga do próprio bolso quando aciona o conserto.
                              
-                             Resumindo: o Essencial protege o seu carro, o Completo protege você de terceiros também, e o Premium te dá o suporte pra não ficar a pé.
+                             Resumindo: quanto mais completo o plano, menor a franquia e mais situação coberta.
                              
-                             Qual faz mais sentido pro seu uso? E pra quando você quer começar?
-[ +17.4s]           lead     quero o completo mesmo
-[ +20.7s]  Δ +3.3s  agente   Fechado, Completo anotado.
+                             Qual faz mais sentido pra você? E me diz também a data que você quer que comece a valer.
+[ +23.9s]           lead     quero o completo mesmo
+[ +27.8s]  Δ +3.9s  agente   Fechado, Completo então.
                              
-                             Só falta uma coisa: a partir de quando você quer que a cobertura comece? Pode ser já a partir de amanhã, ou você prefere outra data?
-[ +20.7s]           lead     pode começar dia 17 de outubro
-[ +26.7s]  Δ +6.0s  sistema  Tô buscando o valor no sistema e ele tá lento agora. Já te trago, tá?
-[ +40.7s]  Δ+20.0s  sistema  Ainda tô aqui, viu? O sistema não me devolveu ainda. Assim que sair eu te mando.
-[ +61.1s]  Δ+40.4s  sistema  Não consegui confirmar o valor agora: o sistema de cotação não respondeu. Não vou te passar um número sem ter certeza dele.
+                             Só falta a data: quando você quer que a cobertura comece a valer?
+[ +27.8s]           lead     pode começar dia 17 de outubro
+[ +33.8s]  Δ +6.0s  sistema  Tô buscando o valor no sistema e ele tá lento agora. Já te trago, tá?
+[ +47.8s]  Δ+20.0s  sistema  Ainda tô aqui, viu? O sistema não me devolveu ainda. Assim que sair eu te mando.
+[ +68.0s]  Δ+40.2s  sistema  Não consegui confirmar o valor agora: o sistema de cotação não respondeu. Não vou te passar um número sem ter certeza dele.
                              
                              Já passei sua conversa pra um atendente da equipe, com tudo que a gente conversou. A equipe assume daqui.
 ```
@@ -101,15 +105,15 @@ O disparo é de dentro da tool de propósito: um watchdog na camada de conversa 
 
 | quote_id | status | prêmio | outcome | latência |
 |---|---|---|---|---|
-| `q_d1baf4ffa4d5479f` | `failed` | — | `timeout` | 36083 ms |
+| `q_2941687c1b77401a` | `failed` | — | `timeout` | 36099 ms |
 
-#### Tentativas de `q_d1baf4ffa4d5479f`
+#### Tentativas de `q_2941687c1b77401a`
 
 | # | HTTP | outcome | latência |
 |---|---|---|---|
-| 1 | — (sem resposta) | `timeout` | 12022 ms |
-| 2 | — (sem resposta) | `timeout` | 12042 ms |
-| 3 | — (sem resposta) | `timeout` | 12019 ms |
+| 1 | — (sem resposta) | `timeout` | 12021 ms |
+| 2 | — (sem resposta) | `timeout` | 12035 ms |
+| 3 | — (sem resposta) | `timeout` | 12043 ms |
 
 ### Handoff
 

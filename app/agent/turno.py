@@ -107,7 +107,18 @@ async def responder(
                 )
             return
 
+        # O COMMIT é parte do gravar, e não uma formalidade.
+        #
+        # `gravar_turn_usage` faz `flush`, não `commit`. Todo caminho de saída daqui
+        # para baixo que NÃO envia mensagem própria — `ja_enviou`, saída vazia — sai
+        # da sessão sem commitar, e o `flush` volta atrás no rollback do
+        # `with fabrica() as s`. Efeito medido na vistoria: uma conversa de 2 turnos
+        # tinha 1 linha em `turn_usage`, e a que faltava era a do turno da COTAÇÃO.
+        #
+        # Ou seja, o painel de custo perdia exatamente os turnos com tool call — os
+        # mais caros — e o número de C7 saía sistematicamente subestimado.
         _gravar_uso(s, conversation_id, r)
+        s.commit()
 
         if await _encaminhar(s, conversation_id, ctx, texto, enviar_async):
             return
@@ -174,12 +185,22 @@ async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) ->
         motivo, secundarios, origem = do_modelo["reason"], [], "modelo"
         quote_id, resumo = do_modelo.get("quote_id"), do_modelo.get("summary")
 
-    gatilhos.registrar(
+    handoff = gatilhos.registrar(
         s, conversation_id, trigger, motivo,
         secundarios=secundarios, summary=resumo, quote_id=quote_id,
         disparado_por=origem,
     )
     s.commit()
+
+    # É este push que faz a fila do admin ganhar o caso SEM recarregar — que é o que
+    # a tela de handoffs promete por escrito. Antes, `publicar_evento` não era
+    # chamada em lugar nenhum: o cliente assinava, o servidor aceitava a conexão, e
+    # nada nunca era enviado.
+    from app.channels.web import publicar_evento
+
+    await publicar_evento("handoff.created", {
+        "id": handoff.id, "conversation_id": conversation_id, "trigger": str(trigger),
+    })
 
     # A mensagem de indisponibilidade já saiu de dentro da tool de cotação;
     # repeti-la aqui seria dizer duas vezes a mesma coisa ao lead.

@@ -79,11 +79,28 @@ export function PaginaConversas() {
         </span>
       </div>
 
+      {/*
+        Dois vazios diferentes, e confundi-los foi um achado da vistoria: com 14
+        conversas no banco e o filtro em `fechado`, a tela dizia "o banco está no ar e
+        VAZIO" e mandava abrir o `/chat` para criar uma. O próximo passo certo era
+        limpar o filtro, e a tela apontava para o lado oposto.
+
+        "Nenhum resultado" e "nenhum dado" pedem ações contrárias. Quem está filtrando
+        sabe que filtrou; o que ele não sabe é que o filtro é a causa.
+      */}
       {linhas.length === 0 && !carregando ? (
-        <Vazio titulo="Nenhuma conversa ainda">
-          O banco está no ar e vazio. Abra <code>/chat</code>, mande uma mensagem, e ela
-          aparece aqui com id, estado e o desfecho da cotação.
-        </Vazio>
+        estado ? (
+          <Vazio titulo={`Nenhuma conversa em «${estado}»`}>
+            O filtro está ativo e nada casou com ele. Volte para{" "}
+            <strong>todos</strong> para ver a lista inteira — pode haver conversas em
+            outros estados.
+          </Vazio>
+        ) : (
+          <Vazio titulo="Nenhuma conversa ainda">
+            O banco está no ar e vazio. Abra <code>/chat</code>, mande uma mensagem, e
+            ela aparece aqui com id, estado e o desfecho da cotação.
+          </Vazio>
+        )
       ) : (
         <table className="tabela" role="table">
           <thead>

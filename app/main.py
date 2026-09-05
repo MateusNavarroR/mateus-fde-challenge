@@ -60,6 +60,14 @@ async def lifespan(app: FastAPI):
     # Deriva o hash da senha e apaga o texto puro do processo. Antes do primeiro
     # request, para que nenhuma rota veja o ambiente com a senha ainda nele.
     redefinir_credenciais()
+
+    # O laço do servidor, para que uma rota síncrona consiga empurrar evento.
+    import asyncio as _asyncio
+
+    from app.channels import web as _web
+
+    _web.registrar_laco(_asyncio.get_running_loop())
+
     aviso = aviso_de_boot()
     if aviso:
         log.warning(aviso)
@@ -199,8 +207,14 @@ def listar_handoffs(status: str | None = None, limit: int = 50,
 def atualizar_handoff(handoff_id: str, corpo: dict, s: Session = Depends(sessao),
                       _: None = Depends(exigir_admin)):
     from app.api.montagem import transicionar_handoff
+    from app.channels.web import publicar_sync
 
-    return transicionar_handoff(s, handoff_id, corpo.get("status"))
+    resultado = transicionar_handoff(s, handoff_id, corpo.get("status"))
+    # Sem isto a fila e a badge de pendentes de QUALQUER outro operador continuam
+    # mostrando o item como pendente até alguém recarregar a página — dois
+    # operadores assumindo o mesmo caso é o resultado.
+    publicar_sync("handoff.updated", {"id": handoff_id})
+    return resultado
 
 
 # ─── websockets ──────────────────────────────────────────────────────────────

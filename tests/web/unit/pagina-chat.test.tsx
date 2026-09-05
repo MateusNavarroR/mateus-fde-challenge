@@ -101,6 +101,17 @@ it("o bloco da cotação preserva o texto do renderer e não formata número", a
   expect(cotacao).toHaveAttribute("data-quote-id", "q1");
   expect(cotacao).toHaveTextContent("R$ 392,25/mês");
   expect(cotacao).toHaveTextContent(/30 dias/);
+
+  // A ênfase do template é estilo WhatsApp (`*assim*`), porque o canal imita o
+  // WhatsApp. Achado na vistoria: o bloco renderizava a linha crua e o lead lia
+  // `*Completo — R$ 392,25/mês*` COM os asteriscos — na linha mais importante do
+  // produto. Este teste passava porque `toHaveTextContent` ignora os marcadores.
+  expect(cotacao.textContent).not.toMatch(/\*/);
+  expect(cotacao.querySelector("em")).toHaveTextContent("Completo — R$ 392,25/mês");
+
+  // E o número segue sem ser reformatado: o valor é byte a byte o do renderer.
+  expect(cotacao).toHaveTextContent("392,25");
+  expect(cotacao).not.toHaveTextContent("392.25");
   // Bloco com cotação vinculada não é marcado como bug.
   expect(screen.queryByTestId("marca-bug")).toBeNull();
 });

@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 import { Admin } from "../../../web/src/admin/Admin";
 import { montarBackendFalso } from "../fakes/backend-falso";
@@ -39,4 +40,25 @@ it.each([
   const raiz = container.firstElementChild as HTMLElement;
   // Piso, não teto: o jsdom não faz layout. O Playwright confere no navegador.
   expect(raiz.scrollWidth).toBeLessThanOrEqual(raiz.clientWidth);
+});
+
+it("filtro sem resultado NÃO diz que o banco está vazio", async () => {
+  // Achado na vistoria: com 14 conversas no banco e o filtro em `fechado`, a tela
+  // dizia "o banco está no ar e vazio" e mandava abrir o /chat para criar uma
+  // conversa. O próximo passo certo era limpar o filtro, e a tela apontava para o
+  // lado oposto — a pergunta 3 da vistoria ("algum estado vazio deixa de explicar o
+  // que fazer?") falhando.
+  const usuario = userEvent.setup();
+  montarBackendFalso({ tudoVazio: true });
+  render(<Admin rota="/admin/conversas" />);
+
+  const vazio = await screen.findByTestId("estado-vazio");
+  expect(vazio).toHaveTextContent(/banco está no ar e vazio/i);
+
+  await usuario.selectOptions(screen.getByLabelText(/estado/i), "fechado");
+
+  const filtrado = await screen.findByTestId("estado-vazio");
+  expect(filtrado).toHaveTextContent(/fechado/);
+  expect(filtrado).toHaveTextContent(/filtro/i);
+  expect(filtrado).not.toHaveTextContent(/banco está no ar e vazio/i);
 });

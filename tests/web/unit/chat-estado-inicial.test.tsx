@@ -7,7 +7,7 @@
  * exatamente como `MIDIA_SEM_TEXTO` ficou inalcançável em produção com o teste
  * verde. Por isso a asserção é feita sobre a TELA montada.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WebSocketFalso } from "../fakes/websocket-falso";
@@ -133,4 +133,31 @@ it("uma mensagem de texto NÃO ganha rótulo de anexo", async () => {
 
   await screen.findByText(/atendente da equipe/i);
   expect(screen.queryByTestId("marca-anexo")).toBeNull();
+});
+
+
+it("a conversa travada oferece a saída JUNTO do campo, não só no topo", async () => {
+  // Achado na vistoria: entrando pela capa — que promete "fale com o agente e peça
+  // uma cotação" — dá para cair numa conversa `encaminhado` de sessão anterior, com
+  // o campo morto. A saída existia, a três centímetros dali e sem relação visual com
+  // o problema. A pergunta 2 da vistoria não falhava (não era beco sem saída), mas a
+  // promessa da capa não batia com o destino.
+  abrirSessao.mockResolvedValue({
+    id: "c1",
+    detalhe: { id: "c1", state: "encaminhado", perfil: {}, quotes: [], handoffs: [],
+               messages: MENSAGENS },
+  });
+  reiniciarSessao.mockResolvedValue("c2");
+
+  const usuario = userEvent.setup();
+  render(<PaginaChat />);
+
+  const aviso = await screen.findByText(/o campo abaixo está travado/i);
+  const acao = within(aviso).getByRole("button", { name: /conversa nova/i });
+
+  await usuario.click(acao);
+
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: /sua mensagem/i })).toBeEnabled();
+  });
 });

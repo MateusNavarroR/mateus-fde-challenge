@@ -177,10 +177,30 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
       </main>
 
       <footer className="chat__rodape">
+        {/*
+          A saída fica AQUI, junto do campo travado, e não só no botão do topo.
+
+          Achado na vistoria: entrando pela capa — que promete "fale com o agente e
+          peça uma cotação" — dá para cair numa conversa `encaminhado` de uma sessão
+          anterior, com o campo morto. A tela explicava o porquê e a saída existia,
+          mas a três centímetros dali e sem relação visual com o problema.
+
+          Não é caso de apagar o histórico ao carregar: a retomada é deliberada, e um
+          F5 no meio de uma janela de 37 s não pode destruir a conversa. O que faltava
+          era a ação estar onde a pessoa está olhando quando descobre que não pode
+          escrever.
+        */}
         {estado.entradaBloqueada ? (
           <p className="chat__travado">
             Já passei sua conversa pra um atendente da equipe. A equipe assume daqui — por
-            isso o campo abaixo está travado.
+            isso o campo abaixo está travado.{" "}
+            <button
+              type="button"
+              className="chat__travado-acao"
+              onClick={trocarDeConversa}
+            >
+              Começar uma conversa nova
+            </button>
           </p>
         ) : null}
         <form

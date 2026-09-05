@@ -47,7 +47,17 @@ function fatiar(linha: string): Trecho[] {
   return trechos;
 }
 
-function Inline({ linha }: { linha: string }): ReactNode {
+/**
+ * Exportado para o `BlocoCotacao`: o bloco de cotação vem do template em
+ * `quote/renderer.py`, que usa ênfase estilo WhatsApp (`*assim*`) porque o canal
+ * imita o WhatsApp. Sem passar por aqui, o lead lia `*Completo — R$ 392,25/mês*`
+ * com os asteriscos — na linha mais importante do produto.
+ *
+ * Reusar isto **não** viola o "este componente não formata número nenhum": `Inline`
+ * converte marcador de ênfase em elemento e não toca em dígito, separador nem
+ * símbolo de moeda.
+ */
+export function Inline({ linha }: { linha: string }): ReactNode {
   return fatiar(linha).map((t, i) => {
     if (t.tipo === "negrito") return <strong key={i}>{t.valor}</strong>;
     if (t.tipo === "italico") return <em key={i}>{t.valor}</em>;

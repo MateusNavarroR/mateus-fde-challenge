@@ -1,3 +1,4 @@
+import { Inline } from "./markdown";
 import type { Mensagem } from "./useConversa";
 
 /**
@@ -7,9 +8,14 @@ import type { Mensagem } from "./useConversa";
  * valor monetário. Formatar moeda aqui abriria uma segunda origem de preço — e o
  * invariante é que o preço nunca vem de outro lugar que não a `/quote`.
  *
- * A tela faz só duas coisas: preserva as quebras de linha e destaca a linha da
- * carência, que já vem marcada do template. A carência é a ressalva que gera
- * reclamação depois se passar batida, então ela tem tratamento próprio.
+ * A tela faz três coisas: preserva as quebras de linha, destaca a linha da carência
+ * — que já vem marcada do template, e é a ressalva que gera reclamação depois se
+ * passar batida — e converte os marcadores de ênfase do template.
+ *
+ * A ênfase é estilo WhatsApp (`*assim*`), porque o canal imita o WhatsApp. Antes de
+ * passar pelo `Inline`, o lead lia `*Completo — R$ 392,25/mês*` com os asteriscos, na
+ * primeira linha do bloco. `Inline` converte marcador em elemento e não toca em
+ * dígito nem em moeda, então a regra acima continua valendo.
  */
 export function BlocoCotacao({ mensagem }: { mensagem: Mensagem }) {
   const linhas = mensagem.conteudo.split("\n");
@@ -31,7 +37,7 @@ export function BlocoCotacao({ mensagem }: { mensagem: Mensagem }) {
         return (
           // A ordem das linhas é fixa e vem do template: o índice é a identidade.
           <p key={`${mensagem.id}-${i}`} className={classe}>
-            {linha}
+            <Inline linha={linha} />
           </p>
         );
       })}

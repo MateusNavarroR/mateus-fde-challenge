@@ -121,6 +121,19 @@ Coisas combinadas com o usuário que não são de nenhuma fatia e não podem se 
 
 ### `/impeccable` com vistoria de navegação por Playwright
 
+> **✅ Vistoria feita.** O percurso inteiro foi percorrido clicando, com estado real, e
+> rendeu **sete achados** — dois deles sérios: `ADMIN_TOKEN` vazio quebrando o tempo
+> real no caminho padrão de um comando, e `turn_usage` perdendo todo turno com tool
+> call. Os sete estão corrigidos, cada um com teste e mutação. Capturas em
+> `artifacts/vistoria/`.
+>
+> **A lição, para a próxima:** cinco dos sete eram invisíveis para a suíte porque ela
+> testava as unidades e não a fiação — `publicar_evento` não era chamada em lugar
+> nenhum e nada acusava; o `avisar=` da tool fechava sobre um nome não vinculado e a
+> exceção morria numa thread de timer. Continua valendo o que o usuário disse: os
+> defeitos aparecem **usando**.
+
+
 Depois das fatias 5 e 6, antes de gerar a evidência definitiva:
 
 1. **Vistoria de navegação pela aplicação de verdade**, com Playwright — não revisão de

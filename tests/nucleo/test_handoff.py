@@ -571,3 +571,69 @@ def test_uma_cotacao_por_turno(sessao, conversa, monkeypatch):
     )
     assert "já cotado neste turno" in resposta
     assert "q_ja_existe" in resposta
+
+
+# ─── o custo do turno sobrevive ao fim do turno ──────────────────────────────
+
+
+async def test_turno_em_que_a_tool_responde_grava_o_custo(sessao, conversa, monkeypatch):
+    """Achado na vistoria: uma conversa de 2 turnos tinha 1 linha em `turn_usage`, e
+    a que faltava era a do turno da COTAÇÃO.
+
+    `gravar_turn_usage` faz `flush`, não `commit`. O caminho `ja_enviou → return`
+    saía da sessão sem commitar e o rollback levava a linha junto. O turno sem tool
+    sobrevivia só porque `enviar_async` commitava depois, por acidente.
+
+    Um teste de `gravar_turn_usage` isolado passaria com o bug presente: ele grava
+    certo. Quem perdia era o TURNO. Por isso a asserção é depois de `responder`, com
+    sessão nova — que é o que prova que a linha atravessou o commit.
+    """
+    from app.agent import runner, turno
+    from app.persistence.db import sessao_factory
+    from app.persistence.models import TurnUsage
+
+    class Metrics:
+        input_tokens, output_tokens = 1234, 567
+        cache_read_tokens, cache_write_tokens = 890, 0
+        duration = 1.5
+
+    class AgenteComTool:
+        """Imita o turno de cotação: a tool fala com o lead e o texto do modelo é
+        descartado — que é o caminho em que a linha sumia."""
+
+        def run(self, _texto):
+            ctx.ja_enviou = True
+            return type("R", (), {"content": "texto que será descartado",
+                                  "metrics": Metrics()})()
+
+    ctx = None
+    original = turno.ContextoDoTurno if hasattr(turno, "ContextoDoTurno") else None
+
+    def construir(c):
+        nonlocal ctx
+        ctx = c
+        return AgenteComTool()
+
+    monkeypatch.setattr(turno, "construir_agente", construir)
+
+    class Canal:
+        name = "web"
+
+        async def send(self, *a, **kw):
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+    await runner.processar_turno_web(conversa.id, "quanto fica?", Canal())
+
+    # Sessão NOVA: é ela que distingue "flushado" de "commitado".
+    with sessao_factory()() as outra:
+        linhas = outra.query(TurnUsage).filter_by(conversation_id=conversa.id).all()
+
+    assert len(linhas) == 1, (
+        "o turno em que a tool respondeu não gravou custo — é o turno com tool "
+        "call, o mais caro, e o painel o perdia"
+    )
+    assert linhas[0].tokens_in == 1234
+    assert linhas[0].cache_read == 890

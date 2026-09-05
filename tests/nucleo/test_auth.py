@@ -481,3 +481,149 @@ def test_as_rotas_escondidas_do_schema_sao_exatamente_as_declaradas():
         "rota fora do OpenAPI congelado sem decisão escrita — acrescente-a ao "
         "contrato ou a esta lista, com o motivo"
     )
+
+
+# ─── ADMIN_TOKEN vazio é ADMIN_TOKEN ausente ─────────────────────────────────
+#
+# Achado na vistoria de navegação, no caminho padrão de um comando. O
+# `docker-compose.yml` passa `${ADMIN_TOKEN:-}`, que injeta STRING VAZIA quando a
+# variável não existe. `admin_exigido` testava `is not None`, então a exigência
+# ligava com um token vazio — e as duas superfícies discordavam sobre o que isso
+# significa, porque uma coage o ausente para `""` e a outra comparava contra `None`.
+#
+# O resultado medido no navegador: pílula vermelha "sem conexão em tempo real" em
+# toda tela do admin numa instalação saudável, socket reconectando para sempre, e
+# nenhuma proteção real — `?token=` vazio abria.
+
+
+@pytest.mark.parametrize("bruto", ["", "   ", "\t"])
+def test_token_vazio_no_ambiente_nao_liga_a_exigencia(bruto):
+    """É o compose que produz este valor, não uma configuração exótica."""
+    from app.config import Settings
+
+    cfg = Settings(admin_token=bruto)
+    assert cfg.admin_token is None
+    assert cfg.admin_exigido is False
+
+
+def test_token_de_verdade_continua_ligando_a_exigencia():
+    """O negativo: normalizar vazio não pode desligar a proteção de quem a quer."""
+    from app.config import Settings
+
+    cfg = Settings(admin_token="  s3gr3d0  ")
+    assert cfg.admin_token == "s3gr3d0", "espaços da borda saem; o valor fica"
+    assert cfg.admin_exigido is True
+
+
+def test_rest_e_websocket_concordam_sobre_o_mesmo_token(cliente, monkeypatch):
+    """A regra que faltava: a MESMA requisição não pode passar numa porta e ser
+    recusada na outra.
+
+    Medido antes da correção, com o token vazio do compose: `GET /api/handoffs` →
+    200 e `WS /api/events` → 403. Um teste por superfície nunca acharia isso; só um
+    teste que compara as duas.
+    """
+    from app.config import get_settings
+
+    cfg = get_settings()
+
+    # ⚠️ O valor CRU, sem `or None`. Escrever `token or None` aqui converteria `""`
+    # em `None` no próprio teste e o faria pular exatamente o caso que ele existe
+    # para cobrir — foi assim que ele nasceu, e passava com o bug presente.
+    for token, esperado_aberto in (("", True), ("s3gr3d0", False)):
+        monkeypatch.setattr(cfg, "admin_token", token)
+
+        rest = cliente.get("/api/handoffs")
+        rest_aberto = rest.status_code != 401
+
+        try:
+            with cliente.websocket_connect("/api/events"):
+                ws_aberto = True
+        except Exception:  # noqa: BLE001
+            ws_aberto = False
+
+        assert rest_aberto == ws_aberto == esperado_aberto, (
+            f"token={token!r}: REST aberto={rest_aberto}, WS aberto={ws_aberto}, "
+            f"esperado={esperado_aberto}"
+        )
+
+
+def test_um_token_vazio_apresentado_nao_abre_o_websocket(cliente, monkeypatch):
+    """`?token=` vazio abria o socket quando a exigência estava ligada com token
+    vazio. Com um token de verdade configurado, apresentar vazio tem de fechar."""
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "admin_token", "s3gr3d0")
+    with pytest.raises(Exception):
+        with cliente.websocket_connect("/api/events?token="):
+            pass
+
+
+# ─── o canal de tempo real tinha assinante e não tinha produtor ──────────────
+
+
+def test_publicar_evento_e_de_fato_chamado_pelo_backend():
+    """`publicar_evento` não era chamada em lugar NENHUM do código.
+
+    O cliente assinava `/api/events`, o servidor aceitava a conexão, e nada era
+    enviado — para sempre. A tela de handoffs anunciava por escrito *"a fila entra em
+    tempo real, sem recarregar a página"*, e a fila nunca entrava.
+
+    Um `grep` é o teste certo aqui: o defeito não era um caminho errado, era a
+    AUSÊNCIA de qualquer chamada. Um teste de comportamento cobriria um produtor de
+    cada vez; este falha no dia em que o último for removido.
+    """
+    raiz = Path(__file__).resolve().parents[2]
+    # `app/channels/web.py` fica FORA da varredura: é onde as duas funções moram, e
+    # `publicar_sync` chama `publicar_evento` internamente. Incluí-lo faria o teste
+    # passar provando que a função chama a si mesma — foi assim que ele nasceu, e
+    # sobreviveu à mutação que removia todos os produtores de verdade.
+    definicao = raiz / "app" / "channels" / "web.py"
+    chamadas = [
+        f"{p.relative_to(raiz)}:{n}"
+        for p in (raiz / "app").rglob("*.py")
+        if p != definicao
+        for n, linha in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+        if ("publicar_evento(" in linha or "publicar_sync(" in linha)
+        and "def " not in linha
+        and "import" not in linha
+    ]
+    assert chamadas, (
+        "nenhum produtor de evento no backend: o push de `/api/events` volta a ser "
+        "uma conexão que nunca recebe nada"
+    )
+
+
+def test_assumir_um_handoff_empurra_para_o_socket(cliente, monkeypatch):
+    """O caminho ponta a ponta: um operador assume, e o socket de QUALQUER outro
+    recebe — que é o que impede dois operadores de pegarem o mesmo caso.
+
+    Também é o que faz a badge de pendentes deste mesmo cliente descer de 7 para 6
+    sem F5: ela mora no `LayoutAdmin`, longe da página que faz a ação, e escuta o
+    push.
+    """
+    import app.main as main
+    from app.channels import web
+
+    empurrados: list[tuple[str, dict]] = []
+    monkeypatch.setattr(web, "publicar_sync",
+                        lambda tipo, dados: empurrados.append((tipo, dados)))
+    monkeypatch.setattr(
+        "app.api.montagem.transicionar_handoff",
+        lambda s, hid, status: {"id": hid, "status": status},
+    )
+    monkeypatch.setattr(main, "sessao", lambda: None, raising=False)
+
+    # O `transicionar_handoff` de mentira não satisfaz o `response_model`, e a
+    # validação da RESPOSTA acontece depois do push. Isto é aceitável aqui porque o
+    # comportamento sob teste é o push: montar um `HandoffOut` completo faria o teste
+    # passar a exercitar `montar_handoffs`, que tem os seus próprios testes.
+    try:
+        cliente.patch("/api/handoffs/ho_1", json={"status": "assumido"})
+    except Exception:  # noqa: BLE001
+        pass
+
+    assert ("handoff.updated", {"id": "ho_1"}) in empurrados, (
+        "assumir um handoff não empurrou nada: a fila e a badge de outro operador "
+        "seguem mostrando o caso como pendente até alguém recarregar"
+    )

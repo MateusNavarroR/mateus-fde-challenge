@@ -189,6 +189,21 @@ implementaria `send`/`receive` sobre webhook, com validação de assinatura, ded
 por id de mensagem e a janela de 24 horas. Um adaptador Baileys, sobre socket persistente
 — este com a ressalva de ser não-oficial e fora dos termos de uso do WhatsApp.
 
+#### O admin recebe em tempo real, e a pílula diz quando não recebe
+
+A fila de handoff e a badge de pendentes entram sem recarregar a página: o backend
+empurra `handoff.created` e `handoff.updated` por um WebSocket em `/api/events`, e a
+tela **invalida e recarrega do endpoint** em vez de montar o item a partir do frame —
+um item montado no cliente diverge do banco na primeira mudança de schema, e o admin
+existe para dizer a verdade sobre o banco.
+
+Isso importa para mais de um operador: sem o push, dois assumem o mesmo caso porque a
+fila de cada um está parada no que era verdade quando a página abriu.
+
+Quando o push cai, a pílula no cabeçalho passa de *"recebendo em tempo real"* para
+*"sem conexão em tempo real"*. **Um admin que perdeu o push e não avisa é pior que um
+admin sem push**, porque o operador passa a confiar numa fila parada.
+
 #### O anexo do chat é sinalização, não upload
 
 A tela de chat aceita anexo, e é preciso ser explícito sobre o que isso significa:
@@ -258,10 +273,42 @@ A diferença importa porque a falha aqui é silenciosa: concatenar o conteúdo v
 invalidaria o prefixo a cada turno, o cache nunca acertaria, e **não haveria erro nenhum**
 — só uma conta mais cara.
 
-A prova está na tabela `turn_usage`: a coluna de leitura de cache passa a ser maior que
-zero a partir do segundo turno, e a comparação com e sem caching está no painel de custo.
-Há também um teste negativo, que existe para que a fragilidade seja visível em vez de
-silenciosa.
+#### O número
+
+A prova está na tabela `turn_usage`, e não em prosa. Uma conversa completa de 6 turnos —
+a mesma de `artifacts/transcript-feliz.md` — medida com `anthropic:claude-opus-5`:
+
+| turno | tokens enviados | lidos do cache | escritos no cache |
+|---|---|---|---|
+| 1 | 155 | **0** | 2.591 |
+| 2 | 534 | 5.182 | 0 |
+| 3 | 877 | 5.182 | 0 |
+| 4 | 667 | 2.591 | 0 |
+| 5 | 2.178 | 5.182 | 0 |
+| 6 | 4.076 | 7.773 | 0 |
+| **total** | **8.487** | **25.910** | 2.591 |
+
+**75,3 % do contexto veio do cache** — 25.910 tokens lidos contra 8.487 enviados
+inteiros. O turno 1 escreve o prefixo e lê zero; **do 2º em diante a leitura nunca é
+zero**, que é exatamente o invariante que a decisão de caching promete e a única forma
+de saber que ele está funcionando: se o bloco volátil fosse concatenado ao prompt, esta
+coluna seria zero em todas as linhas e nada acusaria.
+
+Custo da conversa inteira: **US$ 0,1002**, calculado de `config/model_pricing.yaml` com
+a vigência gravada em cada linha — a Anthropic não popula o campo `cost` do Agno, então
+o cálculo é nosso.
+
+Para conferir na sua máquina, sem abrir o painel:
+
+```sql
+select count(*) as turnos, sum(tokens_in), sum(cache_read),
+       round(100.0*sum(cache_read)/(sum(cache_read)+sum(tokens_in)),1) as pct_do_cache
+from turn_usage where conversation_id = '<a conversa>';
+```
+
+O mesmo número aparece no painel de custo em `/admin/status`, por provider e por
+conversa. Há também um teste negativo, que existe para que a fragilidade seja visível
+em vez de silenciosa.
 
 ### 8. O dataset: tom, objeções e testes de extração — nunca exemplo de cotação
 

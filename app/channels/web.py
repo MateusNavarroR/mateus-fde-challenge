@@ -31,6 +31,7 @@ tentando".
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -92,6 +93,16 @@ _TIPOS = frozenset({"text", "image", "audio", "document"})
 #: Conexões de administração, para o push de `/api/events`.
 _admin: set[WebSocket] = set()
 
+#: O laço do servidor, capturado no boot. Uma rota síncrona roda no threadpool do
+#: AnyIO e não tem laço próprio: `get_event_loop()` de lá devolveria outro laço, ou
+#: nada. Guardar o certo no startup é a única forma de o push sair de uma rota `def`.
+_laco: asyncio.AbstractEventLoop | None = None
+
+
+def registrar_laco(laco: asyncio.AbstractEventLoop) -> None:
+    global _laco
+    _laco = laco
+
 
 async def publicar_evento(tipo: str, dados: dict) -> None:
     """`handoff.created`, `handoff.updated`, `quote.attempt`.
@@ -108,6 +119,25 @@ async def publicar_evento(tipo: str, dados: dict) -> None:
             mortos.append(ws)
     for ws in mortos:
         _admin.discard(ws)
+
+
+def publicar_sync(tipo: str, dados: dict) -> None:
+    """`publicar_evento` a partir de uma rota **síncrona**.
+
+    As rotas de operação são `def`, então correm no threadpool do AnyIO e não têm
+    laço de eventos próprio. `run_coroutine_threadsafe` marshala para o laço do
+    servidor; sem esperar o resultado, porque um push perdido nunca pode atrasar ou
+    derrubar a resposta HTTP que o operador está esperando.
+
+    Falhar aqui é silencioso de propósito: o push é conveniência, e a tela recarrega
+    do endpoint de qualquer forma.
+    """
+    if _laco is None:  # sem servidor rodando: teste de unidade, script
+        return
+    try:
+        asyncio.run_coroutine_threadsafe(publicar_evento(tipo, dados), _laco)
+    except Exception:  # noqa: BLE001  # pragma: no cover
+        log.debug("push perdido; a tela recarrega do endpoint")
 
 
 def registrar_websockets(app: FastAPI) -> None:
@@ -162,7 +192,13 @@ def registrar_websockets(app: FastAPI) -> None:
         cfg = get_settings()
         # O navegador não põe cabeçalho no handshake do WebSocket: quando
         # ADMIN_TOKEN está definido, o token vem por query string.
-        if cfg.admin_exigido and ws.query_params.get("token") != cfg.admin_token:
+        # A MESMA comparação que `exigir_admin` faz no REST: ausente coage para `""`
+        # e o confronto é em tempo constante. Antes, o REST coagia e o WS não, então
+        # a mesma requisição sem token era aceita numa porta e recusada na outra.
+        apresentado = ws.query_params.get("token") or ""
+        if cfg.admin_exigido and not hmac.compare_digest(
+            apresentado.encode("utf-8"), (cfg.admin_token or "").encode("utf-8")
+        ):
             await ws.close(code=4401)
             return
         await ws.accept()
