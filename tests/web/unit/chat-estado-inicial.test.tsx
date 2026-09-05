@@ -17,11 +17,14 @@ const reiniciarSessao = vi.fn();
 /** O histórico local, controlado pelo teste. É o insumo do seletor de conversas. */
 let historico: { id: string; aberta_em: string }[] = [];
 const retomada = vi.fn((id: string) => id);
+const lembrada = vi.fn();
 vi.mock("../../../web/src/chat/sessao", () => ({
   abrirSessao: () => abrirSessao(),
   reiniciarSessao: () => reiniciarSessao(),
   historicoLocal: () => historico,
   retomarConversa: (id: string) => retomada(id),
+  lembrarConversa: (id: string, resumo?: string) => lembrada(id, resumo),
+  rotuloDaConversa: (c: { id: string; resumo?: string }) => c.resumo ?? c.id.slice(-6),
   CHAVE: "autoseguro.conversation_id",
 }));
 
@@ -41,6 +44,7 @@ beforeEach(() => {
   vi.stubGlobal("WebSocket", WebSocketFalso);
   historico = [];
   retomada.mockClear();
+  lembrada.mockClear();
 });
 
 afterEach(() => {

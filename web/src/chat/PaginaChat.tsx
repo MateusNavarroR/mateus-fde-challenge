@@ -8,19 +8,11 @@ import type {
 import { Bolha } from "./Bolha";
 import { BlocoCotacao } from "./BlocoCotacao";
 import { Digitando } from "./Digitando";
-import { abrirSessao, historicoLocal, reiniciarSessao, retomarConversa } from "./sessao";
+import {
+  abrirSessao, historicoLocal, lembrarConversa, reiniciarSessao, retomarConversa,
+  rotuloDaConversa,
+} from "./sessao";
 import { useConversa } from "./useConversa";
-
-/** "14:03" para hoje, "05/09" para antes. O id curto ao lado desambigua. */
-function quando(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "anterior";
-  const hoje = new Date();
-  const mesmoDia = d.toDateString() === hoje.toDateString();
-  return mesmoDia
-    ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-    : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-}
 
 const ESTADO_LEGIVEL: Record<string, string> = {
   novo: "conversa aberta",
@@ -91,6 +83,12 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
   const submeter = () => {
     const texto = rascunho.trim();
     if (texto.length === 0) return;
+    // A PRIMEIRA fala do lead vira o nome da conversa na lista. Sem isso o seletor
+    // oferece ids hexadecimais, que não dizem nada a ninguém — e escolher entre dois
+    // deles é adivinhação, não navegação.
+    if (id !== undefined && id !== null && estado.mensagens.every((m) => m.autor !== "lead")) {
+      lembrarConversa(id, texto);
+    }
     enviar(texto);
     setRascunho("");
   };
@@ -181,9 +179,9 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
                 }
               }}
             >
-              {anteriores.map((c, i) => (
+              {anteriores.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {i === 0 ? "mais recente" : quando(c.aberta_em)} · {c.id.slice(-6)}
+                  {rotuloDaConversa(c)}
                 </option>
               ))}
             </select>

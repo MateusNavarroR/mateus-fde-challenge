@@ -65,7 +65,12 @@ function esquecer(): void {
 const CHAVE_HISTORICO = "autoseguro:conversas";
 const LIMITE_HISTORICO = 12;
 
-export type ConversaLocal = { id: string; aberta_em: string };
+export type ConversaLocal = {
+  id: string;
+  aberta_em: string;
+  /** A primeira coisa que o lead disse, cortada. É o que identifica a conversa. */
+  resumo?: string;
+};
 
 export function historicoLocal(): readonly ConversaLocal[] {
   try {
@@ -78,16 +83,48 @@ export function historicoLocal(): readonly ConversaLocal[] {
   }
 }
 
-export function lembrarConversa(id: string): void {
+export function lembrarConversa(id: string, resumo?: string): void {
   try {
-    const atual = historicoLocal().filter((c) => c.id !== id);
-    const nova = [{ id, aberta_em: new Date().toISOString() }, ...atual];
+    const atual = historicoLocal();
+    const ja = atual.find((c) => c.id === id);
+
+    // **A ORDEM NÃO MUDA AO RETOMAR**, e essa é a correção que faltava.
+    //
+    // A primeira versão punha a conversa retomada no topo. O efeito era que a lista
+    // dançava a cada troca: qualquer conversa aberta virava "a mais recente" e as
+    // outras trocavam de lugar. Como o rótulo também era relativo ("mais recente"),
+    // nada identificava nada — e a impressão de quem usava era a de que só dava para
+    // ver a última, porque a que ele acabara de escolher passava a se chamar assim.
+    //
+    // A ordem é a de ABERTURA, e é estável: uma conversa não muda de lugar por ter
+    // sido lida. Só entra no topo quem acabou de nascer.
+    const nova = ja
+      ? atual.map((c) => (c.id === id ? { ...c, resumo: resumo ?? c.resumo } : c))
+      : [{ id, aberta_em: new Date().toISOString(), resumo }, ...atual];
+
     // Teto pequeno de propósito: isto é uma lista de atalhos para exercitar o agente,
     // não um arquivo. O Histórico do admin é quem guarda tudo.
     localStorage.setItem(CHAVE_HISTORICO, JSON.stringify(nova.slice(0, LIMITE_HISTORICO)));
   } catch {
     /* storage bloqueado: o seletor some, a conversa corrente continua funcionando */
   }
+}
+
+/** O rótulo de uma conversa na lista: o que o lead disse, ou a hora e o id curto. */
+export function rotuloDaConversa(c: ConversaLocal): string {
+  const quando = (() => {
+    const d = new Date(c.aberta_em);
+    if (Number.isNaN(d.getTime())) return "";
+    const hoje = new Date();
+    return d.toDateString() === hoje.toDateString()
+      ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  })();
+  // O resumo primeiro: "tenho 30 anos, carro 2012" diz qual conversa é; um id
+  // hexadecimal não diz nada a ninguém, e "mais recente" muda de dono a cada troca.
+  const corte = (c.resumo ?? "").trim().slice(0, 38);
+  const nome = corte.length > 0 ? corte : c.id.slice(-6);
+  return quando.length > 0 ? `${quando} · ${nome}` : nome;
 }
 
 export function esquecerHistoricoLocal(): void {
