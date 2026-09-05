@@ -81,3 +81,49 @@ def test_marcadores_sao_estaveis():
 def test_none_e_vazio_nao_quebram():
     assert mascarar("") == ""
     assert mascarar(None) is None
+
+
+# ─── o detector de credenciais: nos DOIS sentidos ────────────────────────────
+
+
+def test_o_detector_pega_credencial_de_verdade():
+    """Metade da mutação. Sem isto, afrouxar o detector passaria despercebido."""
+    import secrets
+
+    from app.privacy.segredos import achados
+
+    reais = [
+        "ANTHROPIC_API_KEY=sk-ant-api03-" + secrets.token_urlsafe(40),
+        "ADMIN_PASSWORD=" + secrets.token_urlsafe(16),
+        'admin_token: "' + secrets.token_hex(16) + '"',
+        "ghp_" + secrets.token_hex(20),
+    ]
+    for t in reais:
+        assert achados(t), f"credencial passou pelo detector: {t[:40]}…"
+
+
+def test_o_detector_NAO_acusa_a_propria_marca_de_redacao_nem_codigo():
+    """A outra metade, e ela nasceu de um laço real.
+
+    O exportador de sessão redigia o segredo, o portão acusava a marca `<REDIGIDO>`, e
+    a exportação abortava — limpando corretamente e sendo reprovada pela limpeza. Duas
+    causas distintas, as duas de captura:
+
+    1. `APP_ADMIN_TOKEN=<REDIGIDO>}]` capturava o `}]` do JSON em volta, e o valor
+       deixava de casar o placeholder `<...>` por causa do rabo;
+    2. `admin_token  =', repr(c.admin_token))` é um trecho de código Python que uma
+       sessão executou e o log guardou. Segredo não tem parênteses nem `repr`.
+
+    Uma varredura que grita pelo que ela mesma escreveu treina quem a lê a ignorá-la —
+    que é o oposto do que ela existe para fazer.
+    """
+    from app.privacy.segredos import achados
+
+    inocentes = [
+        "APP_ADMIN_TOKEN=<REDIGIDO>}]",
+        "\"admin_token  =', repr(c.admin_token))\\nprint('\"",
+        "ADMIN_TOKEN=<seu-token>",
+        "ADMIN_TOKEN=APP_ADMIN_TOKEN",
+    ]
+    for t in inocentes:
+        assert not achados(t), f"falso positivo: {t[:50]}"

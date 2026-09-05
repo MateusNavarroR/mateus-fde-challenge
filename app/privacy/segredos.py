@@ -42,7 +42,11 @@ _NOMES_ENV = _NOMES.upper()
 #:    própria string já é a credencial.
 CREDENCIAIS = [
     ("literal citado", re.compile(r'(?i)\b' + _NOMES + r'["\']?\s*[:=]\s*(["\'])([^"\'\n]{6,})\1'), 2, False),
-    ("linha de ambiente", re.compile(r"\b[A-Z_]*" + _NOMES_ENV + r"[A-Z_]*[ \t]*=[ \t]*([^\s\"'#\n\\]{6,})"), 1, True),
+    # `}` e `]` fora do valor: numa linha de ambiente de verdade eles não aparecem —
+    # vêm do JSON ou da estrutura em volta. Sem excluí-los, `APP_ADMIN_TOKEN=<REDIGIDO>}]`
+    # capturava `<REDIGIDO>}]`, que deixa de casar o placeholder `<...>` por causa do
+    # rabo, e o portão passava a acusar a própria marca de redação.
+    ("linha de ambiente", re.compile(r"\b[A-Z_]*" + _NOMES_ENV + r"[A-Z_]*[ \t]*=[ \t]*([^\s\"'#\n\\}\]]{6,})"), 1, True),
     ("chave de provider", re.compile(r"\b(sk-[A-Za-z0-9_\-]{16,}|ghp_[A-Za-z0-9]{20,})"), 1, False),
 ]
 
@@ -66,6 +70,12 @@ PLACEHOLDERS = re.compile(
     r"|[A-Z][A-Z0-9_]*"
     r")$"
 )
+
+#: **Código não é valor.** Um trecho de fonte citado dentro de um log casa a forma
+#: "literal citado" — `admin_token  =', repr(c.admin_token))` veio de um `print` que
+#: uma sessão executou, e o portão o leu como credencial. Um segredo não contém
+#: parênteses, quebra de linha escapada nem chamada de função.
+CODIGO = re.compile(r"[()]|\\n|\brepr\b|\bprint\b|=>|->")
 
 #: Limiar de entropia de Shannon, em bits por caractere, para a forma B.
 #:
@@ -100,6 +110,8 @@ def achados(texto: str) -> list[str]:
         for m in padrao.finditer(texto):
             valor = m.group(grupo)
             if PLACEHOLDERS.match(valor):
+                continue
+            if CODIGO.search(valor):
                 continue
             if exige_entropia and not parece_segredo(valor):
                 continue
