@@ -16,6 +16,8 @@ type Config = {
   conversas?: { items: unknown[]; next_cursor?: string | null };
   conversa?: Record<string, unknown>;
   conversaErro?: number;
+  /** `/api/conversations/{id}/traces`. Ausente = conversa sem execução registrada. */
+  traces?: { items: unknown[] };
   status?: Record<string, unknown>;
   usage?: Record<string, unknown>;
   patchErro?: number;
@@ -164,6 +166,11 @@ export function montarBackendFalso(config: Config = {}) {
     }
     if (url.startsWith("/api/usage")) {
       return responder(config.tudoVazio ? USAGE_VAZIO : (config.usage ?? USAGE_VAZIO));
+    }
+    // ANTES do detalhe: `/api/conversations/c1/traces` também casa o regex do
+    // detalhe, e sem esta linha o trace receberia o corpo da conversa.
+    if (/^\/api\/conversations\/[^/]+\/traces/.test(url)) {
+      return responder(config.traces ?? { items: [] });
     }
     if (/^\/api\/conversations\/[^?]/.test(url)) {
       if (config.conversaErro) {

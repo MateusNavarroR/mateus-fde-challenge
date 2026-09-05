@@ -301,3 +301,62 @@ it("as três formas de leitura rolam por dentro, e não esticam a página", asyn
   await usuario.click(screen.getByRole("button", { name: /como o lead viu/i }));
   expect((await screen.findByTestId("vista-lead")).className).toMatch(/chat__thread/);
 });
+
+it("o trace mostra as tools executadas em cada resposta, e o custo do turno", async () => {
+  montarBackendFalso({
+    conversa: {
+      quotes: [], handoffs: [], perfil: {},
+      messages: [
+        { id: "m1", index: 0, autor: "lead", conteudo: "oi", status: "received", tipo: "text", quote_id: null, criado_em: T },
+      ],
+    },
+    traces: {
+      items: [
+        {
+          run_id: "r1", index: 0, status: "COMPLETED", modelo: "claude-opus-5",
+          provider: "Anthropic", tokens_in: 581, tokens_out: 161, cache_read: 5182,
+          duracao_ms: 3642.2,
+          tools: [
+            { nome: "qualify_lead", argumentos: { idade: 23 }, resultado: "Registrado.", duracao_ms: 7.8, erro: false },
+            { nome: "quote_plan", argumentos: { plano_id: "completo" }, resultado: "cotado", duracao_ms: 35.5, erro: false },
+          ],
+        },
+      ],
+    },
+  });
+  const usuario = userEvent.setup();
+  render(<DetalheConversa id="c1" />);
+  await screen.findByTestId("transcricao");
+
+  await usuario.click(screen.getByRole("button", { name: /^trace$/i }));
+
+  const trace = await screen.findByTestId("trace");
+  expect(within(trace).getByText("qualify_lead")).toBeVisible();
+  expect(within(trace).getByText("quote_plan")).toBeVisible();
+  // O custo do turno, ao lado das tools que o produziram — é a junção que nem a
+  // tabela de custo (só o turno) nem a transcrição (só o texto) oferecem.
+  expect(trace).toHaveTextContent(/581 in/);
+  expect(trace).toHaveTextContent(/5\.182 do cache/);
+});
+
+it('cache ausente vira "n/a" no trace, nunca "0"', async () => {
+  // O Ollama não popula `cache_read`. Um zero ali seria uma medição inventada — a
+  // mesma regra que o painel de custo já segue.
+  montarBackendFalso({
+    conversa: { quotes: [], handoffs: [], perfil: {}, messages: [
+      { id: "m1", index: 0, autor: "lead", conteudo: "oi", status: "received", tipo: "text", quote_id: null, criado_em: T },
+    ] },
+    traces: { items: [{
+      run_id: "r1", index: 0, status: "COMPLETED", modelo: "qwen2.5", provider: "Ollama",
+      tokens_in: 10, tokens_out: 5, cache_read: null, duracao_ms: 100, tools: [],
+    }] },
+  });
+  const usuario = userEvent.setup();
+  render(<DetalheConversa id="c1" />);
+  await screen.findByTestId("transcricao");
+  await usuario.click(screen.getByRole("button", { name: /^trace$/i }));
+
+  const trace = await screen.findByTestId("trace");
+  expect(trace).toHaveTextContent(/cache n\/a/);
+  expect(trace).not.toHaveTextContent(/0 do cache/);
+});

@@ -63,6 +63,7 @@ it("nenhuma rota é montada por concatenação solta de string", () => {
       "health",
       "resumo",
       "status",
+      "traces",
       "usage",
       "wsChat",
     ].sort(),

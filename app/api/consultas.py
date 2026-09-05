@@ -207,6 +207,85 @@ def _evals(s: Session) -> dict:
     return {"total": int(linha.total), "passaram": int(linha.passaram)}
 
 
+def traces_da_conversa(s: Session, conversation_id: str) -> list[dict]:
+    """O trace de cada resposta do agente: as tools que ela executou, em ordem.
+
+    **A fonte já existia e ninguém lia.** `ai.agno_runs.run_data` guarda, por resposta,
+    cada `ToolExecution` com nome, argumentos, resultado, duração e erro — e as métricas
+    do turno. Isso é granularidade de CHAMADA, que `turn_usage` (granularidade de turno)
+    não tem: um turno em que o agente qualifica e cota aparece como uma linha só na
+    tabela de custo e como duas execuções distintas aqui.
+
+    Por isso o painel não precisa de OpenTelemetry para responder "o que o agente fez
+    nesta resposta". O `setup_tracing()` do Agno existe e daria spans mais finos, mas
+    custaria três dependências novas — e o item 17 do `CLAUDE.md` diz que nenhuma
+    observabilidade é dependência.
+
+    Tabela do Agno, fora das nossas migrações ⇒ SQL cru, como em `_evals()`, e um
+    `except` que devolve lista vazia: uma instalação que nunca rodou o agente não tem a
+    tabela, e o detalhe da conversa não pode quebrar por causa disso.
+
+    **`tool_args` é MASCARADO na saída, e essa linha é o ponto mais importante daqui.**
+    O Agno grava os argumentos como o modelo os escreveu — com o CEP cru, porque é o
+    que a `/quote` precisa receber. Toda a aplicação mascara PII na escrita
+    (`app/privacy/mascarar.py`); esta tabela é a exceção, porque quem escreve nela é uma
+    dependência, não nós. Servir isso sem mascarar publicaria pela porta dos fundos
+    exatamente o dado que o resto do sistema protege.
+    """
+    from sqlalchemy import text as _sql
+
+    from app.privacy.mascarar import mascarar
+
+    try:
+        linhas = s.execute(_sql("""
+            select run_id, run_index, status, run_data
+              from ai.agno_runs
+             where session_id = :sid
+             order by run_index asc
+        """), {"sid": conversation_id}).all()
+    except Exception:  # noqa: BLE001 — a tabela é do Agno e pode não existir
+        s.rollback()
+        return []
+
+    def _limpar(valor):
+        """Mascara recursivamente qualquer string dentro dos argumentos."""
+        if isinstance(valor, str):
+            return mascarar(valor)
+        if isinstance(valor, dict):
+            return {k: _limpar(v) for k, v in valor.items()}
+        if isinstance(valor, list):
+            return [_limpar(v) for v in valor]
+        return valor
+
+    saida = []
+    for linha in linhas:
+        dados = linha.run_data or {}
+        metricas = dados.get("metrics") or {}
+        tools = []
+        for t in dados.get("tools") or []:
+            m = t.get("metrics") or {}
+            tools.append({
+                "nome": t.get("tool_name") or "?",
+                "argumentos": _limpar(t.get("tool_args") or {}),
+                "resultado": mascarar(t.get("result") or "") or "",
+                "duracao_ms": round((m.get("duration") or 0.0) * 1000, 1),
+                "erro": bool(t.get("tool_call_error")),
+            })
+        saida.append({
+            "run_id": linha.run_id,
+            "index": linha.run_index,
+            "status": linha.status or "?",
+            "modelo": dados.get("model") or "",
+            "provider": dados.get("model_provider") or "",
+            "tokens_in": int(metricas.get("input_tokens") or 0),
+            "tokens_out": int(metricas.get("output_tokens") or 0),
+            "cache_read": metricas.get("cache_read_tokens"),
+            "duracao_ms": round((metricas.get("duration") or 0.0) * 1000, 1),
+            "tools": tools,
+        })
+    return saida
+
+
 def resumo_operacao(s: Session) -> dict:
     """Os números do painel, numa consulta por métrica em vez de contar no cliente.
 

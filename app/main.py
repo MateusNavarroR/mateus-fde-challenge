@@ -174,6 +174,24 @@ def detalhe_conversa(
     return detalhe
 
 
+@app.get("/api/conversations/{conversation_id}/traces", tags=["rastreabilidade"],
+         summary="O que cada resposta do agente executou — tools, tokens e duração")
+def traces_conversa(
+    conversation_id: str, s: Session = Depends(sessao), _: None = Depends(exigir_admin)
+) -> dict:
+    """Granularidade de CHAMADA, que a tabela de custo não tem.
+
+    `turn_usage` conta um turno; aqui um turno que qualificou e cotou aparece com as
+    duas execuções, cada uma com argumentos, resultado e duração próprios. Sem
+    `response_model`: a forma vem de `run_data`, que é de uma dependência, e congelá-la
+    num Pydantic nosso criaria um contrato que o Agno pode mudar sem avisar.
+
+    Lista vazia quando não há trace — instalação nova, ou conversa do dataset
+    reproduzida sem passar pelo agente. Não é 404: a conversa existe.
+    """
+    return {"items": consultas.traces_da_conversa(s, conversation_id)}
+
+
 # ─── operação ────────────────────────────────────────────────────────────────
 
 

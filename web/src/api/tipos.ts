@@ -116,6 +116,36 @@ export type Message = {
   criado_em: string;
 };
 
+/**
+ * O trace de uma resposta do agente: as tools que ela executou, na ordem.
+ *
+ * A forma vem de `ai.agno_runs`, que é do Agno — por isso o backend não a congela num
+ * Pydantic e por isso `cache_read` é anulável: o Ollama não popula o campo, e mostrar
+ * "0 %" onde o provider não reporta seria inventar uma medição.
+ */
+export type ToolDoTrace = {
+  nome: string;
+  argumentos: Record<string, unknown>;
+  resultado: string;
+  duracao_ms: number;
+  erro: boolean;
+};
+
+export type Trace = {
+  run_id: string;
+  index: number;
+  status: string;
+  modelo: string;
+  provider: string;
+  tokens_in: number;
+  tokens_out: number;
+  cache_read: number | null;
+  duracao_ms: number;
+  tools: readonly ToolDoTrace[];
+};
+
+export type ListaDeTraces = { items: readonly Trace[] };
+
 export type QuoteAttempt = {
   id: string;
   attempt: number;

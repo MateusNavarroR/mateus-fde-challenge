@@ -134,6 +134,67 @@ paths:
               schema: { $ref: "#/components/schemas/ConversationDetail" }
         "404": { $ref: "#/components/responses/NaoEncontrado" }
 
+  /api/conversations/{conversation_id}/traces:
+    get:
+      tags: [rastreabilidade]
+      summary: O que cada resposta do agente executou — tools, tokens e duração
+      description: |
+        Granularidade de **chamada**, que `/api/usage` (granularidade de turno) não tem:
+        um turno em que o agente qualificou e cotou aparece como uma linha só na tabela
+        de custo e como duas execuções distintas aqui, cada uma com argumentos,
+        resultado e duração próprios.
+
+        A fonte é `ai.agno_runs`, escrita pelo Agno. Por isso o item **não tem schema
+        congelado**: a forma pertence a uma dependência, e prometer aqui um formato que
+        ela pode mudar seria um contrato que não controlamos.
+
+        `argumentos` e `resultado` vêm **mascarados**. O Agno grava `tool_args` como o
+        modelo os escreveu — com o CEP cru, porque é o que a `/quote` recebe — e esta
+        tabela é a única do sistema que não passa pelo mascaramento na escrita.
+
+        `cache_read` é anulável: o Ollama não reporta o campo, e devolver `0` ali seria
+        inventar uma medição.
+
+        Lista vazia — nunca 404 — quando a conversa existe e não tem execução
+        registrada.
+      parameters:
+        - { name: conversation_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: os traces da conversa, em ordem de `index`
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [run_id, index, status, tokens_in, tokens_out, duracao_ms, tools]
+                      properties:
+                        run_id: { type: string }
+                        index: { type: integer }
+                        status: { type: string }
+                        modelo: { type: string }
+                        provider: { type: string }
+                        tokens_in: { type: integer }
+                        tokens_out: { type: integer }
+                        cache_read: { type: integer, nullable: true }
+                        duracao_ms: { type: number }
+                        tools:
+                          type: array
+                          items:
+                            type: object
+                            required: [nome, argumentos, resultado, duracao_ms, erro]
+                            properties:
+                              nome: { type: string }
+                              argumentos: { type: object, additionalProperties: true }
+                              resultado: { type: string }
+                              duracao_ms: { type: number }
+                              erro: { type: boolean }
+
   /api/quote-health:
     get:
       tags: [operacao]

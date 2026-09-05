@@ -1400,6 +1400,73 @@ code {
 /* O sumário da porta: as cinco seções, com o mesmo romano carimbado da guia
    lateral. Sem marcador de lista — o ordinal JÁ é o marcador, e somar um bullet a
    ele seria numerar duas vezes a mesma coisa. */
+/* O trace: uma ficha por resposta, e dentro dela as execuções numeradas. Rola por
+   dentro como as outras formas, pelo mesmo motivo. */
+.trace {
+  max-height: 34rem;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.9rem;
+  padding-right: 0.4rem;
+}
+
+.trace__turno {
+  border: 1px solid var(--filete);
+  border-radius: 4px;
+  background: var(--folha);
+}
+
+.trace__cabeca {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--linha-par);
+}
+
+.trace__tools {
+  list-style: none;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.trace__tool {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  gap: 0.2rem 0.6rem;
+  /* Barra à esquerda seria a solução preguiçosa; a marca aqui é o nome da tool em
+     fonte de documento, que é o que o olho procura. */
+  padding-left: 0;
+}
+
+.trace__tool--erro .trace__nome {
+  color: var(--vigencia);
+}
+
+.trace__args,
+.trace__resultado {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--tinta-fraca);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.trace__args {
+  font-family: var(--doc);
+  color: var(--tinta-tenue);
+}
+
+.trace__sem-tool {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+}
+
 /* A vista de leitura da conversa, dentro do admin. Reusa a paleta do WhatsApp
    escopada em `.simulador`, e por isso a raiz carrega as DUAS classes: a paleta vem
    de uma, o enquadramento desta tela vem da outra. Sem compositor, e sem altura de

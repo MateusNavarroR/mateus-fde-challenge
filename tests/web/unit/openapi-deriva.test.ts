@@ -145,6 +145,7 @@ it("ROTAS cobre exatamente a superfície declarada — nada montado por string s
       "health",
       "resumo",
       "status",
+      "traces",
       "usage",
       "wsChat",
     ].sort(),

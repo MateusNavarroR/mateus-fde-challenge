@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/cliente";
-import type { ConversationDetail, Message } from "../api/tipos";
+import type { ConversationDetail, ListaDeTraces, Message } from "../api/tipos";
 import { Erro } from "../ui/Erro";
 import { Vazio } from "../ui/Vazio";
 import { cepMascarado, hora } from "../ui/formatar";
@@ -27,9 +27,13 @@ function suspeita(m: Message): boolean {
  *   isso é a decisão, não uma pendência: a navegação `admin → chat` foi recusada
  *   porque por ela o operador assumiria o lugar do LEAD numa conversa que já tem
  *   handoff. **Ver não é escrever** — esta forma dá a vista e não dá a caneta;
- * - **razão** — a lista crua com `index`, para quando a pergunta é sobre a ordem.
+ * - **razão** — a lista crua com `index`, para quando a pergunta é sobre a ordem;
+ * - **trace** — o que cada resposta EXECUTOU: as tools, com argumentos, duração e
+ *   erro, mais os tokens do turno. É a única forma que responde "por que ele
+ *   respondeu isso", e vem de `ai.agno_runs` — granularidade de chamada, que a
+ *   tabela de custo (granularidade de turno) não tem.
  */
-type Forma = "transcricao" | "lead" | "razao";
+type Forma = "transcricao" | "lead" | "razao" | "trace";
 
 const ROTULO_CAMPO: Record<string, string> = {
   idade: "idade",
@@ -124,6 +128,7 @@ export function DetalheConversa({ id }: { id: string }) {
           ["transcricao", "Transcrição"],
           ["lead", "Como o lead viu"],
           ["razao", "Razão"],
+          ["trace", "Trace"],
         ] as const).map(
           ([chave, rotulo]) => (
             <button
@@ -142,6 +147,8 @@ export function DetalheConversa({ id }: { id: string }) {
         <Vazio titulo="Nenhuma mensagem">
           A conversa existe mas ninguém falou ainda.
         </Vazio>
+      ) : forma === "trace" ? (
+        <TraceDaConversa id={id} />
       ) : forma === "lead" ? (
         /* A moldura de leitura. `.chat__thread` é a MESMA classe da conversa do
            lead — traz o papel, o espaçamento e o alinhamento das bolhas (que é
@@ -261,5 +268,77 @@ export function DetalheConversa({ id }: { id: string }) {
         </>
       ) : null}
     </section>
+  );
+}
+
+
+/**
+ * O trace de cada resposta: as tools que ela executou, em ordem, com os tokens do turno.
+ *
+ * **Carregado sob demanda, e não junto com o detalhe.** A pergunta "o que aconteceu com
+ * esse lead" é a comum; "quais tools rodaram no turno 3" é a rara, e é cara — são todos
+ * os `run_data` da conversa. Pendurá-la no detalhe faria toda abertura de conversa
+ * pagar por uma resposta que quase ninguém pediu.
+ *
+ * **Os argumentos chegam MASCARADOS do backend**, e isso não é decoração: o Agno grava
+ * `tool_args` como o modelo os escreveu, com o CEP cru — é o que a `/quote` precisa
+ * receber. Toda a aplicação mascara PII na escrita; esta tabela é a exceção, porque
+ * quem escreve nela é uma dependência. O mascaramento acontece em
+ * `consultas.traces_da_conversa`, e não aqui, porque uma tela que recebe o dado cru já
+ * o vazou — para o `curl` de quem chamar o endpoint direto, e para o devtools.
+ */
+function TraceDaConversa({ id }: { id: string }) {
+  const { dado, erro, carregando, recarregar } = useRecurso<ListaDeTraces>(
+    () => api.traces(id), [id],
+  );
+
+  if (erro) return <Erro erro={erro} aoTentarDeNovo={recarregar} />;
+  if (carregando || !dado) return <p className="rotulo">carregando o trace…</p>;
+  if (dado.items.length === 0) {
+    return (
+      <Vazio titulo="Sem trace">
+        Esta conversa não tem execução registrada pelo agente. Acontece com conversas do
+        dataset reproduzidas fora do caminho de produção.
+      </Vazio>
+    );
+  }
+
+  return (
+    <div className="trace" data-testid="trace">
+      {dado.items.map((t) => (
+        <article key={t.run_id} className="trace__turno">
+          <header className="trace__cabeca">
+            <span className="num">#{t.index}</span>
+            <span className="rotulo">{t.status}</span>
+            <span className="rotulo">
+              {t.tokens_in.toLocaleString("pt-BR")} in ·{" "}
+              {t.tokens_out.toLocaleString("pt-BR")} out ·{" "}
+              {/* "n/a" e nunca "0": o Ollama não reporta cache, e um zero ali seria
+                  uma medição inventada. */}
+              {t.cache_read === null ? "cache n/a" : `${t.cache_read.toLocaleString("pt-BR")} do cache`}
+            </span>
+            <span className="rotulo">{Math.round(t.duracao_ms)} ms</span>
+          </header>
+
+          {t.tools.length === 0 ? (
+            <p className="trace__sem-tool rotulo">nenhuma tool — só texto</p>
+          ) : (
+            <ol className="trace__tools">
+              {t.tools.map((tool, i) => (
+                <li
+                  key={`${t.run_id}-${i}`}
+                  className={`trace__tool${tool.erro ? " trace__tool--erro" : ""}`}
+                >
+                  <span className="trace__nome num">{tool.nome}</span>
+                  <span className="trace__dur rotulo">{tool.duracao_ms} ms</span>
+                  <pre className="trace__args">{JSON.stringify(tool.argumentos)}</pre>
+                  <p className="trace__resultado">{tool.resultado}</p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </article>
+      ))}
+    </div>
   );
 }
