@@ -60,6 +60,11 @@ function lerColapso(): boolean {
 
 export function Console({ rota, children }: { rota: string; children?: ReactNode }) {
   const [colapsada, setColapsada] = useState(lerColapso);
+  // `limit: 1` porque a casca quer só a CONTAGEM, e o backend a calcula do lado
+  // dele — a lista não vem junto. Em `/handoffs` isso são duas requisições ao mesmo
+  // endpoint, e é deliberado: a alternativa seria a casca receber a fila da página,
+  // acoplando a moldura ao conteúdo para economizar uma consulta de uma linha. As
+  // duas recarregam no mesmo push, então não divergem.
   const fila = useRecurso<FilaHandoffs>(() => api.handoffs({ limit: 1 }), []);
   const auth = useAutenticacao();
   const sair = useSair();

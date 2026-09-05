@@ -1674,6 +1674,14 @@ code {
   border-radius: 2px;
 }
 
+/* Foco PRÓPRIO na guia. O `:focus-visible` global é violeta sobre papel claro; na
+   única superfície escura da aplicação ele quase desaparece. */
+.guia a:focus-visible,
+.guia button:focus-visible {
+  outline: 2px solid var(--folha);
+  outline-offset: 2px;
+}
+
 .guia__rodape {
   display: flex;
   flex-direction: column;
@@ -1689,7 +1697,7 @@ code {
   color: #b3aac9;
   cursor: pointer;
   background: none;
-  border: 1px solid #38334a;
+  border: 1px solid #7a739a;
   border-radius: 3px;
   transition: color 120ms ease, border-color 120ms ease;
 }
@@ -1778,6 +1786,11 @@ code {
   gap: 0.85rem;
 }
 
+/* Sem listra lateral e sem entrada escalonada, e as duas saídas são por regra.
+   A `border-left` colorida é banida — nunca é intencional, é decoração que finge
+   semântica. E sequência de carga orquestrada é banida no registro de PRODUTO:
+   quem abre um painel está numa tarefa, não assistindo a tela carregar.
+   O que distingue o cartão em alerta agora é o fundo e a cor do número. */
 .cartao {
   display: flex;
   flex-direction: column;
@@ -1785,30 +1798,12 @@ code {
   padding: 1.1rem 1.15rem 1rem;
   background: var(--folha);
   border: 1px solid var(--filete);
-  border-left: 3px solid var(--carimbo);
   border-radius: 2px;
-  /* A entrada escalonada é o ÚNICO momento animado da tela: as folhas chegam em
-     sequência, e depois o painel fica quieto — que é o que um painel deve fazer. */
-  animation: chegar 320ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
-  animation-delay: calc(var(--i, 0) * 60ms);
-}
-
-@keyframes chegar {
-  from {
-    opacity: 0;
-    transform: translateX(-0.6rem);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cartao {
-    animation: none;
-  }
 }
 
 .cartao--atencao {
-  border-left-color: var(--vigencia);
   background: var(--vigencia-lavada);
+  border-color: var(--vigencia);
 }
 
 .cartao__valor {
@@ -1880,6 +1875,19 @@ code {
 .carimbo__linha2 {
   font-size: 0.6rem;
   letter-spacing: 0.12em;
+}
+
+/* Entre 46rem e 64rem a guia expandida come 15,5rem de uma tela que não tem. A
+   faixa do tablet existia sem tratamento: era o vão entre "colapsa tudo" e
+   "desktop". */
+@media (min-width: 46.01rem) and (max-width: 64rem) {
+  .console {
+    --guia: 12rem;
+  }
+
+  .guia__linha {
+    display: none;
+  }
 }
 
 @media (max-width: 46rem) {
@@ -1969,3 +1977,189 @@ code {
   line-height: 1.4;
   color: var(--tinta-tenue);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   O SIMULADOR NA PALETA DO WHATSAPP
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Os seis da paleta canônica, verificados contra a documentação de marca:
+   #075E54 teal escuro · #128C7E teal · #25D366 verde de marca ·
+   #DCF8C6 balão enviado · #34B7F1 azul dos ticks · #ECE5DD papel de parede.
+
+   **Por que a cor muda aqui, e só aqui.** O resto da aplicação é papel de
+   formulário com carimbo violeta — a mesa da operação. O simulador imita um
+   mensageiro, e a troca de paleta é ela mesma o sinal de fronteira: quem navega da
+   guia para o simulador VÊ que mudou de superfície, antes de ler qualquer rótulo.
+   Usar o verde no painel apagaria essa fronteira e faria a aplicação inteira parecer
+   um clone de WhatsApp, que é o oposto do que o carimbo de simulação declara.
+
+   **Quem é "enviado".** No simulador quem digita faz o papel do LEAD, então a fala
+   dele é o balão verde à direita, e o agente é o branco à esquerda — o arranjo que
+   qualquer pessoa reconhece sem legenda.
+
+   Escopado por `.simulador` para não vazar: o mesmo componente de chat, se um dia
+   for montado fora daqui, volta à paleta do documento. */
+
+.simulador {
+  --zap-teal-escuro: #075e54;
+  --zap-teal: #128c7e;
+  --zap-verde: #25d366;
+  --zap-enviado: #dcf8c6;
+  --zap-azul: #34b7f1;
+  --zap-papel: #ece5dd;
+  /* Tinta do WhatsApp: quase-preto levemente azulado, não o preto do formulário. */
+  --zap-tinta: #111b21;
+  --zap-tinta-fraca: #3b4a54;
+}
+
+.simulador .chat {
+  border-color: var(--zap-teal-escuro);
+}
+
+/* A barra de ações vira o cabeçalho do mensageiro: teal escuro, como o app. */
+.simulador .chat__acoes {
+  color: #e9f5f2;
+  background: var(--zap-teal-escuro);
+  border-bottom: 0;
+}
+
+.simulador .chat__acoes .botao-fantasma {
+  color: #e9f5f2;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.simulador .chat__acoes .botao-fantasma:hover {
+  color: var(--zap-teal-escuro);
+  background: #e9f5f2;
+}
+
+.simulador .chat__acoes a {
+  color: #ffffff;
+}
+
+.simulador .chat__estado {
+  color: #e9f5f2;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* O papel de parede. A trama é o losango de baixíssimo contraste do app — não uma
+   textura decorativa: ela dá profundidade ao balão branco, que sobre um bege liso
+   fica chapado. */
+.simulador .chat__thread {
+  background-color: var(--zap-papel);
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(7, 94, 84, 0.028) 0 2px,
+      transparent 2px 14px
+    );
+}
+
+/* Os balões: cantos arredondados como no app, com o canto do lado do falante
+   quadrado — é o detalhe que faz o balão "apontar" para quem falou. */
+.simulador .bolha {
+  border-radius: 8px;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+}
+
+.simulador .bolha--empresa {
+  color: var(--zap-tinta);
+  background: #ffffff;
+  border: 0;
+  border-top-left-radius: 0;
+}
+
+.simulador .bolha--lead {
+  color: var(--zap-tinta);
+  background: var(--zap-enviado);
+  border: 0;
+  border-top-right-radius: 0;
+}
+
+.simulador .bolha--lead .marca-bug {
+  color: #8b1a12;
+  border-top-color: rgba(139, 26, 18, 0.4);
+}
+
+.simulador .bolha--pendente {
+  opacity: 0.75;
+}
+
+/* O rótulo de anexo e o rodapé de cotação herdam a tinta do mensageiro. */
+.simulador .bolha__anexo,
+.simulador .cotacao__rodape .rotulo {
+  color: var(--zap-tinta-fraca);
+}
+
+/* O bloco de cotação continua sendo um documento dentro da conversa — mas com a
+   moldura do mensageiro, senão parece colado de outra tela. */
+.simulador .cotacao {
+  color: var(--zap-tinta);
+  background: #ffffff;
+  border-color: rgba(7, 94, 84, 0.25);
+}
+
+.simulador .cotacao__linha--carencia {
+  color: var(--zap-teal-escuro);
+  background: rgba(37, 211, 102, 0.14);
+  border-color: rgba(7, 94, 84, 0.3);
+}
+
+.simulador .cotacao__rodape {
+  border-top-color: rgba(7, 94, 84, 0.2);
+}
+
+/* O compositor: fundo do app, botão de enviar em verde de marca. */
+.simulador .chat__rodape {
+  background: #f0f2f5;
+  border-top: 1px solid rgba(7, 94, 84, 0.18);
+}
+
+.simulador .compositor__campo {
+  background: #ffffff;
+  border-color: rgba(7, 94, 84, 0.2);
+  border-radius: 8px;
+}
+
+/* O teal claro (#128C7E) com texto branco dá 4,14:1 — reprova em corpo de texto.
+   A cor é de marca e não se mexe nela; quem cede é a escolha de QUAL teal: o
+   escuro (#075E54) chega a 8,45:1 e é o mesmo verde do cabeçalho do app. O claro
+   fica no hover, onde o estado já foi comunicado pelo movimento do cursor. */
+.simulador .compositor__enviar {
+  color: #ffffff;
+  background: var(--zap-teal-escuro);
+  border-color: var(--zap-teal-escuro);
+  border-radius: 8px;
+}
+
+.simulador .compositor__enviar:hover:not(:disabled) {
+  background: var(--zap-teal);
+  border-color: var(--zap-teal);
+}
+
+.simulador .compositor__anexo {
+  color: var(--zap-teal-escuro);
+  background: #ffffff;
+  border-color: rgba(7, 94, 84, 0.2);
+  border-radius: 8px;
+}
+
+.simulador .compositor__anexo:hover:not(:disabled) {
+  color: #ffffff;
+  background: var(--zap-teal);
+  border-color: var(--zap-teal);
+}
+
+/* O aviso de conversa travada: o verde não pode ser usado para dar má notícia. */
+.simulador .chat__travado {
+  color: var(--zap-tinta);
+  background: #fff4e5;
+  border-color: #e0b070;
+}
+
+.simulador .chat__travado-acao {
+  color: var(--zap-teal-escuro);
+}
+
+/* Movimento reduzido não muda nada aqui: não há animação nesta paleta. */

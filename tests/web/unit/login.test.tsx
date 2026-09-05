@@ -2,7 +2,6 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 import { App } from "../../../web/src/App";
-import { Capa } from "../../../web/src/ui/Capa";
 import { ROTAS_AUTENTICACAO } from "../../../web/src/api/cliente";
 import { montarBackendFalso } from "../fakes/backend-falso";
 
@@ -26,14 +25,18 @@ function irPara(rota: string): void {
 
 // ─── o caminho padrão: instalação aberta ─────────────────────────────────────
 
-it("sem credencial configurada, a 2ª via leva direto ao registro", async () => {
+it("sem credencial configurada, a RAIZ abre a operação direto", async () => {
+  // Este teste protegia a antiga "capa" com duas vias. A capa saiu — com a guia
+  // lateral, todas as seções ficam visíveis de qualquer tela, e uma folha de rosto
+  // no caminho virava um clique a mais para chegar onde já dava para ver.
+  //
+  // O que ele protege continua valendo, e é o critério nº 1: `docker compose up`
+  // e o avaliador vê o produto, sem procurar senha nenhuma.
   montarBackendFalso({});
-  render(<Capa />);
-  const via = screen.getByRole("link", { name: /registro/i });
-  await waitFor(() => expect(via).toHaveAttribute("href", "/admin/conversas"));
-  // E nenhum aviso sobre senha: numa instalação aberta ele só criaria a suspeita
-  // de que falta um passo.
-  expect(screen.queryByText(/exige credencial/i)).toBeNull();
+  irPara("/");
+  render(<App />);
+  expect(await screen.findByRole("navigation", { name: /seções/i })).toBeVisible();
+  expect(screen.queryByLabelText(/senha/i)).toBeNull();
 });
 
 it("sem credencial configurada, /admin abre sem passar por login", async () => {
@@ -56,16 +59,13 @@ it("o backend fora do ar não vira pedido de senha", async () => {
 
 // ─── com credencial configurada ──────────────────────────────────────────────
 
-it("com credencial configurada, a 2ª via leva ao balcão em vez de dar 401 seco", async () => {
+it("com credencial configurada, a RAIZ é o login — e não um 401 seco", async () => {
   montarBackendFalso({ auth: credencial() });
-  render(<Capa />);
-  const via = screen.getByRole("link", { name: /registro/i });
-  await waitFor(() => expect(via).toHaveAttribute("href", "/entrar"));
-  expect(screen.getByText(/exige credencial/i)).toBeVisible();
-  // A capa continua sendo a capa: as duas vias, com o texto de sempre. (O nome
-  // acessível da 2ª via também contém "atendimento" — "o mesmo atendimento pelo
-  // lado da operação" —, então quem identifica a 1ª via é o ordinal.)
-  expect(screen.getByRole("link", { name: /1ª via/ })).toHaveAttribute("href", "/chat");
+  irPara("/");
+  render(<App />);
+  expect(await screen.findByLabelText(/senha/i)).toBeVisible();
+  // E o conteúdo da operação NÃO vaza por trás do formulário.
+  expect(screen.queryByRole("navigation", { name: /seções/i })).toBeNull();
 });
 
 it("/admin pede credencial e não mostra o registro por trás", async () => {

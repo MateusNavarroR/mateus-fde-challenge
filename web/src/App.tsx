@@ -98,7 +98,6 @@ export function App() {
 
 /** As rotas antigas, apontando para as novas. Link guardado continua abrindo. */
 const LEGADO: Record<string, string> = {
-  "/": "/",
   "/chat": "/simulador",
   "/admin": "/painel",
   "/admin/conversas": "/historico",
@@ -113,7 +112,7 @@ const LEGADO: Record<string, string> = {
  * recebe a rota e as renderiza como filhos. É o que permite testar uma página sem
  * montar a barra inteira, e trocar a barra sem tocar em nenhuma página.
  */
-function Operacao({ rota }: { rota: string }) {
+export function Operacao({ rota }: { rota: string }) {
   return (
     <Console rota={rota}>
       {rota.startsWith("/historico/") ? (
