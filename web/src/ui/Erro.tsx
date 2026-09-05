@@ -21,8 +21,11 @@ export function Erro({ erro, aoTentarDeNovo }: { erro: unknown; aoTentarDeNovo: 
       <div className="erro" role="alert">
         <p className="erro__titulo">Esta instalação exige um token de administração</p>
         <p className="erro__texto">
-          O <code>ADMIN_TOKEN</code> está definido no backend. Ele fica guardado só neste
-          navegador e vai como cabeçalho em cada chamada.
+          O <code>ADMIN_TOKEN</code> está definido no backend. Ele fica guardado{" "}
+          <strong>nesta aba</strong> e vai como cabeçalho em cada chamada; fechar a aba
+          o descarta. Para uso diário no navegador, prefira{" "}
+          <code>ADMIN_USER</code>/<code>ADMIN_PASSWORD</code>, que usam cookie{" "}
+          <code>httpOnly</code> e não ficam legíveis para o JavaScript da página.
         </p>
         <form
           className="filtros"

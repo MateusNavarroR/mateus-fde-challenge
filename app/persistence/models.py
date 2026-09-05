@@ -203,7 +203,11 @@ class TurnUsage(Base):
     __tablename__ = "turn_usage"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
-    message_id: Mapped[str] = mapped_column(ForeignKey("messages.id"))
+    #: A mensagem que este turno produziu, quando produziu alguma. **NULL** num turno
+    #: que rodou e não escreveu — o custo existiu igual (migração 0005).
+    message_id: Mapped[str | None] = mapped_column(
+        ForeignKey("messages.id"), nullable=True
+    )
     conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"))
     model: Mapped[str] = mapped_column(Text)
     provider: Mapped[str] = mapped_column(Text)

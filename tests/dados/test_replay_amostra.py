@@ -7,6 +7,8 @@ externo.
 """
 
 from __future__ import annotations
+import pytest
+
 
 from qa.replay import amostra as amostragem
 from qa.replay.casos import CasoReplay, Fala, Gabarito
@@ -199,3 +201,62 @@ def test_amostra_grande_converge_para_a_forma_do_corpus(casos_replay):
     amostra = amostragem.amostrar(casos_replay, n=500, seed=3)
     incotaveis = sum(1 for c in amostra.casos if not c.cotavel)
     assert 0.25 <= incotaveis / len(amostra) <= 0.35
+
+
+# ─── a cobertura por grupo é requisito, não sorte ───────────────────────────
+
+
+@pytest.mark.parametrize("seed", [1, 7, 42, 2026, amostragem.SEED_PADRAO])
+def test_todo_grupo_obrigatorio_aparece_em_qualquer_seed(seed):
+    """Sortear 30 e torcer produz, em metade das execuções, um relatório que não diz
+    nada sobre 11% do corpus.
+
+    Os quatro estratos de elegibilidade mais os dois transversais têm de estar
+    presentes **em qualquer semente** — é o que separa uma amostra estratificada de
+    uma amostra aleatória com nome bonito.
+    """
+    from qa.dataset import bronze
+    from qa.replay import casos as construtor
+
+    try:
+        casos = construtor.montar(bronze.ler(), ano_corrente=2026)
+    except bronze.BronzeIndisponivel:
+        pytest.skip("bronze indisponível")
+
+    e = amostragem.amostrar(casos, n=30, seed=seed)
+
+    for estrato in amostragem.ESTRATOS_ELEGIBILIDADE:
+        assert e.por_elegibilidade.get(estrato, 0) > 0, (
+            f"seed {seed}: estrato `{estrato}` ausente da amostra"
+        )
+    assert e.com_midia > 0, f"seed {seed}: nenhuma conversa com mídia"
+    assert e.com_objecao > 0, f"seed {seed}: nenhuma conversa com objeção"
+
+
+def test_objecao_repetida_nao_existe_no_corpus():
+    """**Achado, e ele vira asserção para não se perder.**
+
+    628 das 2.500 conversas têm exatamente uma objeção de preço; **nenhuma tem duas**.
+    Como `OBJECAO_FORA_DA_ALCADA` só dispara na segunda — a primeira o agente trata —,
+    o gatilho é inalcançável a partir deste dataset.
+
+    Não é amostra pequena, é zero. O relatório diz isso com o número em vez de
+    reportar uma taxa sobre nada, e este teste falha no dia em que o corpus mudar —
+    que é quando a afirmação do relatório deixaria de ser verdade.
+    """
+    from qa.dataset import bronze
+    from qa.replay import casos as construtor
+
+    try:
+        casos = construtor.montar(bronze.ler(), ano_corrente=2026)
+    except bronze.BronzeIndisponivel:
+        pytest.skip("bronze indisponível")
+
+    com_uma = sum(1 for c in casos if c.objecoes >= 1)
+    com_duas = sum(1 for c in casos if c.tem_objecao_repetida)
+
+    assert com_uma > 500, f"esperava centenas de conversas com objeção, achei {com_uma}"
+    assert com_duas == 0, (
+        f"{com_duas} conversas com objeção repetida — o corpus mudou, e o relatório "
+        "precisa parar de declarar o gatilho como inalcançável"
+    )

@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     #: diferente foi o que quebrou o caminho padrão.
     admin_token: str | None = None
 
+    #: ⚠️ `APP_ENV` não mora aqui — é lido direto por `app/main.py` e `app/auth.py`,
+    #: porque as duas decisões que ele governa acontecem antes de `Settings` existir.
+    #: O padrão é **`prod`**, e `dev` é opt-in: ele abre `/docs`, `/redoc` e
+    #: `/openapi.json` e tira a flag `Secure` do cookie de sessão. Era o contrário, e
+    #: "a imagem define prod" é a racionalização que o passe de `insecure-defaults`
+    #: recusa — quem rodasse `uvicorn` fora da imagem ficava exposto em silêncio.
+
     # ─── cliente da /quote ───────────────────────────────────────────────────
     quote_connect_timeout_s: float = 2.0
 

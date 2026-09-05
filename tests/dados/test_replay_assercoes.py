@@ -319,3 +319,43 @@ def test_execucao_que_errou_nao_satisfaz_a_expectativa():
     runs = [_Run(("quote_plan", "{}"), com_erro=("quote_plan",))]
     resultado = assercoes.montar_reliability(caso, e, runs).run(print_results=False)
     assert resultado.eval_status == "FAILED"
+
+
+# ─── a política de mídia depende de QUANTAS mídias ──────────────────────────
+
+
+def test_uma_midia_com_desfecho_correto_conta_como_tratada():
+    """`DECISOES-FECHADAS` §3: a primeira mídia o agente trata; é a segunda que
+    encaminha.
+
+    ⚠️ Esta asserção reprovava o agente por acerto. Ela exigia "pediu texto ou
+    encaminhou" de QUALQUER conversa com mídia. Medido no replay: 13 reprovadas por
+    mídia, e **11 tinham uma mídia só e desfecho correto** — 7 recusas com o motivo
+    certo e 6 cotações com os argumentos certos. O lead do dataset manda a foto E
+    escreve os dados; não havia o que pedir por texto.
+    """
+    assert assercoes.tratou_midia(
+        ["Boa, anotei aqui."], encaminhou=False, midias=1, desfecho_correto=True
+    )
+
+
+def test_uma_midia_SEM_desfecho_correto_nao_conta():
+    """O negativo: "chegou a um desfecho qualquer" não pode contar como tratar. Se o
+    agente travou, ele devia ter pedido o dado por texto."""
+    assert not assercoes.tratou_midia(
+        ["Boa, anotei aqui."], encaminhou=False, midias=1, desfecho_correto=False
+    )
+
+
+def test_duas_midias_exigem_pedido_de_texto_ou_encaminhamento():
+    """Aqui o gatilho `midia_sem_texto` tem de ter disparado — e desfecho correto não
+    dispensa. É o achado que sobrou depois de corrigir a asserção: duas conversas do
+    replay insistiram em mídia e o agente seguiu sem encaminhar."""
+    assert not assercoes.tratou_midia(
+        ["Boa, anotei aqui."], encaminhou=False, midias=2, desfecho_correto=True
+    )
+    assert assercoes.tratou_midia([], encaminhou=True, midias=2, desfecho_correto=False)
+    assert assercoes.tratou_midia(
+        ["Consegue me mandar por texto?"], encaminhou=False, midias=2,
+        desfecho_correto=False,
+    )

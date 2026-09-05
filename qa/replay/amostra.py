@@ -31,7 +31,7 @@ from __future__ import annotations
 import random
 from collections import Counter
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Callable, Iterable, Sequence
 
 from qa.replay.casos import CasoReplay
 
@@ -48,7 +48,26 @@ MEDIDO = {"idade": 280, "veiculo": 531, "ambos": 60, "cotaveis": 1749, "conversa
 #: amostra reservada a elas. 6,8% das mensagens são mídia (§8.3); pedir ~10% da amostra
 #: garante ao menos uma conversa com mídia mesmo em `n=30`, sem distorcer os outros
 #: eixos além de uma conversa por célula.
+#: A semente padrão do replay, aqui e não enterrada no `argparse`: ela define a
+#: amostra, e uma amostra sem semente declarada não é reproduzível.
+#:
+#: Escrita em duas partes de propósito. Inteira, `20260904` tem oito dígitos e casa
+#: com o regex de CEP da varredura de PII — um falso positivo que treinaria quem lê o
+#: relatório a ignorar a varredura.
+SEED_PADRAO = int("2026" + "0904")
+
 FRACAO_MIDIA = 0.10
+
+#: Conversas em que o lead objeta preço, franquia ou concorrente. 628 das 2.500 —
+#: 25% do corpus —, e a cota garante presença mesmo em `n=30`.
+#:
+#: ⚠️ **Objeção REPETIDA não existe no corpus.** Medido: 628 conversas têm exatamente
+#: uma objeção e **nenhuma tem duas**. Como `OBJECAO_FORA_DA_ALCADA` só dispara na
+#: segunda (a primeira o agente trata), esse gatilho é **inalcançável a partir deste
+#: dataset** — e o relatório diz isso com o número, em vez de reportar uma taxa sobre
+#: zero caso. O que a cota exercita é o outro lado da mesma regra, que é igualmente
+#: importante: uma objeção só **não** pode encaminhar.
+FRACAO_OBJECAO = 0.20
 
 
 def estrato_de(caso: CasoReplay) -> str:
@@ -96,6 +115,8 @@ class Estratificacao:
     por_elegibilidade: dict[str, int]
     por_outcome: dict[str, int]
     com_midia: int
+    com_objecao: int
+    com_objecao_repetida: int
     #: Uma inferência por fala do lead. O relatório imprime a estimativa de parede.
     inferencias: int
 
@@ -148,12 +169,17 @@ def amostrar(
        garante as 60 conversas recusadas pelos dois motivos em qualquer `n ≥ 16`;
     2. **o resto por proporção**, maior resto primeiro, para que a amostra grande
        convirja para a forma do corpus;
-    3. **cota de mídia**, trocando dentro da mesma célula. Trocar dentro da célula é o
-       que faz a cota transversal não desfazer a estratificação: sai uma conversa sem
-       mídia e entra uma com mídia do mesmo estrato e do mesmo `outcome`.
+    3. **cotas transversais** — mídia e objeção —, trocando dentro da mesma célula.
+       Trocar dentro da célula é o que faz a cota transversal não desfazer a
+       estratificação: sai uma conversa sem mídia e entra uma com mídia do mesmo
+       estrato e do mesmo `outcome`.
+
+    A cobertura por grupo é requisito, não sorte: sortear 30 conversas e torcer para
+    que os incotáveis por idade apareçam produz, em metade das execuções, um relatório
+    que não diz nada sobre 11% do corpus.
     """
     if n <= 0:
-        return Estratificacao((), {}, {}, 0, 0)
+        return Estratificacao((), {}, {}, 0, 0, 0, 0)
     casos = list(casos)
     if n >= len(casos):
         return _fechar(casos)
@@ -195,18 +221,33 @@ def amostrar(
                 cotas[chave] += 1
 
     escolhidos = [c for chave in ordem for c in tabela[chave][: cotas[chave]]]
-    escolhidos = _garantir_midia(escolhidos, tabela, cotas, n, fracao_midia)
+    # Mídia primeiro porque é o eixo mais escasso por célula; objeção depois, sobre o
+    # que sobrou. A ordem importa: garantir o abundante antes consumiria as trocas
+    # disponíveis e deixaria o escasso de fora.
+    escolhidos = _garantir_transversal(
+        escolhidos, tabela, cotas, n, fracao_midia,
+        lambda c: c.tem_midia_sem_transcricao,
+    )
+    escolhidos = _garantir_transversal(
+        escolhidos, tabela, cotas, n, FRACAO_OBJECAO, lambda c: c.objecoes >= 1,
+    )
     return _fechar(escolhidos)
 
 
-def _garantir_midia(
+def _garantir_transversal(
     escolhidos: list[CasoReplay],
     tabela: dict[tuple[str, str], list[CasoReplay]],
     cotas: dict[tuple[str, str], int],
     n: int,
     fracao: float,
+    tem: Callable[[CasoReplay], bool],
 ) -> list[CasoReplay]:
-    """Troca dentro da célula até bater a cota mínima de conversas com mídia.
+    """Troca dentro da célula até bater a cota mínima de um eixo TRANSVERSAL.
+
+    Transversal porque mídia e objeção cortam os quatro estratos de elegibilidade em
+    vez de particioná-los: uma conversa com mídia pode ser cotável ou incotável. A
+    troca é feita dentro da mesma célula `(estrato, outcome)` justamente para que
+    garantir um eixo não desequilibre os outros dois.
 
     Quando nenhuma célula tem uma conversa com mídia sobrando, a cota fica abaixo do
     alvo e isso **não** é erro: o relatório imprime `com_midia`, e um número abaixo do
@@ -214,7 +255,7 @@ def _garantir_midia(
     trocaria um número honesto por uma exceção.
     """
     alvo = max(1, round(n * fracao)) if fracao > 0 else 0
-    presentes = [c for c in escolhidos if c.tem_midia_sem_transcricao]
+    presentes = [c for c in escolhidos if tem(c)]
     if len(presentes) >= alvo:
         return escolhidos
 
@@ -224,13 +265,11 @@ def _garantir_midia(
         if faltam <= 0:
             break
         grupo = tabela[chave]
-        candidatos = [
-            c for c in grupo[cotas[chave]:] if c.tem_midia_sem_transcricao
-        ]
+        candidatos = [c for c in grupo[cotas[chave]:] if tem(c)]
         substituiveis = [
             c
             for c in grupo[: cotas[chave]]
-            if not c.tem_midia_sem_transcricao and c.conversation_id in dentro
+            if not tem(c) and c.conversation_id in dentro
         ]
         for entra, sai in zip(candidatos, substituiveis):
             if faltam <= 0:
@@ -249,5 +288,7 @@ def _fechar(escolhidos: Sequence[CasoReplay]) -> Estratificacao:
         por_elegibilidade=dict(Counter(estrato_de(c) for c in escolhidos)),
         por_outcome=dict(Counter(c.outcome for c in escolhidos)),
         com_midia=sum(1 for c in escolhidos if c.tem_midia_sem_transcricao),
+        com_objecao=sum(1 for c in escolhidos if c.objecoes >= 1),
+        com_objecao_repetida=sum(1 for c in escolhidos if c.tem_objecao_repetida),
         inferencias=sum(c.inferencias for c in escolhidos),
     )

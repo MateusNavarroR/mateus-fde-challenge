@@ -207,7 +207,12 @@ class Executor:
         return sessao_factory()()
 
     async def _turno(
-        self, coletor: Coletor, conversation_id: str, texto: str, adaptador
+        self,
+        coletor: Coletor,
+        conversation_id: str,
+        texto: str,
+        adaptador,
+        tipo: str = "text",
     ) -> Falha | None:
         """Um turno, com retentativa. Devolve a falha que sobrou, ou `None`.
 
@@ -225,7 +230,8 @@ class Executor:
             antes = len(coletor.falhas)
             coletor.message_index = None
             await responder(
-                conversation_id, texto, adaptador, chegada_do_lead=time.monotonic()
+                conversation_id, texto, adaptador,
+                chegada_do_lead=time.monotonic(), tipo=tipo,
             )
             if len(coletor.falhas) == antes:
                 return None
@@ -249,6 +255,7 @@ class Executor:
             outcome_dataset=caso.outcome,
             inferencias=caso.inferencias,
             tem_midia=caso.tem_midia_sem_transcricao,
+            objecoes=caso.objecoes,
         )
         expectativa = assercoes.esperado_para(caso)
         resultado.desfecho_esperado = str(expectativa.desfecho)
@@ -294,7 +301,15 @@ class Executor:
         for fala in caso.falas:
             coletor.message_index = fala.message_index
             marca = len(adaptador.enviadas)
-            falha = await self._turno(coletor, conversation_id, fala.texto, adaptador)
+            # ⚠️ O `tipo` da fala vai junto, e sem ele o estrato de mídia mede a
+            # coisa errada: uma fala `[documento] CNH_frente.pdf` chegava ao agente
+            # como TEXTO comum, `messages.tipo` gravava `text`, e `MIDIA_SEM_TEXTO`
+            # não tinha como disparar. A política de mídia nunca era exercitada — e a
+            # taxa do grupo media se o modelo, por conta própria, reagia a uma string
+            # que parecia um anexo.
+            falha = await self._turno(
+                coletor, conversation_id, fala.texto, adaptador, tipo=fala.tipo,
+            )
             if falha is not None:
                 return falha
 
@@ -379,9 +394,18 @@ class Executor:
             resultado.preco_exato = conferencia.exato
 
         if caso.tem_midia_sem_transcricao:
+            # `desfecho_correto` é o mesmo critério do resto do relatório, e não um
+            # atalho: o desfecho bate com o esperado e, quando é recusa, o motivo
+            # também. Sem isso, "chegou a um desfecho qualquer" contaria como tratar.
+            correto = resultado.desfecho_obtido == resultado.desfecho_esperado and (
+                resultado.desfecho_esperado != str(assercoes.Desfecho.REFUSED)
+                or resultado.motivo_obtido == resultado.motivo_esperado
+            )
             resultado.midia_tratada = assercoes.tratou_midia(
                 [m["text"] for m in adaptador.enviadas],
                 encaminhou=obs.desfecho is assercoes.Desfecho.ENCAMINHADO,
+                midias=caso.midias,
+                desfecho_correto=correto,
             )
 
     # ─── a execução inteira ──────────────────────────────────────────────────

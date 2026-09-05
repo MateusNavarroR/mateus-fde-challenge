@@ -112,7 +112,7 @@ it("sem token gravado, nenhum parâmetro entra na URL do socket", () => {
 });
 
 it("com token gravado, ele vai por query string no handshake", () => {
-  localStorage.setItem("autoseguro.admin_token", "t-abc");
+  sessionStorage.setItem("autoseguro.admin_token", "t-abc");
   const s = conectarChat("c1", { ultimoIndex: () => -1, aoEvento: vi.fn() });
   expect(WebSocketFalso.ultima!.url).toBe(`ws://${location.host}/api/chat/c1?token=t-abc`);
   s.fechar();

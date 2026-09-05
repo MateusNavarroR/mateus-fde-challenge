@@ -86,7 +86,7 @@ FALHA = "usuário ou senha inválidos"
 def _dev() -> bool:
     """`Secure` no cookie exige HTTPS; em desenvolvimento o serviço é HTTP puro e um
     cookie `Secure` simplesmente não voltaria — o login pareceria quebrado."""
-    return os.getenv("APP_ENV", "dev") == "dev"
+    return os.getenv("APP_ENV", "prod") == "dev"
 
 
 @dataclass(frozen=True)

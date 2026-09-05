@@ -40,6 +40,18 @@ DESPEDIDA = (
     "A equipe assume daqui."
 )
 
+# ⑪ — falha técnica nossa. Duas coisas que ele NUNCA faz: expor o erro e sugerir que
+# o lead fez algo errado.
+#
+# Existe porque o Agno **não levanta** quando a chamada ao provider falha: devolve um
+# `RunOutput` com `status=ERROR` e o texto do erro em `content`. Medido no replay, com
+# a conta sem crédito: 14 conversas gravaram «Error code: 400 … Your credit balance is
+# too low …» como fala do agente. O guardrail não pega — não há valor monetário no
+# texto — e o lead leria a mensagem de cobrança da nossa conta.
+FALHA_TECNICA = (
+    "Tive um problema técnico aqui do meu lado — não foi nada que você fez. Já estou chamando alguém da equipe pra te atender."
+)
+
 # ⑧a / ⑧b — prefixos de assunto sensível. Dois, e não um: "sinto muito" numa
 # notificação extrajudicial soa como admissão, e a ausência dele depois de "meu carro
 # capotou ontem" soa como frieza.
@@ -79,6 +91,7 @@ TODOS: dict[str, str] = {
     "REFORCO": REFORCO,
     "INDISPONIBILIDADE": INDISPONIBILIDADE,
     "DESPEDIDA": DESPEDIDA,
+    "FALHA_TECNICA": FALHA_TECNICA,
     "SENSIVEL_SINISTRO": SENSIVEL_SINISTRO,
     "SENSIVEL_JURIDICO": SENSIVEL_JURIDICO,
     "RECUSA_IDADE_ACIMA": RECUSA_IDADE_ACIMA,

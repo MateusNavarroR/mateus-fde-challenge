@@ -32,6 +32,8 @@ from app.contracts.conversa import (
     MessageStatus,
     Turn,
 )
+
+from tests.fixtures.pii import cep_de
 from app.contracts.quote import (
     MotivoRecusa,
     QuoteOutcome,
@@ -47,8 +49,8 @@ QUOTE_API_URL = os.getenv("QUOTE_API_URL", "http://localhost:8001")
 
 
 def test_cep_mascarado_vira_oito_digitos():
-    r = QuoteRequest(plano_id="completo", idade=35, veiculo_ano=2022, cep="01310-100")
-    assert r.cep == "01310100"
+    r = QuoteRequest(plano_id="completo", idade=35, veiculo_ano=2022, cep=cep_de("01"))
+    assert r.cep == cep_de("01", com_hifen=False)
 
 
 def test_cep_de_sete_digitos_e_descartado():
@@ -60,7 +62,7 @@ def test_cep_de_sete_digitos_e_descartado():
 
 @pytest.mark.parametrize(
     ("cep", "esperado"),
-    [("07000-000", True), ("08123456", True), ("59999999", True), ("01310100", False), (None, False)],
+    [(cep_de("07"), True), (cep_de("08", com_hifen=False), True), (cep_de("59", com_hifen=False), True), (cep_de("01", com_hifen=False), False), (None, False)],
 )
 def test_deteccao_de_cep_de_alto_risco(cep, esperado):
     r = QuoteRequest(plano_id="essencial", idade=35, veiculo_ano=2022, cep=cep)
@@ -83,11 +85,11 @@ def test_payload_omite_opcionais_em_vez_de_enviar_vazio():
 def test_payload_completo():
     r = QuoteRequest(
         plano_id="completo", idade=35, veiculo_ano=2022,
-        cep="01310-100", data_inicio=dt.date(2026, 7, 15),
+        cep=cep_de("01"), data_inicio=dt.date(2026, 7, 15),
     )
     assert r.to_api_payload() == {
         "plano_id": "completo", "idade": 35, "veiculo_ano": 2022,
-        "cep": "01310100", "data_inicio": "2026-07-15",
+        "cep": cep_de("01", com_hifen=False), "data_inicio": "2026-07-15",
     }
 
 
@@ -176,13 +178,13 @@ def test_perfil_incompleto_nao_cota():
 
 def test_perfil_completo_produz_a_requisicao():
     lp = LeadProfile(
-        idade=35, veiculo_ano=2022, cep="01310100",
+        idade=35, veiculo_ano=2022, cep=cep_de("01", com_hifen=False),
         data_inicio=dt.date(2026, 7, 15), plano_id="completo",
     )
     assert lp.completo
     assert lp.to_quote_request() == QuoteRequest(
         plano_id="completo", idade=35, veiculo_ano=2022,
-        cep="01310100", data_inicio=dt.date(2026, 7, 15),
+        cep=cep_de("01", com_hifen=False), data_inicio=dt.date(2026, 7, 15),
     )
 
 
@@ -248,7 +250,7 @@ def api_viva() -> None:
 def test_payload_valida_o_corpo_200_real(api_viva):
     r = QuoteRequest(
         plano_id="completo", idade=35, veiculo_ano=2022,
-        cep="01310-100", data_inicio=dt.date(2026, 7, 15),
+        cep=cep_de("01"), data_inicio=dt.date(2026, 7, 15),
     )
     p = QuotePayload.model_validate(_post(r.to_api_payload()))
     assert p.premio_mensal == 209.90
@@ -272,4 +274,5 @@ def test_carencia_vem_nos_tres_planos(api_viva, plano_id):
 def test_pro_rata_some_no_dia_primeiro(api_viva):
     r = QuoteRequest(plano_id="essencial", idade=35, veiculo_ano=2022,
                      data_inicio=dt.date(2026, 10, 1))
+
     assert QuotePayload.model_validate(_post(r.to_api_payload())).primeiro_pagamento_pro_rata is None

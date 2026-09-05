@@ -15,7 +15,7 @@ it("sem token, nenhum cabeçalho de admin é enviado", async () => {
 });
 
 it("com token gravado, o cabeçalho vai em toda chamada", async () => {
-  localStorage.setItem("autoseguro.admin_token", "t-abc");
+  sessionStorage.setItem("autoseguro.admin_token", "t-abc");
   const f = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ items: [] }));
   await get(ROTAS.handoffs());
   expect(new Headers(f.mock.calls[0]![1]!.headers).get("x-admin-token")).toBe("t-abc");

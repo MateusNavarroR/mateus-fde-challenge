@@ -242,9 +242,13 @@ def _montar_executor(monkeypatch, roteiro, *, observacao=None, **kwargs):
     from app.agent import turno
 
     agente = AgenteFalso(roteiro)
+    recebidas: list[tuple[str, str]] = []
     monkeypatch.setattr(turno, "construir_agente", lambda ctx: agente)
 
-    async def responder_falso(cid, texto, adaptador, chegada_do_lead=None):
+    async def responder_falso(cid, texto, adaptador, chegada_do_lead=None, tipo="text"):
+        # Registrado para que um teste possa afirmar o que CHEGOU ao agente, e não só
+        # o que o executor achou que mandou.
+        recebidas.append((texto, tipo))
         construido = turno.construir_agente(None)
         try:
             construido.run(texto)
@@ -272,6 +276,7 @@ def _montar_executor(monkeypatch, roteiro, *, observacao=None, **kwargs):
         modelo="falso:teste",
         **kwargs,
     )
+    executor.recebidas = recebidas  # type: ignore[attr-defined]
     return executor, agente
 
 
@@ -409,3 +414,45 @@ def test_o_laco_nao_injeta_alem_do_limite(monkeypatch):
     executor, agente = _montar_executor(monkeypatch, [RunFalso()] * 50)
     _rodar(executor, [_caso("c1", falas=1)])
     assert agente.chamadas <= 1 + exec_mod.MAX_INJECOES_POR_FALA
+
+
+def test_o_tipo_da_fala_atravessa_o_replay_ate_o_agente(monkeypatch):
+    """Sem isto, o estrato de mídia mede a coisa errada.
+
+    Uma fala `[documento] CNH_frente.pdf` chegava ao agente como TEXTO comum: o
+    executor chamava `responder` sem o `tipo`, `messages.tipo` gravava `text`, e
+    `MIDIA_SEM_TEXTO` não tinha como disparar. A taxa do grupo media se o modelo, por
+    conta própria, reagia a uma string que parecia um anexo — não a política de mídia.
+
+    Descoberto lendo o relatório do replay: 14 das 15 conversas reprovadas eram
+    `midia nao tratada`, uma causa só dominando todas as outras. Uma taxa ruim
+    concentrada num grupo é sinal de instrumento quebrado antes de ser sinal de agente
+    ruim.
+    """
+    import asyncio
+
+    from qa.replay import executor as exec_mod
+
+    executor, _ = _montar_executor(monkeypatch, ["ok"])
+    caso = _caso()
+    caso = type(caso)(
+        conversation_id=caso.conversation_id,
+        outcome=caso.outcome,
+        falas=(
+            Fala(0, "text", "oi"),
+            Fala(1, "document", "[documento] CNH_frente.pdf"),
+            Fala(2, "audio", "[audio] 0:12"),
+        ),
+        gabarito=caso.gabarito,
+        elegibilidade=caso.elegibilidade,
+    )
+
+    asyncio.run(executor.rodar_conversa(caso, exec_mod.Coletor()))
+
+    tipos = dict(executor.recebidas)
+    assert tipos.get("oi") == "text"
+    assert tipos.get("[documento] CNH_frente.pdf") == "document", (
+        f"a fala de mídia chegou como {tipos.get('[documento] CNH_frente.pdf')!r} — "
+        "o gatilho de mídia não tem como disparar"
+    )
+    assert tipos.get("[audio] 0:12") == "audio"

@@ -31,6 +31,33 @@ import type {
 export const CHAVE_TOKEN = "autoseguro.admin_token";
 
 /**
+ * ⚠️ **`sessionStorage`, e o risco que sobra está declarado.**
+ *
+ * O `ADMIN_TOKEN` colado na tela de 401 é uma credencial de MÁQUINA que, no backend,
+ * vale mais que a sessão: `exigir_admin` a aceita mesmo com `ADMIN_USER`/
+ * `ADMIN_PASSWORD` configurados. Guardá-la no navegador significa que qualquer XSS na
+ * página a lê — e isso continua verdade aqui.
+ *
+ * O que muda com `sessionStorage` em vez de `localStorage`: o token morre com a aba,
+ * em vez de ficar em disco indefinidamente. Não protege contra XSS; protege contra a
+ * próxima pessoa que abrir o navegador da operação.
+ *
+ * **A saída de verdade seria trocar o token por um cookie `httpOnly`** — como a
+ * sessão de login já faz. Não foi feito porque a sessão é assinada com chave derivada
+ * da credencial, e no modo só-token não existe credencial de onde derivá-la. Está
+ * declarado no README como risco aceito, com a recomendação de preferir
+ * `ADMIN_USER`/`ADMIN_PASSWORD` em qualquer instalação que use o navegador.
+ */
+function cofre(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    // Bloqueado (modo privado, política de site) não pode derrubar a tela.
+    return null;
+  }
+}
+
+/**
  * A superfície inteira que a UI consome, uma função por rota.
  *
  * Chamar com o sentinela `"{id}"` devolve o caminho no formato do OpenAPI, que é
@@ -112,18 +139,19 @@ export class ErroApi extends Error {
 
 export function lerToken(): string | null {
   try {
-    const t = localStorage.getItem(CHAVE_TOKEN);
+    const t = cofre()?.getItem(CHAVE_TOKEN);
     return t && t.length > 0 ? t : null;
   } catch {
-    // localStorage bloqueado (modo privado, política de site) não pode derrubar a tela.
     return null;
   }
 }
 
 export function gravarToken(token: string): void {
   try {
-    if (token.length > 0) localStorage.setItem(CHAVE_TOKEN, token);
-    else localStorage.removeItem(CHAVE_TOKEN);
+    const c = cofre();
+    if (c === null) return;
+    if (token.length > 0) c.setItem(CHAVE_TOKEN, token);
+    else c.removeItem(CHAVE_TOKEN);
   } catch {
     /* idem */
   }

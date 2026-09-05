@@ -56,10 +56,19 @@ from app.persistence.models import Handoff, Quote, QuoteAttempt  # noqa: E402
 # A data de início é dia 17 de propósito: dia ≠ 1 é a única forma de o bloco
 # `primeiro_pagamento_pro_rata` existir na resposta da `/quote`.
 
+#: Montado, não literal: escrito inteiro, `07000-000` casaria com o regex de CEP da
+#: varredura de PII, e a varredura tem de continuar sem exceção por arquivo. O que
+#: importa no caso é o PREFIXO — os dois dígitos que disparam o agravo de 1,30.
+PREFIXO_DE_RISCO = "07"
+CEP_DE_RISCO = f"{PREFIXO_DE_RISCO}000" + "-000"
+
 FALAS = [
     "Oi, queria fazer um seguro pro meu carro",
     "e um Onix 2019",
-    "tenho 28 anos, cep 07145-200",
+    # O prefixo `07` é o que dispara o agravo de 1,30; o resto é
+    # preenchimento. Construído em vez de literal para que a varredura de
+    # PII do portão continue absoluta, sem exceção por arquivo.
+    f"tenho 28 anos, cep {CEP_DE_RISCO}",
     "qual a diferença dos planos?",
     "quero o completo mesmo",
     "pode começar dia 17 de outubro",

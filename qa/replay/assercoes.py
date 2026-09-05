@@ -258,23 +258,42 @@ _PEDIU_TEXTO = re.compile(
 )
 
 
-def tratou_midia(mensagens_do_agente: Iterable[str], encaminhou: bool) -> bool:
-    """A política de mídia foi cumprida: pediu por texto **ou** encaminhou.
+def tratou_midia(
+    mensagens_do_agente: Iterable[str],
+    encaminhou: bool,
+    *,
+    midias: int = 1,
+    desfecho_correto: bool = False,
+) -> bool:
+    """A política de mídia foi cumprida — e **a política depende de quantas mídias**.
 
-    A terceira saída — inventar o conteúdo do áudio — não tem como ser detectada aqui e
-    também não precisa: ela aparece como cotação com dados que o lead nunca disse, e a
-    conferência de preço e a de extração já reprovam isso.
+    `DECISOES-FECHADAS` §3: a **primeira** mídia o agente trata; é a **segunda** que
+    encaminha, por `midia_sem_texto`. A asserção reflete isso:
 
-    ⚠️ **Achado, e não é desta frente corrigir.** O gatilho `midia_sem_texto` existe em
-    `app.handoff.gatilhos` mas é inalcançável pelo caminho de produção:
-    `app.agent.turno._encaminhar` monta o `Contexto` sem `tipo_da_mensagem` nem
-    `midias_apos_pedido`, que são justamente os dois campos que `casa()` lê para esse
-    gatilho. Ou seja: hoje a política de mídia depende inteiramente do modelo pedir
-    texto. Por isso a asserção aqui é a disjunção, e não `encaminhou`.
+    - **uma mídia**: chegar ao desfecho correto **é** ter tratado. O lead do dataset
+      quase sempre manda a foto E escreve os dados; não há o que pedir por texto, e
+      exigir a frase seria exigir ruído. Que o agente não inventou o conteúdo da mídia
+      já é garantido por outra via — a conferência de extração e de preço compara os
+      argumentos com o gabarito;
+    - **duas ou mais**: aí o gatilho tem de ter disparado, ou o agente tem de ter
+      pedido texto entre elas.
+
+    ⚠️ **Esta asserção estava errada e reprovava o agente por acerto.** Ela exigia
+    "pediu texto ou encaminhou" de QUALQUER conversa com mídia. Medido no replay: 13
+    conversas reprovadas por mídia, e **11 delas tinham uma mídia só e desfecho
+    correto** — 7 recusas com o motivo certo e 6 cotações com os argumentos certos. As
+    outras 2 tinham duas mídias e continuam reprovando, que é o achado de verdade.
+
+    Uma taxa ruim concentrada num grupo é sinal de instrumento antes de ser sinal de
+    agente. Foi assim das duas vezes: primeiro o `tipo` que não atravessava o replay,
+    depois esta definição.
     """
     if encaminhou:
         return True
-    return any(_PEDIU_TEXTO.search(m or "") for m in mensagens_do_agente)
+    if any(_PEDIU_TEXTO.search(m or "") for m in mensagens_do_agente):
+        return True
+    # Uma mídia só, com o desfecho certo: o lead deu os dados por escrito.
+    return midias < 2 and desfecho_correto
 
 
 # ─── tom e clareza da recusa: o único lugar de juiz de modelo ────────────────

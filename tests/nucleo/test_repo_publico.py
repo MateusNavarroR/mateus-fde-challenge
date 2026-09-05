@@ -20,6 +20,7 @@ mesma porta que se recusa a abrir no guardrail e nas fixtures.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -68,13 +69,35 @@ def _alvos() -> list[Path]:
     ]
 
 
+#: Sequências de ASCII imprimível com 4+ caracteres — é o que o `strings(1)` extrai,
+#: e é assim que se procura segredo dentro de binário.
+_IMPRIMIVEL = re.compile(rb"[\x20-\x7e]{4,}")
+
+
 def _achados(caminho: Path) -> list[tuple[str, str]]:
-    # errors="ignore" para que binários (parquet, png) também sejam varridos: uma
-    # string de PII dentro de um parquet aparece em texto do mesmo jeito.
+    """Binário também é varrido: uma string de PII dentro de um parquet aparece em
+    texto do mesmo jeito, e não varrê-los deixaria de fora justamente o formato em
+    que o dataset viaja.
+
+    **Mas não bytes crus.** Decodificar um PNG inteiro com `errors="ignore"` e jogar
+    regex em cima produz ruído: a varredura acusou `ɩ_o@z.a` como e-mail dentro de
+    uma captura de tela — dados comprimidos que por acaso casam com o padrão. Um
+    falso positivo aqui é pior que inofensivo: ele treina quem lê o relatório a
+    ignorar a varredura, que é exatamente o que ela não pode virar.
+
+    Em binário, então, procura-se onde segredo de fato mora: nas sequências de ASCII
+    imprimível, como o `strings(1)`. PII real deste domínio — CPF, CEP, e-mail,
+    telefone, placa — é ASCII por construção, então nada de verdadeiro se perde.
+    """
     try:
-        texto = caminho.read_bytes().decode("utf-8", errors="ignore")
+        bruto = caminho.read_bytes()
     except OSError:  # pragma: no cover
         return []
+
+    if b"\x00" in bruto[:8192]:
+        texto = b"\n".join(_IMPRIMIVEL.findall(bruto)).decode("ascii")
+    else:
+        texto = bruto.decode("utf-8", errors="ignore")
     return [
         (nome, m.group(0))
         for nome, padrao, _ in _REGRAS
@@ -165,3 +188,42 @@ def test_a_varredura_ainda_pega_um_json_qualquer(tmp_path, monkeypatch):
     conteudo = '{"cep": "01310-100"}'
     achou = [n for n, padrao, _ in _REGRAS if padrao.search(conteudo)]
     assert "cep" in achou
+
+
+# ─── a varredura de binário: sem ruído, e sem cegueira ──────────────────────
+
+
+def test_binario_com_PII_dentro_ainda_e_pego(tmp_path):
+    """A troca de "decodificar bytes crus" por "sequências imprimíveis" não pode ter
+    custado a capacidade — senão eu troquei falso positivo por falso NEGATIVO, que é
+    infinitamente pior numa varredura de segurança.
+
+    O arquivo imita um binário de verdade: cabeçalho com NUL, ruído comprimido, e a
+    PII no meio — que é como ela aparece num parquet.
+    """
+    from tests.fixtures.pii import gerar_pii
+
+    pii = gerar_pii(seed=7)
+    binario = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        + bytes(range(256)) * 4
+        + f"  {pii['cpf']}  ".encode()
+        + bytes(range(256)) * 4
+        + f"  {pii['email']}  ".encode()
+    )
+    alvo = tmp_path / "captura.png"
+    alvo.write_bytes(binario)
+
+    classes = {classe for classe, _ in _achados(alvo)}
+    assert "cpf" in classes, "CPF dentro de binário tem de continuar sendo pego"
+    assert "email" in classes
+
+
+def test_binario_comprimido_nao_gera_falso_positivo():
+    """O caso que motivou a mudança: a varredura acusou `ɩ_o@z.a` como e-mail dentro
+    de uma captura de tela. Um falso positivo treina quem lê a ignorar."""
+    reais = [p for p in _alvos() if p.suffix.lower() == ".png"]
+    if not reais:
+        pytest.skip("nenhum PNG versionado ainda")
+    problemas = [(p.name, c, tr) for p in reais for c, tr in _achados(p)]
+    assert not problemas, problemas

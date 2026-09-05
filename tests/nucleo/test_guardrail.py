@@ -12,6 +12,8 @@ from app.agent.guardrail import (
     checar_texto_do_modelo,
 )
 
+from tests.fixtures.pii import cep_de
+
 
 @pytest.mark.parametrize(
     "texto",
@@ -35,7 +37,7 @@ def test_valor_monetario_em_texto_do_modelo_e_rejeitado(texto):
     [
         "tenho 35 anos",
         "seu carro é 2019, certo?",
-        "o CEP é 01310-100",
+        "o CEP é " + cep_de("01") + "",
         "cobre colisão, roubo e furto",
         "a franquia é menor no Premium",
         "começando dia 17/10",
@@ -74,6 +76,7 @@ def test_quote_id_de_cotacao_nao_ok_e_rejeitado():
 
 def test_conteudo_identico_ao_render_passa():
     checar_mensagem_de_cotacao(RENDER, quote_status="ok", render_esperado=RENDER)
+
 
 
 @pytest.mark.parametrize(

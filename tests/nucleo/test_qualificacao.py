@@ -12,7 +12,7 @@ import pytest
 
 from app.agent.tools import ContextoDoTurno, DataAmbigua, make_qualify_lead, normalizar_data
 from app.persistence import repo
-from tests.fixtures.pii import frase_do_lead
+from tests.fixtures.pii import cep_de, frase_do_lead
 
 pytestmark = pytest.mark.db
 
@@ -47,19 +47,20 @@ def test_estado_passa_a_qualificando(ctx, qualify):
 
 def test_campos_podem_chegar_fora_de_ordem(ctx, qualify):
     qualify(plano_id="completo")
-    qualify(cep="01310-100")
+    qualify(cep=cep_de("01"))
     qualify(idade=28, veiculo_ano=2019, data_inicio="2026-10-17")
     assert "quote_plan" in qualify()
 
 
 def test_cep_e_normalizado_para_oito_digitos(ctx, qualify):
-    qualify(cep="01310-100")
-    assert perfil(ctx).cep == "01310100"
+    qualify(cep=cep_de("01"))
+    assert perfil(ctx).cep == cep_de("01", com_hifen=False)
 
 
 def test_cep_de_sete_digitos_e_rejeitado(ctx, qualify):
     """Seria lido pela API como prefixo "70" e perderia o agravo de 30% em silêncio."""
-    r = qualify(cep="7000-000")
+    # Sete dígitos: um a menos. Montado para não escrever CEP literal.
+    r = qualify(cep=cep_de("01")[:-1])
     assert perfil(ctx).cep is None
     assert "cep" in r
 

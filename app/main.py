@@ -25,12 +25,13 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.api import consultas
+from app import ratelimit
 from app.auth import aviso_de_boot, exigir_admin, redefinir_credenciais, registrar_autenticacao
 from app.api.schemas import (
     Conversation,
@@ -46,7 +47,7 @@ from app.persistence.db import sessao_factory
 
 log = logging.getLogger("autoseguro")
 
-DEV = os.getenv("APP_ENV", "dev") == "dev"
+DEV = os.getenv("APP_ENV", "prod") == "dev"
 
 
 @asynccontextmanager
@@ -120,7 +121,9 @@ def health(s: Session = Depends(sessao)) -> dict:
 
 @app.post("/api/conversations", tags=["chat"], status_code=201,
           response_model=Conversation, summary="Abre uma conversa")
-def criar_conversa(corpo: dict, s: Session = Depends(sessao)) -> Conversation:
+def criar_conversa(
+    corpo: dict, request: Request, s: Session = Depends(sessao)
+) -> Conversation:
     """Idempotente por `(channel, external_ref)`: mesma sessão, mesma conversa.
 
     Um literal fixo aqui — o que havia antes — fazia a primeira conversa gravar e
@@ -132,6 +135,12 @@ def criar_conversa(corpo: dict, s: Session = Depends(sessao)) -> Conversation:
     `external_ref` nunca carrega telefone real: no console é o nome da sessão, no web
     é um identificador de sessão de navegador gerado localmente.
     """
+    # Rota PÚBLICA: é o portão de entrada de tudo e não exige autenticação. Sem
+    # limite, um laço abre conversas sem teto — e cada conversa é o começo de uma
+    # cadeia que gasta inferência.
+    if not ratelimit.CRIAR_CONVERSA.permite(ratelimit.origem(request)):
+        raise HTTPException(status_code=429, detail="muitas conversas em pouco tempo")
+
     c, _ = repo.criar_ou_retomar_conversa(
         s,
         channel=corpo.get("channel", "web"),

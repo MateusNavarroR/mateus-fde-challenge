@@ -87,6 +87,17 @@ onde o custo do erro é o mais alto.
 
 ## Encaminhamento
 
+### ⑪ Falha técnica nossa
+
+Quando a chamada ao modelo falha, o lead recebe isto — nunca o erro.
+
+> Tive um problema técnico aqui do meu lado — não foi nada que você fez. Já estou chamando alguém da equipe pra te atender.
+
+Duas coisas que ele nunca faz: expor o erro e sugerir que o lead fez algo errado. O
+Agno **não levanta** nesse caso — devolve `RunOutput` com `status=ERROR` e o texto do
+erro em `content` —, então sem este caminho a mensagem de erro do provider seguiria o
+fluxo normal e chegaria ao lead como fala do agente.
+
 ### ④ Despedida
 
 > Já passei sua conversa pra um atendente da equipe, com tudo que a gente conversou.

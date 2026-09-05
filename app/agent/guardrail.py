@@ -40,7 +40,7 @@ class GuardrailViolado(Exception):
 
 
 #: Padrões de valor monetário em português. O objetivo é pegar o modelo escrevendo
-#: preço, não virar paranoia: "tenho 35 anos", "carro 2019" e "CEP 01310-100" passam,
+#: preço, não virar paranoia: "tenho 35 anos", "carro 2019" e "CEP 01XXX-XXX" passam,
 #: e há teste para cada um. Se o regex reprovar esses, o agente não consegue conversar.
 _MONETARIO: tuple[re.Pattern[str], ...] = (
     # R$ com ou sem espaço, com milhar e centavo opcionais

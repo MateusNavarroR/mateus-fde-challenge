@@ -23,6 +23,7 @@ import time
 from app.agent.agente import construir_agente
 from app.agent.guardrail import GuardrailViolado
 from app.agent.tools import ContextoDoTurno
+from app import textos
 from app.persistence import repo
 from app.persistence.db import sessao_factory
 
@@ -102,47 +103,94 @@ async def responder(
         except Exception:  # noqa: BLE001
             log.exception("turno falhou")
             if not ctx.ja_enviou:
-                await enviar_async(
-                    "Tive um problema aqui do meu lado. Já vou chamar alguém da equipe."
-                )
+                # De `textos`, como todo o resto: um literal aqui é a deriva que o
+                # teste byte a byte de `docs/TEXTOS.md` existe para impedir.
+                await enviar_async(textos.FALHA_TECNICA)
             return
 
-        # O COMMIT é parte do gravar, e não uma formalidade.
+        # O `finally` é o ponto, e ele resolve DOIS defeitos de uma vez.
         #
-        # `gravar_turn_usage` faz `flush`, não `commit`. Todo caminho de saída daqui
-        # para baixo que NÃO envia mensagem própria — `ja_enviou`, saída vazia — sai
-        # da sessão sem commitar, e o `flush` volta atrás no rollback do
-        # `with fabrica() as s`. Efeito medido na vistoria: uma conversa de 2 turnos
-        # tinha 1 linha em `turn_usage`, e a que faltava era a do turno da COTAÇÃO.
+        # 1. **O commit.** `gravar_turn_usage` faz `flush`, não `commit`. Todo caminho
+        #    de saída que não envia mensagem própria — `ja_enviou`, saída vazia —
+        #    saía sem commitar, e o `flush` voltava atrás no rollback do
+        #    `with fabrica() as s`. Medido na vistoria: uma conversa de 2 turnos tinha
+        #    1 linha em `turn_usage`, e a que faltava era a do turno da COTAÇÃO — ou
+        #    seja, o painel perdia exatamente os turnos com tool call, os mais caros.
         #
-        # Ou seja, o painel de custo perdia exatamente os turnos com tool call — os
-        # mais caros — e o número de C7 saía sistematicamente subestimado.
-        _gravar_uso(s, conversation_id, r)
-        s.commit()
-
-        if await _encaminhar(s, conversation_id, ctx, texto, enviar_async):
-            return
-
-        if ctx.ja_enviou:
-            # A tool já disse tudo o que o lead precisava. O texto do modelo vai fora.
-            return
-
-        saida = (getattr(r, "content", "") or "").strip()
-        if not saida:
-            return
+        # 2. **A ordem.** Gravar ANTES de enviar ancorava o custo na mensagem do turno
+        #    ANTERIOR: a deste turno ainda não existia. A coluna promete "a mensagem
+        #    que este turno produziu" e entregava a de outro. Dois turnos seguidos sem
+        #    mensagem nova apontavam para a mesma âncora e colidiam no índice único —
+        #    foi o que derrubou o replay do dataset aos 15/30.
+        #
+        # No `finally` porque são cinco saídas diferentes e o custo do turno existe em
+        # todas elas, inclusive quando o guardrail descarta o texto.
         try:
-            await enviar_async(saida, autor="agente")
-        except GuardrailViolado as e:
-            # Violação não é corrigida pelo modelo — pedir de novo vira laço. A
-            # mensagem é descartada, o descarte é GRAVADO (é a evidência que o
-            # operador lê) e a violação conta para o gatilho.
-            log.warning("guardrail: %s", e.motivo)
-            repo.registrar_descarte(s, conversation_id, saida)
+            if await _encaminhar(s, conversation_id, ctx, texto, enviar_async):
+                return
+
+            if ctx.ja_enviou:
+                # A tool já disse tudo o que o lead precisava. O texto do modelo sai fora.
+                return
+
+            saida = (getattr(r, "content", "") or "").strip()
+            if not saida:
+                return
+
+            # ⚠️ **O turno que "deu certo" e não deu.**
+            #
+            # Quando a chamada ao provider falha, o Agno NÃO levanta: ele devolve um
+            # `RunOutput` com `status=ERROR` e põe o texto do erro em `content`. O
+            # `except` em volta de `agente.run` nunca dispara, e a mensagem seguia o
+            # caminho normal — persistida como fala do `agente` e ENTREGUE AO LEAD.
+            #
+            # Medido no replay: a conta ficou sem crédito no meio da execução, e 14
+            # conversas gravaram «Error code: 400 … Your credit balance is too low …»
+            # como resposta do agente. O guardrail não pega: não há valor monetário no
+            # texto. Um lead lendo isso é o pior desfecho possível de uma falha de
+            # infraestrutura — pior que silêncio, porque expõe a nossa operação.
+            #
+            # A detecção é por ESTADO, não por farejar o texto: `RunStatus.ERROR` é o
+            # contrato do Agno, e um regex de "Error code:" quebraria na primeira
+            # mudança de formato do SDK.
+            if _falhou(r):
+                log.error("run com status de erro: %s", saida[:200])
+                await enviar_async(textos.FALHA_TECNICA)
+                return
+            await _entregar_do_modelo(s, conversation_id, ctx, texto, saida,
+                                      enviar_async)
+        finally:
+            _gravar_uso(s, conversation_id, r)
             s.commit()
-            # Reavalia AGORA: a contagem acabou de mudar, e esperar o próximo turno
-            # deixaria o lead sem resposta e sem handoff justamente no turno em que
-            # o agente falhou duas vezes.
-            await _encaminhar(s, conversation_id, ctx, texto, enviar_async)
+
+
+def _falhou(r) -> bool:
+    """`RunStatus.ERROR`, sem importar o enum do Agno no topo.
+
+    Comparação por VALOR e insensível a caixa: o enum é do Agno, e prender o nosso
+    caminho de erro à identidade de um objeto de terceiro é como um `import` a mais
+    vira defeito numa atualização menor.
+    """
+    return str(getattr(r, "status", "") or "").upper().endswith("ERROR")
+
+
+async def _entregar_do_modelo(s, conversation_id, ctx, texto, saida, enviar_async):
+    """O texto do modelo, com o descarte do guardrail no caminho de erro."""
+    from app.persistence import repo
+
+    try:
+        await enviar_async(saida, autor="agente")
+    except GuardrailViolado as e:
+        # Violação não é corrigida pelo modelo — pedir de novo vira laço. A mensagem
+        # é descartada, o descarte é GRAVADO (é a evidência que o operador lê) e a
+        # violação conta para o gatilho.
+        log.warning("guardrail: %s", e.motivo)
+        repo.registrar_descarte(s, conversation_id, saida)
+        s.commit()
+        # Reavalia AGORA: a contagem acabou de mudar, e esperar o próximo turno
+        # deixaria o lead sem resposta e sem handoff justamente no turno em que o
+        # agente falhou duas vezes.
+        await _encaminhar(s, conversation_id, ctx, texto, enviar_async)
 
 
 async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) -> bool:
@@ -153,7 +201,6 @@ async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) ->
     produzem o mesmo sinal, e `disparado_por` é a única diferença — que é
     exatamente o ponto do padrão write-back.
     """
-    from app import textos
     from app.contracts.conversa import HandoffTrigger
     from app.handoff import gatilhos
 

@@ -17,6 +17,8 @@ from app.persistence import repo
 from app.persistence.models import Message, Quote, QuoteAttempt
 from app.quote.job import executar_job
 
+from tests.fixtures.pii import cep_de
+
 pytestmark = [pytest.mark.db, pytest.mark.live]
 
 QUOTE_LIMPA = os.getenv("QUOTE_API_LIMPA", "http://localhost:8001")
@@ -69,7 +71,7 @@ class CanalFalso:
 
 def test_job_ok_persiste_quote_e_attempt(sessao, conversa):
     req = QuoteRequest(plano_id="completo", idade=28, veiculo_ano=2019,
-                       cep="07145-200", data_inicio=dt.date(2026, 10, 17))
+                       cep=cep_de("07"), data_inicio=dt.date(2026, 10, 17))
     q = executar_job(sessao, conversa.id, req)
     assert q.status == "ok"
     assert float(q.premio_mensal) == 392.25
@@ -92,7 +94,7 @@ def test_render_se_reconstroi_so_da_linha_de_quotes(sessao, conversa):
     from app.quote.renderer import render_de_payload
 
     req = QuoteRequest(plano_id="completo", idade=28, veiculo_ano=2019,
-                       cep="07145-200", data_inicio=dt.date(2026, 10, 17))
+                       cep=cep_de("07"), data_inicio=dt.date(2026, 10, 17))
     q = executar_job(sessao, conversa.id, req)
     assert "R$ 189,80" in render_de_payload(q.payload)
 
@@ -101,7 +103,7 @@ def test_render_se_reconstroi_so_da_linha_de_quotes(sessao, conversa):
 
 
 def test_retorno_nao_contem_numero_de_dinheiro(ctx):
-    r = make_quote_plan(ctx)("completo", 28, 2019, "07145-200", "2026-10-17")
+    r = make_quote_plan(ctx)("completo", 28, 2019, cep_de("07"), "2026-10-17")
     assert "cotado" in r
     assert not re.search(r"\d{1,3}(?:\.\d{3})*,\d{2}", r)   # nenhum valor monetário
     assert "392" not in r and "3000" not in r
@@ -110,13 +112,13 @@ def test_retorno_nao_contem_numero_de_dinheiro(ctx):
 
 def test_retorno_nao_expoe_status_http_nem_tentativa(ctx):
     """Um modelo exposto a 'recebi 503' improvisa."""
-    r = make_quote_plan(ctx)("completo", 28, 2019, "07145-200", "2026-10-17")
+    r = make_quote_plan(ctx)("completo", 28, 2019, cep_de("07"), "2026-10-17")
     for vazamento in ("200", "503", "http", "tentativa", "attempt", "breaker", "retry"):
         assert vazamento not in r.lower()
 
 
 def test_a_tool_envia_o_bloco_ela_mesma(ctx, sessao, canal):
-    make_quote_plan(ctx)("completo", 28, 2019, "07145-200", "2026-10-17")
+    make_quote_plan(ctx)("completo", 28, 2019, cep_de("07"), "2026-10-17")
     msg = sessao.query(Message).filter(Message.quote_id.isnot(None)).one()
     assert msg.autor == "sistema"
     assert "R$ 392,25" in msg.conteudo
@@ -127,7 +129,7 @@ def test_texto_do_modelo_e_descartado_apos_a_tool_falar(ctx):
     """Tudo que o lead precisava já foi dito deterministicamente; o que o modelo
     acrescentar é texto não verificado sobre uma cotação."""
     assert ctx.ja_enviou is False
-    make_quote_plan(ctx)("completo", 28, 2019, "07145-200", "2026-10-17")
+    make_quote_plan(ctx)("completo", 28, 2019, cep_de("07"), "2026-10-17")
     assert ctx.ja_enviou is True
 
 
@@ -142,7 +144,7 @@ def test_mensagem_de_preco_bate_byte_a_byte_com_o_render(ctx, sessao):
     fosse o render exato, `gravar_mensagem` teria levantado."""
     from app.quote.renderer import render_de_payload
 
-    make_quote_plan(ctx)("completo", 28, 2019, "07145-200", "2026-10-17")
+    make_quote_plan(ctx)("completo", 28, 2019, cep_de("07"), "2026-10-17")
     msg = sessao.query(Message).filter(Message.quote_id.isnot(None)).one()
     q = sessao.get(Quote, msg.quote_id)
     assert msg.conteudo == render_de_payload(q.payload)
@@ -205,11 +207,11 @@ def test_argumento_divergente_do_perfil_e_bad_request(ctx, sessao):
     from app.agent.tools import make_qualify_lead
 
     make_qualify_lead(ctx)(idade=28)
-    r = make_quote_plan(ctx)("completo", 45, 2019, "07145-200", "2026-10-17")
+    r = make_quote_plan(ctx)("completo", 45, 2019, cep_de("07"), "2026-10-17")
     assert "dados_invalidos" in r
     assert sessao.query(Quote).count() == 0
 
 
 def test_estado_da_conversa_vira_cotado(ctx, sessao):
-    make_quote_plan(ctx)("completo", 28, 2019, "07145-200", "2026-10-17")
+    make_quote_plan(ctx)("completo", 28, 2019, cep_de("07"), "2026-10-17")
     assert repo.obter_conversa(sessao, ctx.conversation_id).state == "cotado"

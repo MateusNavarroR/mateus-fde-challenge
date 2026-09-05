@@ -133,6 +133,11 @@ def test_com_as_variaveis_a_operacao_exige_sessao(com_login, cliente, monkeypatc
 def test_o_ciclo_completo_entra_le_e_sai(com_login, cliente, monkeypatch):
     from app.config import get_settings
 
+    # `APP_ENV=dev` EXPLÍCITO: o `TestClient` fala http, e desde que o padrão passou a
+    # ser `prod` o cookie sai com `Secure` e o cliente não o devolve. Antes o teste
+    # herdava o modo aberto por omissão — e um teste que depende de um default
+    # inseguro é um teste que impede corrigi-lo.
+    monkeypatch.setenv("APP_ENV", "dev")
     monkeypatch.setattr(get_settings(), "admin_token", None)
     usuario, senha = com_login
 
@@ -154,15 +159,24 @@ def test_o_ciclo_completo_entra_le_e_sai(com_login, cliente, monkeypatch):
     assert cliente.get("/api/auth/estado").json()["autenticado"] is False
 
 
-def test_o_cookie_de_sessao_e_httponly_e_samesite_strict(com_login, cliente):
+@pytest.mark.parametrize("env,espera_secure", [("prod", True), ("dev", False)])
+def test_o_cookie_de_sessao_e_httponly_e_samesite_strict(
+    com_login, cliente, monkeypatch, env, espera_secure
+):
+    """`httpOnly` e `SameSite=Strict` em qualquer modo; `Secure` só fora de dev.
+
+    Os dois casos no mesmo teste porque o interessante é o CONTRASTE: em dev não há
+    HTTPS e um cookie `Secure` simplesmente não voltaria, mas essa concessão não pode
+    vazar para o modo padrão — que é onde o cookie viaja pela rede.
+    """
+    monkeypatch.setenv("APP_ENV", env)
     usuario, senha = com_login
     r = cliente.post("/api/auth/login", json={"usuario": usuario, "senha": senha})
     bruto = r.headers["set-cookie"].lower()
     assert auth.COOKIE_SESSAO.lower() in bruto
     assert "httponly" in bruto
     assert "samesite=strict" in bruto
-    # Em dev não há HTTPS: um cookie `Secure` simplesmente não voltaria.
-    assert "secure" not in bruto
+    assert ("secure" in bruto) is espera_secure
 
 
 def test_secure_liga_fora_de_dev(monkeypatch):
@@ -276,74 +290,11 @@ def test_o_login_nao_ecoa_o_que_recebeu(com_login, cliente):
 
 # ─── 5 · nenhuma credencial embarcada em arquivo versionado ──────────────────
 
-#: Nomes que denunciam um segredo. São os que o passe `insecure-defaults@trailofbits`
-#: procura, e cada um já vazou de verdade em algum repositório público.
-_NOMES = r"(?:admin_password|password|passwd|senha|secret_key|client_secret|secret|admin_token|access_token|api_key|apikey)"
-
-#: A mesma lista para a forma B, **em caixa alta e sem `(?i)`**. Nome de variável de
-#: ambiente é maiúsculo por convenção universal, e deixar a forma B insensível a caixa
-#: fazia `senha_ok = hmac.compare_digest(...)` — um identificador Python comum — virar
-#: achado. Um teste de segurança que acusa código legítimo é desligado, não corrigido.
-_NOMES_ENV = _NOMES.upper()
-
-#: **Duas formas de embarcar uma credencial, e a varredura persegue as duas.**
-#:
-#: A. *Literal citado em código* — `SENHA = "..."`, `{"api_key": "..."}`. É a forma
-#:    que nasce de "só para testar" e fica. Não há porta de escape por entropia aqui:
-#:    valor entre aspas atribuído a um nome de segredo é achado, ponto.
-#: B. *Linha de arquivo de ambiente* — `ADMIN_PASSWORD=...`, com ou sem `export`.
-#:    Esta forma aparece em prosa o tempo todo (documentação citando o nome da
-#:    variável), então exige que o valor **pareça** um segredo — ver `_parece_segredo`.
-#: C. *Prefixo de provider* — `sk-`, `ghp_`. Não precisa de nome nem de contexto: a
-#:    própria string já é a credencial.
-CREDENCIAIS = [
-    ("literal citado", re.compile(r'(?i)\b' + _NOMES + r'["\']?\s*[:=]\s*(["\'])([^"\'\n]{6,})\1'), 2, False),
-    ("linha de ambiente", re.compile(r"\b[A-Z_]*" + _NOMES_ENV + r"[A-Z_]*[ \t]*=[ \t]*([^\s\"'#\n\\]{6,})"), 1, True),
-    ("chave de provider", re.compile(r"\b(sk-[A-Za-z0-9_\-]{16,}|ghp_[A-Za-z0-9]{20,})"), 1, False),
-]
-
-#: Um valor que é **placeholder ou referência** não é credencial. Isto não é uma lista
-#: de arquivos isentos — não há nenhuma; é a definição do que conta como valor.
-#:
-#: `^[A-Z][A-Z0-9_]*$` cobre o caso que mais gera ruído: o valor é o **nome de outra
-#: variável**, como no espelhamento `{"ADMIN_TOKEN": "APP_ADMIN_TOKEN"}` de
-#: `app/bootstrap.py`. Segredo de verdade em CAIXA ALTA com underscores não existe.
-PLACEHOLDERS = re.compile(
-    r"^(?:"
-    # O `(?i:...)` é escopado de propósito: se a insensibilidade a caixa vazasse para
-    # o ramo `[A-Z][A-Z0-9_]*` abaixo, TODO token alfanumérico viraria "referência" e
-    # a varredura pararia de acusar qualquer coisa — verde e cega.
-    r"(?i:none|null|true|false|\.\.\.|x+|\*+|str\s*\|\s*none|senha|password|token|str|bool|int)"
-    r"|<[^>]*>|\$\{[^}]*\}|%[sd]|\{[^}]*\}"
-    r"|[A-Z][A-Z0-9_]*"
-    r")$"
-)
-
-#: Limiar de entropia de Shannon, em bits por caractere, para a forma B.
-#:
-#: É a mesma heurística do `gitleaks` e do `detect-secrets`, e o número tem medição:
-#: `secrets.token_urlsafe(12)` fica entre 3,7 e 4,0; uma senha de gerenciador com
-#: maiúscula, minúscula e dígito fica acima de 3,3; palavras de dicionário coladas
-#: por hífen ficam abaixo de 2,9.
-#:
-#: 3,2 separa os dois grupos com folga dos dois lados. Um limiar mais baixo faria a
-#: varredura acusar cada `POSTGRES_PASSWORD: postgres` do compose e cada nome de
-#: variável citado em documentação — e varredura que grita à toa é varredura que
-#: alguém desliga.
-ENTROPIA_MINIMA = 3.2
-
-
-def _entropia(valor: str) -> float:
-    n = len(valor)
-    if n == 0:
-        return 0.0
-    return -sum(
-        (c / n) * math.log2(c / n) for c in Counter(valor).values()
-    )
-
-
-def _parece_segredo(valor: str) -> bool:
-    return len(valor) >= 8 and _entropia(valor) >= ENTROPIA_MINIMA
+#: Os padrões vivem em `app/privacy/segredos.py`, origem única compartilhada com o
+#: exportador de `ai-logs`. Quando cada um tinha o seu, o exportador achava que tinha
+#: limpado e o portão achava que não.
+from app.privacy.segredos import CREDENCIAIS, PLACEHOLDERS, parece_segredo  # noqa: E402
+from app.privacy.segredos import achados as _achados_de_credencial  # noqa: E402
 
 
 def _versionados() -> list[Path]:
@@ -365,17 +316,9 @@ def test_ha_o_que_varrer():
 
 
 def _achados(caminho: Path) -> list[str]:
-    texto = caminho.read_bytes().decode("utf-8", errors="ignore")
-    achados = []
-    for classe, padrao, grupo, exige_entropia in CREDENCIAIS:
-        for m in padrao.finditer(texto):
-            valor = m.group(grupo)
-            if PLACEHOLDERS.match(valor):
-                continue
-            if exige_entropia and not _parece_segredo(valor):
-                continue
-            achados.append(f"{classe} → {m.group(0)!r}")
-    return achados
+    return _achados_de_credencial(
+        caminho.read_bytes().decode("utf-8", errors="ignore")
+    )
 
 
 def test_nenhum_literal_de_credencial_em_arquivo_versionado():
@@ -627,3 +570,58 @@ def test_assumir_um_handoff_empurra_para_o_socket(cliente, monkeypatch):
         "assumir um handoff não empurrou nada: a fila e a badge de outro operador "
         "seguem mostrando o caso como pendente até alguém recarregar"
     )
+
+
+# ─── APP_ENV falha para o lado SEGURO ────────────────────────────────────────
+
+
+@pytest.mark.parametrize("valor", [None, "", "prod", "producao", "staging", "qualquer"])
+def test_sem_APP_ENV_dev_a_documentacao_fica_fechada(monkeypatch, valor):
+    """Achado do passe de `insecure-defaults`: o padrão era `dev`, e `dev` abre
+    `/docs`, `/redoc` e `/openapi.json` e tira a flag `Secure` do cookie.
+
+    A imagem define `APP_ENV=prod`, então o caminho entregue estava correto — e "a
+    configuração de produção sobrescreve" é exatamente a racionalização que aquele
+    passe recusa. Quem rodasse `uvicorn app.main:app` fora da imagem ficava exposto
+    sem nenhum aviso.
+
+    Só o valor literal `dev` liga o modo aberto. Qualquer outro, e a ausência, fecham.
+    """
+    import importlib
+
+    if valor is None:
+        monkeypatch.delenv("APP_ENV", raising=False)
+    else:
+        monkeypatch.setenv("APP_ENV", valor)
+
+    assert auth._dev() is False
+
+    import app.main as main
+
+    recarregado = importlib.reload(main)
+    try:
+        assert recarregado.DEV is False
+        assert recarregado.app.docs_url is None
+        assert recarregado.app.redoc_url is None
+        assert recarregado.app.openapi_url is None
+    finally:
+        monkeypatch.setenv("APP_ENV", "prod")
+        importlib.reload(main)
+
+
+def test_APP_ENV_dev_continua_abrindo_a_documentacao(monkeypatch):
+    """O negativo: fechar por engano em desenvolvimento tiraria a ferramenta de quem
+    a usa, e a correção teria trocado um problema por outro."""
+    import importlib
+
+    monkeypatch.setenv("APP_ENV", "dev")
+    assert auth._dev() is True
+
+    import app.main as main
+
+    recarregado = importlib.reload(main)
+    try:
+        assert recarregado.app.docs_url == "/docs"
+    finally:
+        monkeypatch.setenv("APP_ENV", "prod")
+        importlib.reload(main)

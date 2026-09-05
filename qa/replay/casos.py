@@ -36,6 +36,20 @@ _CEP = next(padrao for nome, padrao, _ in _REGRAS if nome == "cep")
 
 _SO_DIGITOS = re.compile(r"\D")
 
+#: As objeções que o dataset de fato contém — preço salgado, franquia alta e
+#: concorrente mais barato. É o MESMO vocabulário de `app/handoff/gatilhos.py`, e
+#: isso não é coincidência: o estrato existe para exercitar
+#: `OBJECAO_FORA_DA_ALCADA`, e um regex diferente aqui mediria outra coisa.
+#:
+#: Uma objeção não encaminha; a política é tentar uma vez. É a SEGUNDA, na mesma
+#: conversa, que vira handoff — então o que interessa ao estrato é a conversa em que
+#: o lead objeta mais de uma vez.
+_OBJECAO = re.compile(
+    r"\b(caro|salgad|abusiv|apertad|n[ãa]o cabe no bolso|fora do or[çc]amento|"
+    r"desconto|mais barato|baratinho|pesou|franquia (alta|salgada)|concorr[êe]ncia)\w*",
+    re.IGNORECASE,
+)
+
 #: `message_type` que carrega mídia. O corpo existe (`"[audio] mensagem de voz (18s)"`)
 #: mas é um rótulo do gerador, não transcrição: não há conteúdo para extrair.
 TIPOS_DE_MIDIA = ("audio", "image", "document")
@@ -96,6 +110,7 @@ class CasoReplay:
     #: Cru, para o relatório citar a origem depois de mascarar.
     veiculo_texto: str | None = None
     _midias: int = field(default=0, repr=False)
+    _objecoes: int = field(default=0, repr=False)
 
     @property
     def cotavel(self) -> bool:
@@ -113,6 +128,21 @@ class CasoReplay:
     @property
     def midias(self) -> int:
         return self._midias
+
+    @property
+    def objecoes(self) -> int:
+        return self._objecoes
+
+    @property
+    def tem_objecao_repetida(self) -> bool:
+        """Duas ou mais objeções de preço na MESMA conversa.
+
+        É esta a condição que `OBJECAO_FORA_DA_ALCADA` lê — a primeira objeção o
+        agente trata, a segunda encaminha. Uma conversa com uma objeção só não
+        exercita o gatilho, e contá-la no estrato inflaria a cobertura sem provar
+        nada.
+        """
+        return self._objecoes >= 2
 
     @property
     def inferencias(self) -> int:
@@ -202,6 +232,7 @@ def montar(
                 elegibilidade=veredito,
                 veiculo_texto=cabeca["veiculo_texto"],
                 _midias=sum(1 for f in falas if f.e_midia_sem_transcricao),
+                _objecoes=sum(1 for f in falas if _OBJECAO.search(f.texto or "")),
             )
         )
     return casos

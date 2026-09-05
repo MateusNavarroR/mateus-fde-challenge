@@ -12,13 +12,82 @@ internos e as invariantes de implementação estão em `docs/ARQUITETURA.md`.  �
 
 ## Como rodar
 
-<!-- PREENCHER NO FIM -->
+```bash
+cp .env.example .env      # e preencha ANTHROPIC_API_KEY — é a única obrigatória
+docker compose up --build
+```
+
+Abra **http://127.0.0.1:8080**. Não há segundo passo, segundo comando nem porta
+secundária: o frontend é servido pela mesma origem da API, e o banco e a API de cotação
+sobem na rede interna do compose.
+
+| Variável | Obrigatória | O que faz |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | **sim** | credencial do modelo. Sem ela o boot falha **alto**, e não no meio de uma conversa. |
+| `APP_LLM_MODEL` | não | model-string do Agno. Default `anthropic:claude-opus-5`; `ollama:qwen2.5:7b` também é validado. |
+| `ADMIN_USER` + `ADMIN_PASSWORD` | não | ligam o login do `/admin`, com cookie `httpOnly` + `SameSite=Strict`. Ausentes, o admin abre direto. |
+| `ADMIN_TOKEN` | não | protege o `/admin` por cabeçalho, para CI e `curl`. Ver a ressalva em *Limitações*. |
+| `QUOTE_FAILURE_RATE`, `QUOTE_SLOW_RATE`, `QUOTE_SLOW_SECONDS`, `QUOTE_SEED` | não | a instabilidade simulada da `/quote`. Os defaults são os do desafio: 20% de falha, 10% lentas de 8 s. |
+
+**Só a 8080 é publicada, e em `127.0.0.1`.** Banco e API de cotação ficam na rede
+interna: nada de conflito com um Postgres já instalado, e nada alcançável da rede
+local. Para depurar com as portas expostas: `docker compose --profile debug up`.
+
+### Rodar os testes
+
+```bash
+uv sync
+docker compose --profile debug up -d db-debug        # o Postgres na 5432
+uv run pytest -q -m "not live"                       # sem rede e sem modelo
+```
+
+Os marcados `live` falam com a `/quote` de verdade e com o modelo; `serial` dependem da
+seed da `/quote` e **não podem** rodar em paralelo (ver *Reprodutibilidade*).
+
+### Gerar o log de execução completa
+
+```bash
+QUOTE_FAILURE_RATE=0 QUOTE_SLOW_RATE=0 docker compose up -d --build --wait
+docker compose exec -T app python scripts/transcript.py --cenario feliz \
+  > artifacts/transcript-feliz.md
+```
+
+O cabeçalho de cada artefato traz o comando exato que o reproduz, incluindo o cenário
+degradado.
 
 ---
 
 ## O que está implementado
 
-<!-- PREENCHER NO FIM -->
+Cada linha aqui tem código rodando e teste que a sustenta. O que não tem está em
+*Limitações assumidas e o que não foi testado*, e não nesta lista.
+
+**O agente, de ponta a ponta**
+- conversa, qualifica os cinco campos, cota e decide sozinho — `artifacts/transcript-feliz.md` mostra do «oi» à cotação;
+- **o preço nunca vem do modelo**: a tool devolve um `quote_id`, o texto é renderizado por template, e três verificações no ponto de estrangulamento da persistência impedem que qualquer outro caminho escreva um número;
+- prompt injection é caso de teste, determinístico e vivo (`tests/nucleo/test_injecao.py`).
+
+**Quando a `/quote` falha** — *o critério que o enunciado chama de o que mais separa*
+- read timeout de 12 s (maior que os 8 s da chamada lenta), 3 tentativas, backoff com full jitter, semáforo de 8 e circuit breaker;
+- **a cotação é um job com estado**, porque o pior caso da política não cabe num turno: aviso ao lead aos 6 s, reforço aos 20 s, encaminhamento quando as tentativas se esgotam;
+- `artifacts/transcript-degradado.md` mostra a sequência com o tempo em cada linha.
+
+**Handoff**
+- sete gatilhos como dados, com precedência declarada e um teste cada;
+- a fila distingue **regra determinística** de **decisão do modelo**;
+- recusa da `/quote` **não** vira handoff, e o motivo está no contrato.
+
+**Rastreabilidade**
+- cada mensagem com id, índice, autor, status e hora; cada cotação com id, status, prêmio e uma linha por tentativa HTTP;
+- `/admin` com conversas, detalhe, status da integração e fila de handoff, recebendo em tempo real.
+
+**Dados sensíveis**
+- PII mascarada **na escrita**: não existe versão crua do lado do servidor;
+- a varredura de PII roda na suíte, sobre tudo que é versionado e não é código, sem lista de exceções.
+
+**Custo e cache**
+- `turn_usage` por turno, com preço vindo de `config/model_pricing.yaml` com vigência;
+- painel de custo no admin, por provider e por conversa.
 
 ---
 
@@ -298,6 +367,32 @@ Custo da conversa inteira: **US$ 0,1002**, calculado de `config/model_pricing.ya
 a vigência gravada em cada linha — a Anthropic não popula o campo `cost` do Agno, então
 o cálculo é nosso.
 
+#### O cache é por PREFIXO, não por conversa — e é por isso que a economia cresce
+
+Numa amostra maior, **79 turnos** de várias conversas, todos com `anthropic:claude-opus-5`:
+
+| | |
+|---|---|
+| lidos do cache | **346.723** |
+| enviados inteiros | 101.132 |
+| **do contexto veio do cache** | **77,4 %** |
+| custo acumulado | US$ 1,16 |
+| turnos que leram **zero** | **4 de 79** |
+
+Os quatro que leram zero são os que aqueceram o prefixo. Os outros 75 acertaram —
+**inclusive primeiros turnos de conversas novas**, o que só é possível porque o que está
+em cache é o *prefixo do prompt*, e não o histórico de uma conversa.
+
+A consequência é operacional e vale dizer explicitamente: o prefixo é o catálogo de
+planos mais as instruções, é idêntico para todo lead, e sobrevive **entre** conversas
+dentro da janela do provider. **Quanto mais tráfego, maior a fração que vem do cache** —
+o custo por conversa cai com o volume em vez de escalar linearmente.
+
+É exatamente por isso que o bloco volátil (data, estado do lead) vai num
+`SystemPromptBlock` com `cache=False` em vez de concatenado ao prompt: concatenar
+invalidaria o prefixo a cada turno **e a cada conversa**, a tabela acima seria toda de
+zeros, e nenhum erro apareceria — só uma conta maior.
+
 Para conferir na sua máquina, sem abrir o painel:
 
 ```sql
@@ -570,7 +665,49 @@ diz "suporta X" sem um teste que prove.
 
 ## Limitações assumidas e o que não foi testado
 
-<!-- PREENCHER NO FIM -->
+Esta seção existe porque a alternativa é o leitor descobrir sozinho — e descobrir
+sozinho custa a confiança em tudo o mais que o README afirma.
+
+### O que não foi testado
+
+| Item | Situação |
+|---|---|
+| **Providers além de Anthropic e Ollama** | funcionam pela mesma model-string do Agno, e **não foram testados**. Não digo "suporta X" sem um smoke test que prove. |
+| **Ollama** | validado por smoke test de uma conversa completa; **não** foi submetido ao replay do dataset nem à suíte `live` inteira. Os números de avaliação deste README são todos de `anthropic:claude-opus-5`. |
+| **Concorrência real de leads** | o semáforo de 8 e o teto de 40 chamadas lentas da `/quote` estão medidos, mas nunca houve mais de uma conversa simultânea de verdade. |
+| **Réplicas** | o rate limit é em memória, no processo. Com mais de uma réplica cada uma tem o seu contador, e o limite efetivo multiplica. |
+| **Navegadores** | Chromium, via Playwright. Firefox e Safari não foram abertos. |
+| **`OBJECAO_FORA_DA_ALCADA` contra o dataset** | o gatilho exige a **segunda** objeção na mesma conversa. Medido: 628 das 2.500 conversas têm exatamente uma objeção e **nenhuma tem duas** — o dataset não consegue exercitá-lo. Coberto por teste unitário; não por replay. |
+
+### Riscos aceitos, com o motivo
+
+**`ADMIN_TOKEN` no armazenamento do navegador.** Quando a instalação define
+`ADMIN_TOKEN` e alguém o cola na tela de 401, ele fica em `sessionStorage` — legível por
+qualquer XSS na página. É a credencial *mais forte* do sistema (o backend a aceita mesmo
+com login configurado) guardada no lugar *menos* protegido.
+
+Mitigado, não resolvido: era `localStorage` e passou a `sessionStorage`, então morre com
+a aba em vez de ficar em disco. A saída de verdade seria trocá-lo por um cookie
+`httpOnly`, como a sessão de login já faz — não foi feito porque a sessão é assinada com
+chave derivada da credencial, e no modo só-token não existe credencial de onde derivá-la.
+**Recomendação: use `ADMIN_USER`/`ADMIN_PASSWORD` em qualquer instalação que abra o
+navegador**, e reserve `ADMIN_TOKEN` para CI e `curl`.
+
+**O id da conversa é uma capacidade.** O WebSocket do chat não autentica: quem tem o id
+lê a conversa inteira. O id tem 64 bits de aleatoriedade, então adivinhar é inviável — o
+risco é vazamento (navegador compartilhado, captura de tela). É consequência direta de o
+chat ser anônimo, que é o desenho do produto: um lead não faz login para pedir cotação.
+
+**PII sintética no histórico do Git.** Commits antigos contêm CEPs de exemplo
+(um deles é o da Avenida Paulista, endereço público) e um CPF placeholder inválido. Nenhum dado de
+pessoa real, em nenhum commit — o histórico inteiro foi varrido por chave, token e PII.
+O HEAD está limpo pela regra estrita (nenhum literal, nem sintético); reescrever 34
+commits para remover endereços públicos seria desproporcional, e invalidaria todas as
+referências de commit deste README.
+
+**Sem antivírus de conteúdo no anexo.** O chat aceita anexo mas **não transporta bytes**
+— só nome e tipo. Não há upload, logo não há arquivo para varrer; a contrapartida é que
+também não há visualização de mídia.
 
 ---
 
@@ -583,8 +720,9 @@ diz "suporta X" sem um teste que prove.
 | `docs/POLITICA-RESILIENCIA.md` | a política técnica completa, com a medição que justifica cada parâmetro |
 | `docs/DECISOES-FECHADAS.md` | o contrato de comportamento |
 | `docs/DECISOES-ABERTAS.md` | o registro do que foi considerado e descartado |
+| `docs/SEGURANCA.md` | o passe de segurança: achados, correções, riscos aceitos e **os falsos positivos** |
 | `docs/TEXTOS.md` | os textos determinísticos, origem única |
-| `docs/EVALS.md` | metodologia de avaliação, rubrica, e qual modelo produziu qual número |  ⚠️ *ainda não escrito — ver `<!-- PREENCHER NO FIM -->`*
+| `docs/EVALS.md` | metodologia de avaliação, cobertura por grupo, e qual modelo produziu qual número |
 | `artifacts/transcript-feliz.md` | **entregável nº 4** — uma execução completa, do «oi» à cotação: qualificação dos cinco campos, bloco de preço com carência, franquia e pro-rata, estado final `cotado` |
 | `artifacts/transcript-degradado.md` | **entregável nº 4** — a mesma conversa com a `/quote` fora do ar: aviso aos 6 s, reforço aos 20 s, encaminhamento depois de esgotadas as três tentativas, e nenhum número inventado |
 | `ai-logs/` | as conversas com IA durante o desafio |

@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+from app import ratelimit
 from app.config import get_settings
 from app.persistence import repo
 from app.persistence.db import sessao_factory
@@ -172,6 +173,23 @@ def registrar_websockets(app: FastAPI) -> None:
                     continue
 
                 if msg.get("type") != "message":
+                    continue
+
+                # **O ponto caro do sistema inteiro**: daqui para baixo cada
+                # mensagem vira uma inferência do modelo. O socket é público — não há
+                # autenticação no chat, por desenho —, então sem limite alguém com
+                # acesso à porta esgota a chave sem precisar de nenhum bug.
+                #
+                # Descartar em silêncio seria pior que recusar: o lead ficaria olhando
+                # para uma conversa que parou de responder. O aviso sai como mensagem
+                # do sistema, no mesmo canal, e a conversa continua viva.
+                if not ratelimit.MENSAGEM_DO_CHAT.permite(ratelimit.origem(ws)):
+                    await adaptador.send(
+                        conversation_id,
+                        "Você está mandando mensagens muito rápido. Me dá um segundo "
+                        "que eu já respondo.",
+                        message_id="rate-limit", autor="sistema", status="sent",
+                    )
                     continue
 
                 texto = msg.get("text", "")

@@ -637,3 +637,203 @@ async def test_turno_em_que_a_tool_responde_grava_o_custo(sessao, conversa, monk
     )
     assert linhas[0].tokens_in == 1234
     assert linhas[0].cache_read == 890
+
+
+async def test_turno_sem_mensagem_ainda_grava_o_custo(sessao, conversa, monkeypatch):
+    """Nem todo turno produz mensagem, e ele custa tokens igual.
+
+    Depois de a cotação sair pela tool, o texto do modelo é descartado; se o lead
+    escrever de novo, o turno roda, consome contexto e não escreve em `messages`.
+    `gravar_turn_usage` ancorava na ÚLTIMA mensagem — a do turno anterior — e batia no
+    UNIQUE de `turn_usage.message_id`, derrubando a transação inteira.
+
+    Isso vinha acontecendo em silêncio: sem o commit, o `flush` voltava atrás no
+    rollback e o custo sumia. O replay do dataset foi onde apareceu, quebrando aos
+    15/30. A âncora agora é nula nesse turno, em vez de mentir ou de sumir.
+    """
+    from app.agent import turno
+    from app.persistence.db import sessao_factory
+    from app.persistence.models import TurnUsage
+
+    class Metrics:
+        input_tokens, output_tokens = 100, 20
+        cache_read_tokens, cache_write_tokens = 50, 0
+        duration = 1.0
+
+    # O PRIMEIRO turno fala (e cria a âncora); o segundo roda e não escreve. Se os
+    # dois fossem mudos, a conversa não teria mensagem nenhuma, a âncora seria nula
+    # nos dois casos e o teste passaria com o defeito presente — foi assim que ele
+    # nasceu, e a mutação o pegou.
+    falas = iter(["Boa, me passa o ano do carro?", ""])
+
+    class AgenteQueEmudece:
+        def run(self, _texto):
+            return type("R", (), {"content": next(falas), "metrics": Metrics()})()
+
+    monkeypatch.setattr(turno, "construir_agente", lambda _c: AgenteQueEmudece())
+
+    class Canal:
+        name = "web"
+
+        async def send(self, *a, **kw):
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+    # `responder` DIRETO, sem `processar_turno_web`. É o caminho do replay, e é o que
+    # expõe o defeito: `processar_turno_web` persiste a fala do lead a cada turno,
+    # então a âncora muda sozinha e o conflito nunca aparece. O replay injeta a fala
+    # sem gravá-la — a última mensagem continua sendo a mesma entre os turnos.
+    await turno.responder(conversa.id, "oi", Canal())
+    await turno.responder(conversa.id, "e aí?", Canal())
+
+    with sessao_factory()() as outra:
+        linhas = outra.query(TurnUsage).filter_by(conversation_id=conversa.id).all()
+
+    assert len(linhas) == 2, (
+        "os dois turnos custaram e os dois têm de aparecer — antes, o segundo "
+        "derrubava a transação no UNIQUE e o replay morria aos 15/30"
+    )
+    ancoras = [l.message_id for l in linhas]
+    assert None in ancoras, (
+        "o turno que não produziu mensagem tem de gravar com âncora NULA — apontar "
+        "para a mensagem de outro turno é mentira, e omitir subestima a conta"
+    )
+
+
+async def test_a_ancora_do_custo_e_a_mensagem_QUE_O_TURNO_PRODUZIU(
+    sessao, conversa, monkeypatch
+):
+    """A coluna promete "a mensagem que este turno produziu". Ela entregava outra.
+
+    `_gravar_uso` rodava ANTES do envio, então a âncora era a mensagem do turno
+    ANTERIOR — a deste ainda não existia. No primeiro turno de uma conversa isso dava
+    âncora nula; do segundo em diante, apontava para a mensagem errada. E dois turnos
+    seguidos sem mensagem nova apontavam para a MESMA, colidindo no índice único.
+    """
+    from app.agent import turno
+    from app.persistence import repo as _repo
+    from app.persistence.db import sessao_factory
+    from app.persistence.models import TurnUsage
+
+    class Metrics:
+        input_tokens, output_tokens = 10, 5
+        cache_read_tokens, cache_write_tokens = 0, 0
+        duration = 0.1
+
+    falas = iter(["primeira resposta", "segunda resposta"])
+
+    class Falante:
+        def run(self, _texto):
+            return type("R", (), {"content": next(falas), "metrics": Metrics()})()
+
+    monkeypatch.setattr(turno, "construir_agente", lambda _c: Falante())
+
+    class Canal:
+        name = "web"
+
+        async def send(self, *a, **kw):
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+    await turno.responder(conversa.id, "oi", Canal())
+    await turno.responder(conversa.id, "de novo", Canal())
+
+    with sessao_factory()() as outra:
+        linhas = (outra.query(TurnUsage)
+                  .filter_by(conversation_id=conversa.id)
+                  .order_by(TurnUsage.criado_em).all())
+        msgs = _repo.mensagens(outra, conversa.id)
+
+        assert len(linhas) == 2 and len(msgs) == 2
+        # Cada turno ancorado na SUA mensagem, na ordem — nenhuma âncora nula e
+        # nenhuma repetida.
+        assert [l.message_id for l in linhas] == [m.id for m in msgs], (
+            "o custo do turno tem de apontar para a mensagem que ELE produziu"
+        )
+
+
+# ─── o turno que "deu certo" e não deu ──────────────────────────────────────
+
+
+async def test_erro_do_provider_NAO_chega_ao_lead(sessao, conversa, monkeypatch):
+    """O Agno **não levanta** quando a chamada ao provider falha: devolve um
+    `RunOutput` com `status=ERROR` e o texto do erro em `content`.
+
+    O `except` em volta de `agente.run` nunca dispara, e a mensagem seguia o caminho
+    normal — persistida como fala do `agente` e entregue ao lead. O guardrail não pega:
+    não há valor monetário no texto.
+
+    Medido no replay: a conta ficou sem crédito no meio da execução, e 14 conversas
+    gravaram «Error code: 400 … Your credit balance is too low …» como resposta do
+    agente. Um lead lendo a mensagem de cobrança da nossa conta é o pior desfecho
+    possível de uma falha de infraestrutura — pior que silêncio, porque expõe a
+    operação.
+    """
+    from app import textos
+    from app.agent import turno
+
+    ERRO = ("Error code: 400 - {'type': 'error', 'error': {'type': "
+            "'invalid_request_error', 'message': 'Your credit balance is too low to "
+            "access the Anthropic API.'}}")
+
+    class RunComErro:
+        content = ERRO
+        status = "ERROR"
+        metrics = None
+
+    monkeypatch.setattr(
+        turno, "construir_agente",
+        lambda _c: type("A", (), {"run": lambda self, t: RunComErro()})(),
+    )
+
+    saiu: list[str] = []
+
+    class Canal:
+        name = "web"
+
+        async def send(self, conversation_id, text, *, message_id, **kw):
+            saiu.append(text)
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+    await turno.responder(conversa.id, "oi", Canal())
+
+    assert saiu == [textos.FALHA_TECNICA], f"o que saiu: {saiu}"
+    assert not any("Error code" in t for t in saiu)
+    assert not any("credit balance" in t for t in saiu)
+
+
+async def test_run_bem_sucedido_continua_entregando_o_texto(sessao, conversa, monkeypatch):
+    """O negativo: barrar por `status` errado calaria o agente em todo turno."""
+    from app.agent import turno
+
+    class RunOk:
+        content = "Boa! Me passa o ano do carro?"
+        status = "COMPLETED"
+        metrics = None
+
+    monkeypatch.setattr(
+        turno, "construir_agente",
+        lambda _c: type("A", (), {"run": lambda self, t: RunOk()})(),
+    )
+
+    saiu: list[str] = []
+
+    class Canal:
+        name = "web"
+
+        async def send(self, conversation_id, text, *, message_id, **kw):
+            saiu.append(text)
+            return "x"
+
+        async def typing(self, *a, **kw):
+            return None
+
+    await turno.responder(conversa.id, "oi", Canal())
+    assert saiu == ["Boa! Me passa o ano do carro?"]

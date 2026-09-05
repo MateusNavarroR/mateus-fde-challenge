@@ -11,10 +11,21 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "agno>=2.7",
     "anthropic>=0.40",
+    # `anthropic` e `ollama` não são importados por nenhum arquivo nosso: quem os
+    # carrega é o Agno, conforme a model-string. Estão aqui porque a model-string
+    # falha em tempo de execução sem eles.
     "ollama>=0.4",
-    # Transitiva do layout do Agno: agno.models.ollama importa OllamaResponses,
-    # que importa agno.models.openai. O SDK da OpenAI é necessário para o caminho
-    # Ollama funcionar, mesmo sem nenhuma chamada à OpenAI.
+    # ⚠️ Transitiva do layout do Agno, e **não** é dependência morta.
+    #
+    # `agno.models.ollama` importa `OllamaResponses`, que importa
+    # `agno.models.openai.open_responses`, que levanta `ImportError` sem o SDK. Ou
+    # seja: o SDK da OpenAI é necessário para o caminho OLLAMA funcionar, sem que
+    # nenhuma chamada à OpenAI aconteça.
+    #
+    # O passe de cadeia de suprimentos marcou esta linha como "dependência que
+    # ninguém importa" e ela foi removida — erradamente. A verificação com o módulo
+    # de fato escondido reprovou a remoção, e `tests/nucleo/test_dependencias.py`
+    # agora guarda a conclusão para que ninguém a refaça pelo mesmo raciocínio.
     "openai>=1.40",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",

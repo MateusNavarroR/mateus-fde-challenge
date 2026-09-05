@@ -29,6 +29,8 @@ from app.quote import client
 from app.quote.breaker import Estado, breaker_global, resetar_breaker
 from app.quote.job import executar_job
 
+from tests.fixtures.pii import cep_de
+
 pytestmark = [pytest.mark.db, pytest.mark.live, pytest.mark.serial]
 
 LIMPA = os.getenv("QUOTE_API_LIMPA", "http://localhost:8001")
@@ -36,7 +38,7 @@ FALHA = os.getenv("QUOTE_API_FALHA", "http://localhost:8002")
 LENTA = os.getenv("QUOTE_API_LENTA", "http://localhost:8003")
 
 REQ = QuoteRequest(plano_id="completo", idade=28, veiculo_ano=2019,
-                   cep="07145-200", data_inicio=dt.date(2026, 10, 17))
+                   cep=cep_de("07"), data_inicio=dt.date(2026, 10, 17))
 
 
 def _viva(url: str) -> bool:

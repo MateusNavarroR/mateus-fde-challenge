@@ -126,6 +126,9 @@ class ResultadoConversa:
     tem_midia: bool = False
     midia_tratada: bool | None = None
 
+    #: Quantas vezes o lead objetou preço/franquia/concorrente nesta conversa.
+    objecoes: int = 0
+
     perguntas_do_agente: int = 0
     nao_entendi: int = 0
 
@@ -216,6 +219,33 @@ class Relatorio:
         return sum(1 for r in self.resultados if r.passou)
 
     @property
+    def por_grupo(self) -> dict[str, dict[str, int]]:
+        """`{grupo: {n, aprovados, completadas}}` — os grupos que a cobertura exige.
+
+        Os quatro primeiros são a partição de elegibilidade; `midia` e `objecao` são
+        transversais e cortam os outros. Um mesmo caso aparece em dois grupos, e isso
+        é correto: a pergunta não é "de que grupo é a conversa", é "o agente acerta
+        nas conversas que têm esta característica".
+        """
+        grupos: dict[str, list[ResultadoConversa]] = {}
+        for r in self.resultados:
+            grupos.setdefault(r.estrato, []).append(r)
+            if r.tem_midia:
+                grupos.setdefault("midia", []).append(r)
+            if r.objecoes >= 1:
+                grupos.setdefault("objecao", []).append(r)
+            if r.objecoes >= 2:
+                grupos.setdefault("objecao_repetida", []).append(r)
+        return {
+            nome: {
+                "n": len(rs),
+                "completadas": sum(1 for r in rs if r.completou),
+                "aprovados": sum(1 for r in rs if r.passou),
+            }
+            for nome, rs in sorted(grupos.items())
+        }
+
+    @property
     def taxa_de_acerto(self) -> float | None:
         """Sobre as **completadas**, não sobre as pedidas.
 
@@ -290,6 +320,7 @@ class Relatorio:
             "nao_alcancadas": self.nao_alcancadas,
             "aprovados": self.aprovados,
             "taxa_de_acerto": self.taxa_de_acerto,
+            "por_grupo": self.por_grupo,
             "falhas_por_classe": self.falhas_por_classe,
             "extracao_por_campo": self.extracao_por_campo,
             "taxa_nao_entendi": self.taxa_nao_entendi,
@@ -347,6 +378,41 @@ def falha_para_dict(falha: Falha) -> dict[str, Any]:
 # ─── render de texto ─────────────────────────────────────────────────────────
 
 
+#: Abaixo disto, uma taxa é ruído com casas decimais. O relatório diz o tamanho da
+#: amostra e se recusa a converter em percentual — que é o oposto de reportar "67%"
+#: sobre três casos e deixar o leitor descobrir sozinho o denominador.
+MINIMO_PARA_TAXA = 5
+
+#: O que cada grupo prova, para o relatório dizer POR QUE aquele número importa.
+SENTIDO_DO_GRUPO = {
+    "so_idade": "incotável por idade: recusa com o motivo certo, sem escalar",
+    "so_veiculo": "incotável por veículo: recusa + oferta de outro veículo",
+    "ambos": "incotável pelos dois motivos ao mesmo tempo",
+    "cotavel": "argumentos batendo com o gabarito — idade, ano e CEP",
+    "midia": "mídia sem texto: o agente pede o dado por escrito",
+    "objecao": "uma objeção NÃO encaminha — o agente trata e segue",
+    "objecao_repetida": "objeção repetida encaminha (gatilho)",
+}
+
+
+def render_grupos(rel: Relatorio) -> list[str]:
+    """O recorte por grupo, com o denominador sempre visível."""
+    linhas = ["cobertura por grupo"]
+    grupos = rel.por_grupo
+    for nome, sentido in SENTIDO_DO_GRUPO.items():
+        d = grupos.get(nome)
+        if d is None or d["n"] == 0:
+            linhas.append(f"  {nome:<18} n=0   AUSENTE — {sentido}")
+            continue
+        base = d["completadas"]
+        if base < MINIMO_PARA_TAXA:
+            veredito = f"amostra pequena (n={base}), sem taxa: {d['aprovados']}/{base}"
+        else:
+            veredito = f"{d['aprovados'] / base:.0%}  ({d['aprovados']}/{base})"
+        linhas.append(f"  {nome:<18} n={d['n']:<4} {veredito}")
+    return linhas
+
+
 def render(rel: Relatorio) -> str:
     """A versão para o terminal. Curta, e obrigada a dizer o denominador."""
     linhas = [
@@ -378,6 +444,7 @@ def render(rel: Relatorio) -> str:
     )
     if rel.segundos_de_espera:
         linhas.append(f"esperando ....... {rel.segundos_de_espera:.0f}s em backoff")
+    linhas.extend(render_grupos(rel))
     linhas.append(f"veredito ........ {'APROVADO' if rel.aprovado else 'REPROVADO'}")
     return "\n".join(linhas)
 

@@ -297,7 +297,7 @@ async def test_o_agente_nao_sugere_trocar_o_condutor(sessao, conversa, canal):
     # Os CINCO campos numa mensagem só: sem o CEP o agente reperguntaria em vez de
     # cotar, e o teste mediria a qualificação em vez do caminho de recusa.
     r = agente.run(
-        "tenho 80 anos, meu carro é um Onix 2022, o cep aqui é 01310-100, "
+        "tenho 80 anos, meu carro é um Onix 2022, o cep aqui é " + cep_de("01") + ", "
         "quero o Completo, começando dia 17 de outubro"
     )
     dito = " ".join([*canal.enviadas, (r.content or "")]).lower()

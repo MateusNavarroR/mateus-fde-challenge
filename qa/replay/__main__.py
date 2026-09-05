@@ -52,7 +52,8 @@ def montar_parser() -> argparse.ArgumentParser:
         "--tudo", action="store_true",
         help="as 2.500 conversas. ~14 h de parede — leia o docstring antes.",
     )
-    p.add_argument("--seed", type=int, default=20260904, help="semente da amostragem.")
+    p.add_argument("--seed", type=int, default=amostragem.SEED_PADRAO,
+                   help="semente da amostragem.")
     p.add_argument("--ano-corrente", type=int, default=None,
                    help="fixa o ano para a fronteira do veículo (as medições são de 2026).")
     p.add_argument("--rodar", action="store_true",
