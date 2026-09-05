@@ -24,6 +24,8 @@ from app import textos
 from app.agent.tools import ContextoDoTurno, make_qualify_lead, make_quote_plan
 from app.contracts.quote import MotivoRecusa, QuoteRequest
 from app.persistence import repo
+
+from tests.fixtures.pii import cep_de
 from app.persistence.models import Handoff, Message, Quote, QuoteAttempt
 from app.quote import client
 from app.quote.breaker import breaker_global, resetar_breaker
@@ -239,8 +241,16 @@ def test_reenquadramento_acontece_em_dois_turnos(ctx, sessao, conversa, canal):
     assert repo.obter_conversa(sessao, conversa.id).state != "encaminhado"
 
     # Turno 2, com o outro veículo: cota normalmente.
-    ctx.ja_enviou = False
-    r = make_quote_plan(ctx)("completo", 35, 2021, "01310-100", "2026-10-17")
+    #
+    # ⚠️ Um `ContextoDoTurno` NOVO, e não o mesmo com `ja_enviou` zerado. O envelope
+    # é por turno — `responder` constrói um a cada mensagem —, e é ele que carrega a
+    # trava de uma cotação por turno. Reaproveitar o objeto simulava um segundo turno
+    # que não existe em lugar nenhum do código de produção, e esta linha passou a
+    # falhar quando a trava entrou: era o teste que estava frouxo, não a trava.
+    #
+    # Que o reenquadramento leve dois turnos é a decisão §2, não um efeito colateral.
+    ctx2 = ContextoDoTurno(sessao=sessao, conversation_id=conversa.id, enviar=canal)
+    r = make_quote_plan(ctx2)("completo", 35, 2021, cep_de("01"), "2026-10-17")
     assert "cotado" in r
     assert sessao.query(Quote).filter(Quote.status == "ok").count() == 1
 

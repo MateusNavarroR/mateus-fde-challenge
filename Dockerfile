@@ -27,6 +27,10 @@ COPY app/ ./app/
 COPY config/ ./config/
 COPY db/ ./db/
 COPY qa/ ./qa/
+# `scripts/` entra na imagem porque o comando de reprodução do transcript
+# (entregável nº 4) roda DENTRO do contêiner: é lá que estão as dependências e o
+# acesso à `quote-api` e ao Postgres pela rede do compose.
+COPY scripts/ ./scripts/
 COPY --from=web /web/dist ./web/dist
 
 ENV PATH="/srv/.venv/bin:$PATH" \

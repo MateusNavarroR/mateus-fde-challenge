@@ -189,6 +189,24 @@ implementaria `send`/`receive` sobre webhook, com validação de assinatura, ded
 por id de mensagem e a janela de 24 horas. Um adaptador Baileys, sobre socket persistente
 — este com a ressalva de ser não-oficial e fora dos termos de uso do WhatsApp.
 
+#### O anexo do chat é sinalização, não upload
+
+A tela de chat aceita anexo, e é preciso ser explícito sobre o que isso significa:
+**os bytes não sobem**. O que trafega e o que fica gravado é o **nome do arquivo** e o
+tipo (`image`, `audio`, `document`) na coluna `messages.tipo`. Nenhum conteúdo de mídia
+é lido, transmitido ou armazenado em lugar nenhum.
+
+Ele existe por um motivo só: `midia_sem_texto` é um dos sete gatilhos de handoff, e sem
+uma forma de a mídia chegar o gatilho seria uma linha de tabela sem caminho de código —
+o tipo de promessa que este repositório não faz. A alternativa era cair para seis
+gatilhos e contradizer `docs/DECISOES-FECHADAS.md`.
+
+A escolha cria a superfície do **gatilho** sem criar a superfície de **dado sensível**
+que o projeto declara não ter: uma foto de CNH ou um áudio com o CPF falado seriam
+exatamente o tipo de conteúdo que não deve existir num repositório público, nem no disco
+de quem o clona. O agente é instruído a nunca afirmar que viu ou ouviu o arquivo, porque
+ele não viu — recebe o nome, e mais nada.
+
 ### 6. Observabilidade e custo: na própria base, sem serviço externo
 
 A instrumentação para uma plataforma externa de observabilidade estava prevista e foi
@@ -448,6 +466,28 @@ redundante com o `/health` do legado: o `/health` responde 200 mesmo com 100 % d
 falhando, porque ele não passa pelo sorteio de instabilidade. Um monitor que só olhe para
 ele reporta "tudo bem" enquanto nada funciona.
 
+### O transcript que mostra isso acontecendo
+
+`artifacts/transcript-degradado.md` é a política acima rodando, com tempo relativo em
+cada linha:
+
+```
+[ +20.7s]           lead     pode começar dia 17 de outubro
+[ +26.7s]  Δ +6.0s  sistema  Tô buscando o valor no sistema e ele tá lento agora. Já te trago, tá?
+[ +40.7s]  Δ+20.0s  sistema  Ainda tô aqui, viu? O sistema não me devolveu ainda. Assim que sair eu te mando.
+[ +61.1s]  Δ+40.4s  sistema  Não consegui confirmar o valor agora: o sistema de cotação não respondeu.
+                             Não vou te passar um número sem ter certeza dele.
+```
+
+Três tentativas de 12 s, job `failed`, handoff `cotacao_indisponivel` disparado **pela
+regra** — e nenhum valor monetário em lugar nenhum, porque nenhuma tentativa devolveu
+preço. O cabeçalho do arquivo traz o comando exato que o reproduz.
+
+`tests/nucleo/test_transcripts.py` confere os dois artefatos contra o código a cada
+execução da suíte: os textos byte a byte com `app/textos.py`, os Δ contra os limiares
+de `Settings`, e o número de tentativas contra `quote_max_attempts`. Um artefato que
+envelhecesse em silêncio seria pior do que nenhum.
+
 ### Reprodutibilidade
 
 Um cenário reproduzível da `/quote` é a tripla **(seed, processo reiniciado, sequência
@@ -471,6 +511,7 @@ Estes itens não são pendências. São decisões, com o motivo declarado.
 | **Baileys** | além do mesmo motivo acima, é uma biblioteca não-oficial e fora dos termos de uso do WhatsApp. Não é uma dependência que eu recomendaria numa entrega. |
 | **Langfuse** | seis containers, ~5,6 GB de imagens e ~3,2 GB de RAM, sem variante enxuta. Contradiz "sobe com um comando", e uma métrica que exige 5,6 GB para ser conferida é alegação, não evidência. O que ele daria está em `turn_usage` e no painel de custo. |
 | **Camada gold do dataset** | a camada silver é o que responde pelo replay de avaliação, e ele não depende de gold — lê de silver com a elegibilidade calculada em memória. Gold seria estrutura sem consumidor. |
+| **Upload de mídia de verdade** | o chat aceita anexo, mas registra apenas nome e tipo — os bytes não sobem. Guardar mídia criaria a superfície de dado sensível que o projeto declara não ter (foto de CNH, áudio com CPF falado), num repositório público. O que o produto precisa saber é que chegou mídia em vez de texto, e é isso que ele guarda. |
 | **Vídeo da demo** | não é entregável nem critério de avaliação. A tela de chat e o transcript já mostram o comportamento. |
 
 Sobre providers de modelo: a seleção é por model-string, então trocar de provider é trocar
@@ -497,4 +538,6 @@ diz "suporta X" sem um teste que prove.
 | `docs/DECISOES-ABERTAS.md` | o registro do que foi considerado e descartado |
 | `docs/TEXTOS.md` | os textos determinísticos, origem única |
 | `docs/EVALS.md` | metodologia de avaliação, rubrica, e qual modelo produziu qual número |  ⚠️ *ainda não escrito — ver `<!-- PREENCHER NO FIM -->`*
+| `artifacts/transcript-feliz.md` | **entregável nº 4** — uma execução completa, do «oi» à cotação: qualificação dos cinco campos, bloco de preço com carência, franquia e pro-rata, estado final `cotado` |
+| `artifacts/transcript-degradado.md` | **entregável nº 4** — a mesma conversa com a `/quote` fora do ar: aviso aos 6 s, reforço aos 20 s, encaminhamento depois de esgotadas as três tentativas, e nenhum número inventado |
 | `ai-logs/` | as conversas com IA durante o desafio |

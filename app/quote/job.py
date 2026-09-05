@@ -224,7 +224,12 @@ class _Avisos:
         )
         # O relógio é o do LEAD: se ele já esperou 3 s antes de a tool começar, o
         # aviso sai 3 s depois daqui, não 6.
+        # O piso é o que impede o aviso de correr com a resposta. Ver
+        # `Settings.piso_aviso_s` — só o AVISO tem piso: o reforço é encadeado a
+        # partir do aviso, então quando ele existe a demora já está estabelecida.
         atraso = max(0.0, limiar - (time.monotonic() - self.t0))
+        if nome == "aviso":
+            atraso = max(atraso, self.cfg.piso_aviso_s)
         t = threading.Timer(atraso, self._disparar, args=(nome, texto))
         t.daemon = True
         t.start()

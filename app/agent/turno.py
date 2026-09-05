@@ -152,7 +152,7 @@ async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) ->
         cotacao_falhou=any(
             h.get("trigger") is HandoffTrigger.COTACAO_INDISPONIVEL for h in ctx.handoffs
         ),
-        tentativas_extracao=ctx.tentativas_extracao,
+        tentativas_extracao=repo.tentativas_de_extracao(s, conversation_id),
         objecoes_de_preco=ctx.objecoes_de_preco,
         violacoes_guardrail=repo.violacoes_de_guardrail(s, conversation_id),
         # Do BANCO, incluindo a mensagem deste turno, que já foi gravada.
@@ -183,12 +183,14 @@ async def _encaminhar(s, conversation_id: str, ctx, texto: str, enviar_async) ->
 
     # A mensagem de indisponibilidade já saiu de dentro da tool de cotação;
     # repeti-la aqui seria dizer duas vezes a mesma coisa ao lead.
+    # A mensagem de indisponibilidade já saiu de dentro da tool de cotação, e
+    # `compor_handoff("cotacao_indisponivel")` JÁ TERMINA com a despedida. Mandar
+    # `DESPEDIDA` aqui repetia a mesma frase, palavra por palavra, duas mensagens
+    # seguidas — visível no transcript do cenário degradado.
     if trigger is not HandoffTrigger.COTACAO_INDISPONIVEL:
         await enviar_async(
             textos.compor_handoff(str(trigger), assunto=gatilhos.assunto_do_texto(texto))
         )
-    else:
-        await enviar_async(textos.DESPEDIDA)
     return True
 
 

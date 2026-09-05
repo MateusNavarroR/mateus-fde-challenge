@@ -58,6 +58,13 @@ class Conversation(Base):
     data_inicio: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     plano_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    #: `{campo: n}` — quantas vezes cada campo foi rejeitado na extração, acumulado
+    #: na CONVERSA. O gatilho `extracao_falhou` dispara a partir de 2 no mesmo campo,
+    #: e sem persistir isto a contagem reiniciava a cada turno (migração 0004).
+    tentativas_extracao: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
+
     criado_em: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True),
                                                    server_default=func.now())
     atualizado_em: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True),

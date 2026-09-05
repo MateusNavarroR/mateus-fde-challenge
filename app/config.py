@@ -65,6 +65,22 @@ class Settings(BaseSettings):
     aviso_espera_s: float = 6.0
     reforco_espera_s: float = 20.0
 
+    #: **Piso** do atraso do aviso, e ele não é cosmético.
+    #:
+    #: O relógio é o do lead, então quando o modelo leva mais de 6 s para chegar à
+    #: tool o prazo já venceu e o atraso calculado é 0 — um `Timer(0)` que corre com
+    #: a chamada HTTP. Medido gerando o transcript do caminho feliz: a `/quote`
+    #: respondeu em 31 ms e o lead recebeu "tô buscando o valor" 0,1 s ANTES do
+    #: preço. É exatamente o «só um instante» seguido da resposta que a decisão 1
+    #: rejeita — e o motivo pelo qual o aviso não é um watchdog na camada de conversa.
+    #:
+    #: 1,0 s cobre com folga o caminho rápido (10–40 ms) e o ciclo de falha rápida
+    #: com retry (~250 ms por tentativa, ~0,8 s no total), que a decisão 1 também
+    #: manda não avisar. Uma chamada lenta de verdade (8 s, ou os 12 s do timeout)
+    #: continua avisando — 1 s depois de a tool começar, quando o lead já esperou os
+    #: 6 s e a demora já é fato, não previsão.
+    piso_aviso_s: float = 1.0
+
     #: Fora do caminho da cotação, na camada de conversa. Limiar mais alto porque a
     #: demora do modelo é anômala, não projetada: 6,5 s ainda é latência plausível e
     #: avisar ali produziria "só um instante" seguido da resposta 0,2 s depois.

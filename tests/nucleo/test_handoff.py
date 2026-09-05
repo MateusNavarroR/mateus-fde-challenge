@@ -449,3 +449,125 @@ def test_a_fronteira_cobre_todos_os_sete_gatilhos():
     assert _DO_MODELO < {str(t) for t in HandoffTrigger}
     contados = {str(t) for t in HandoffTrigger} - _DO_MODELO
     assert len(contados) == 5
+
+
+# ─── `extracao_falhou` conta ao longo da CONVERSA, e conta uma vez ───────────
+
+
+def test_uma_falha_de_extracao_nao_encaminha(sessao, conversa):
+    """Medido gerando o transcript: o gatilho disparava na PRIMEIRA falha.
+
+    Duas causas somadas — o incremento estava duplicado, e o contador nunca era
+    persistido. O efeito é o pior possível para o critério nº 3: um lead cujo campo o
+    modelo mandou torto ia para a fila humana na hora, sem nunca ser reperguntado.
+    Encaminhar por bug nosso é o caso que CLAUDE.md 9 nomeia.
+    """
+    from app.agent.tools import ContextoDoTurno, make_qualify_lead
+    from app.persistence import repo as _repo
+
+    ctx = ContextoDoTurno(sessao=sessao, conversation_id=conversa.id)
+    qualificar = make_qualify_lead(ctx)
+
+    qualificar(data_inicio="dia de são nunca")
+    sessao.commit()
+
+    assert _repo.tentativas_de_extracao(sessao, conversa.id) == {"data_inicio": 1}
+    assert not gatilhos.casa(
+        HandoffTrigger.EXTRACAO_FALHOU,
+        Contexto(tentativas_extracao=_repo.tentativas_de_extracao(sessao, conversa.id)),
+    )
+
+
+def test_a_contagem_de_extracao_atravessa_turnos(sessao, conversa):
+    """A regra diz "2ª falha no MESMO campo", sem dizer "no mesmo turno".
+
+    Antes, `tentativas_extracao` vivia no envelope do turno e `_perfil_de()` a
+    descartava ao reconstruir o perfil das colunas — então a contagem reiniciava a
+    cada mensagem e a segunda falha só podia acontecer dentro de um turno só, que é o
+    modelo se atrapalhando, e não o lead sendo ilegível.
+    """
+    from app.agent.tools import ContextoDoTurno, make_qualify_lead
+    from app.persistence import repo as _repo
+
+    for _ in range(2):
+        # Um ContextoDoTurno NOVO a cada volta: é o que o turno faz de verdade.
+        ctx = ContextoDoTurno(sessao=sessao, conversation_id=conversa.id)
+        make_qualify_lead(ctx)(data_inicio="quando der")
+        sessao.commit()
+
+    contagem = _repo.tentativas_de_extracao(sessao, conversa.id)
+    assert contagem == {"data_inicio": 2}
+    assert gatilhos.casa(HandoffTrigger.EXTRACAO_FALHOU,
+                         Contexto(tentativas_extracao=contagem))
+
+
+def test_falhas_em_campos_diferentes_nao_somam(sessao, conversa):
+    """O negativo que dá sentido ao positivo: a contagem é POR CAMPO.
+
+    Errar uma vez a data e uma vez o CEP não é "falhou duas vezes" — são dois campos
+    para reperguntar, e reperguntar é barato.
+    """
+    from app.agent.tools import ContextoDoTurno, make_qualify_lead
+    from app.persistence import repo as _repo
+
+    ctx = ContextoDoTurno(sessao=sessao, conversation_id=conversa.id)
+    make_qualify_lead(ctx)(data_inicio="sei lá", plano_id="turbo")
+    sessao.commit()
+
+    contagem = _repo.tentativas_de_extracao(sessao, conversa.id)
+    assert sorted(contagem) == ["data_inicio", "plano_id"]
+    assert all(n == 1 for n in contagem.values())
+    assert not gatilhos.casa(HandoffTrigger.EXTRACAO_FALHOU,
+                             Contexto(tentativas_extracao=contagem))
+
+
+def test_indisponibilidade_nao_repete_a_despedida(sessao, conversa, monkeypatch):
+    """`compor_handoff("cotacao_indisponivel")` já TERMINA com a despedida.
+
+    `_encaminhar` mandava `DESPEDIDA` de novo, e o lead lia a mesma frase, palavra
+    por palavra, em duas mensagens seguidas. Visível no transcript do cenário
+    degradado — e invisível na suíte, porque nenhum teste comparava as mensagens
+    entre si.
+    """
+    from app.agent import turno
+    from app.agent.tools import ContextoDoTurno
+
+    enviadas: list[str] = []
+
+    async def enviar_async(texto, autor="sistema"):
+        enviadas.append(texto)
+
+    ctx = ContextoDoTurno(sessao=sessao, conversation_id=conversa.id)
+    ctx.handoffs.append({
+        "trigger": HandoffTrigger.COTACAO_INDISPONIVEL,
+        "reason": "a cotação não respondeu", "quote_id": None,
+        "disparado_por": "regra", "assunto": None,
+    })
+
+    import asyncio
+    asyncio.run(turno._encaminhar(sessao, conversa.id, ctx, "e aí?", enviar_async))
+
+    assert enviadas == [], (
+        "a mensagem de indisponibilidade sai de dentro da tool; `_encaminhar` não "
+        f"pode mandar nada por cima. Mandou: {enviadas}"
+    )
+    assert textos.DESPEDIDA in textos.compor_handoff("cotacao_indisponivel")
+
+
+def test_uma_cotacao_por_turno(sessao, conversa, monkeypatch):
+    """O modelo chamou `quote_plan` duas vezes no mesmo turno, gerando o transcript.
+
+    O estrago tem três partes: dois jobs contra a `/quote`, dois avisos de espera
+    idênticos em sequência para o lead, e uma linha em `quotes` que ficou `pending`
+    para sempre — rastro inconsistente na tabela que responde pelo critério nº 4.
+    """
+    from app.agent.tools import ContextoDoTurno, make_quote_plan
+
+    ctx = ContextoDoTurno(sessao=sessao, conversation_id=conversa.id)
+    ctx.quote_do_turno = "q_ja_existe"
+
+    resposta = make_quote_plan(ctx)(
+        plano_id="completo", idade=30, veiculo_ano=2020,
+    )
+    assert "já cotado neste turno" in resposta
+    assert "q_ja_existe" in resposta

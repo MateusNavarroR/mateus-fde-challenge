@@ -116,9 +116,13 @@ class ContextoDoTurno:
     #: A tool já falou com o lead neste turno ⇒ o texto do modelo é descartado.
     ja_enviou: bool = False
 
-    #: Contadores que os gatilhos de handoff leem. Por CAMPO, não global: falhar uma
-    #: vez no CEP e uma na idade não é "falhou duas vezes".
-    tentativas_extracao: dict[str, int] = field(default_factory=dict)
+    #: `quote_id` já produzido NESTE turno. Uma segunda chamada a `quote_plan` no
+    #: mesmo turno é recusada a partir daqui — ver o guarda em `make_quote_plan`.
+    quote_do_turno: str | None = None
+
+    #: Contador que o gatilho de objeção de preço lê. `tentativas_extracao` NÃO mora
+    #: aqui: ela conta ao longo da conversa e vem do banco (`repo`), como as mídias e
+    #: as violações de guardrail. Um contador de turno reiniciaria a cada mensagem.
     objecoes_de_preco: int = 0
 
 
@@ -174,10 +178,11 @@ def make_qualify_lead(ctx: ContextoDoTurno) -> Callable[..., str]:
             if getattr(perfil, campo) is not None and ctx.texto_do_lead:
                 perfil.origem.setdefault(campo, mascarar(ctx.texto_do_lead))
 
+        # UMA vez por rejeição. A linha estava duplicada, e o efeito era o gatilho
+        # `extracao_falhou` disparar na PRIMEIRA falha — encaminhando por engano um
+        # lead que só precisava ser reperguntado.
         for campo in rejeitados:
             perfil.tentativas_extracao[campo] = perfil.tentativas_extracao.get(campo, 0) + 1
-            ctx.tentativas_extracao[campo] = ctx.tentativas_extracao.get(campo, 0) + 1
-            ctx.tentativas_extracao[campo] = ctx.tentativas_extracao.get(campo, 0) + 1
 
         _gravar_perfil(ctx, perfil)
 
@@ -205,9 +210,17 @@ def _normalizar(campo: str, valor):
 
 
 def _perfil_de(conv) -> LeadProfile:
+    """Reconstrói o perfil a partir da conversa.
+
+    `tentativas_extracao` entra aqui porque o gatilho `extracao_falhou` conta ao
+    longo da CONVERSA, não do turno: sem carregá-lo, o dicionário voltava vazio a
+    cada turno e "a segunda falha no mesmo campo" só podia acontecer dentro de um
+    turno só — o que é o modelo se atrapalhando, não o lead sendo ilegível.
+    """
     return LeadProfile(
         idade=conv.idade, veiculo_ano=conv.veiculo_ano, cep=conv.cep,
         data_inicio=conv.data_inicio, plano_id=conv.plano_id,
+        tentativas_extracao=dict(conv.tentativas_extracao or {}),
     )
 
 
@@ -215,6 +228,8 @@ def _gravar_perfil(ctx: ContextoDoTurno, perfil: LeadProfile) -> None:
     conv = repo.obter_conversa(ctx.sessao, ctx.conversation_id)
     for campo in CAMPOS_QUALIFICACAO:
         setattr(conv, campo, getattr(perfil, campo))
+    # Reatribuído, não mutado: o SQLAlchemy não detecta mutação in-place em JSONB.
+    conv.tentativas_extracao = dict(perfil.tentativas_extracao)
     if conv.state == "novo":
         conv.state = "qualificando"
     ctx.sessao.flush()
@@ -284,8 +299,37 @@ def make_quote_plan(ctx: ContextoDoTurno) -> Callable[..., str]:
                 return (f"dados_invalidos: o {campo} que você passou ({valor}) não bate "
                         f"com o que foi registrado ({registrado}). Confirme com o lead.")
 
+        # Uma cotação por turno. Medido gerando o transcript do caminho feliz: o
+        # modelo chamou `quote_plan` DUAS vezes na mesma volta, e o resultado foi
+        # dois jobs, dois avisos de espera idênticos em sequência para o lead, e uma
+        # linha em `quotes` que ficou `pending` para sempre — rastro inconsistente
+        # justamente na tabela que responde pelo critério nº 4.
+        #
+        # Recusar é seguro: se o lead mudar de plano, a nova cotação sai no próximo
+        # turno. O texto explica para o modelo o que fazer, em vez de só negar.
+        if ctx.quote_do_turno is not None:
+            return (f"já cotado neste turno: {ctx.quote_do_turno}. A mensagem com o "
+                    "resultado JÁ FOI ENVIADA ao lead pelo sistema. Não cote de novo "
+                    "e não repita o valor — encerre o turno.")
+
         conv.state = "cotando"
         ctx.sessao.flush()
+
+        # ⚠️ DEFINIDA ANTES de `executar_job`, e isso não é estilo.
+        #
+        # O `avisar=` abaixo é um closure sobre este nome, e quem o executa é uma
+        # `threading.Timer` — em OUTRA thread, 6 s depois. Com a definição embaixo da
+        # chamada, o timer disparava sobre um nome ainda não vinculado e morria com
+        # `NameError: cannot access free variable 'enviar'`. Numa thread de timer a
+        # exceção não sobe para lugar nenhum: o turno seguia normal, o preço chegava
+        # no fim, e o aviso de espera simplesmente NUNCA saía.
+        #
+        # Achado gerando o transcript do cenário degradado — a suíte passava porque
+        # os testes de espera montam o `avisar` diretamente, sem esta função.
+        def enviar(texto: str, quote_id: str | None = None) -> None:
+            ctx.ja_enviou = True
+            if ctx.enviar is not None:
+                ctx.enviar(texto, quote_id)
 
         q = executar_job(
             ctx.sessao, ctx.conversation_id, req,
@@ -295,12 +339,8 @@ def make_quote_plan(ctx: ContextoDoTurno) -> Callable[..., str]:
             # durante a geração do modelo.
             avisar=(lambda t: enviar(t)) if ctx.enviar else None,
         )
+        ctx.quote_do_turno = q.id
         ctx.sessao.commit()
-
-        def enviar(texto: str, quote_id: str | None = None) -> None:
-            ctx.ja_enviou = True
-            if ctx.enviar is not None:
-                ctx.enviar(texto, quote_id)
 
         if q.status == str(QuoteJobStatus.OK):
             enviar(render_de_payload(q.payload), quote_id=q.id)

@@ -188,6 +188,18 @@ def gravar_mensagem(
     return m
 
 
+def tentativas_de_extracao(s: Session, conversation_id: str) -> dict[str, int]:
+    """`{campo: n}` acumulado na conversa. Insumo de `EXTRACAO_FALHOU`.
+
+    A terceira das contagens derivadas do banco, com `midias_do_lead` e
+    `violacoes_de_guardrail`, e pelo mesmo motivo: um contador que vive só no envelope
+    do turno reinicia a cada mensagem, e "a segunda falha no mesmo campo" deixa de
+    poder acontecer entre turnos — que é exatamente o caso que a regra descreve.
+    """
+    conv = s.get(Conversation, conversation_id)
+    return dict(conv.tentativas_extracao or {}) if conv is not None else {}
+
+
 def registrar_descarte(s: Session, conversation_id: str, conteudo: str) -> Message:
     """Grava a mensagem que o guardrail **impediu de sair**, com status `discarded`.
 
