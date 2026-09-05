@@ -16,10 +16,19 @@
  * dois live regions competindo dizem menos que um.
  */
 export function Digitando() {
+  // As três bolinhas só existem DENTRO do simulador, e por CSS: aqui a marcação é
+  // a mesma nos dois contextos. No console a régua continua sendo a régua do turno;
+  // no simulador, que imita o mensageiro de propósito, a citação direta é o certo —
+  // é o vocabulário que a pessoa reconhece sem legenda.
+  //
+  // O texto fica em `so-leitor` no simulador: bolinha não é lida por leitor de tela.
   return (
     <p className="digitando" data-testid="digitando">
       <span className="digitando__risco" aria-hidden="true" />
-      ainda escrevendo
+      <span className="digitando__pontos" aria-hidden="true">
+        <i /><i /><i />
+      </span>
+      <span className="digitando__texto">ainda escrevendo</span>
     </p>
   );
 }

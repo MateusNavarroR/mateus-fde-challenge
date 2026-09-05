@@ -18,6 +18,16 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg://postgres:postgres@127.0.0.1:55432/autoseguro",
 )
 
+# E o alvo volta para o AMBIENTE, que é o detalhe que faltava. Nem todo teste passa
+# pela fixture `engine_teste`: os que instanciam a aplicação (`test_auth`,
+# `test_handoff`, `test_injecao`) abrem sessão por `app.config`, cujo default é
+# `localhost:5432` — a porta onde mora o Postgres do SISTEMA de quem tem um
+# instalado. Nessa máquina a suíte falhava com `password authentication failed`, e
+# sem o `skip` gracioso da fixture: dezessete vermelhos que não dizem nada sobre o
+# código. Escrever aqui faz os dois lados apontarem para o mesmo banco, e um
+# `APP_DATABASE_URL` já definido continua vencendo.
+os.environ.setdefault("APP_DATABASE_URL", DATABASE_URL)
+
 TABELAS = (
     "turn_usage",
     "handoffs",

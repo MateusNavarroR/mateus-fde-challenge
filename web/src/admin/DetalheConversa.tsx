@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { api } from "../api/cliente";
 import type { ConversationDetail, Message } from "../api/tipos";
 import { Erro } from "../ui/Erro";
@@ -31,6 +32,7 @@ const ROTULO_CAMPO: Record<string, string> = {
  * duas pontas têm teste, senão alguém "uniformiza" e a auditoria se perde.
  */
 export function DetalheConversa({ id }: { id: string }) {
+  const [forma, setForma] = useState<"transcricao" | "razao">("transcricao");
   const { dado, erro, recarregar } = useRecurso<ConversationDetail>(
     () => api.conversa(id),
     [id],
@@ -85,10 +87,82 @@ export function DetalheConversa({ id }: { id: string }) {
       <h2 className="secao__titulo" style={{ marginTop: "1.6rem" }}>
         Mensagens
       </h2>
+
+      {/*
+        DUAS leituras da mesma coisa, e as duas são necessárias.
+
+        A **transcrição** é a conversa como o lead a viu — é para isso que o
+        Histórico existe, e é o que faltava: o livro-razão respondia "que mensagens
+        houve" e não "como foi a conversa". Ler um atendimento em linhas de tabela é
+        possível e é ruim.
+
+        O **razão** é a evidência do critério nº 4: id, índice, autor e status de
+        cada mensagem, alinhados em coluna. Nenhum dado sai de um para o outro — é a
+        mesma lista, com duas formas.
+
+        A transcrição é o padrão porque a pergunta mais comum aqui é "o que
+        aconteceu com esse lead", não "qual o id da terceira mensagem".
+      */}
+      <div className="alternador" role="group" aria-label="Forma de leitura">
+        {([["transcricao", "Transcrição"], ["razao", "Razão"]] as const).map(
+          ([chave, rotulo]) => (
+            <button
+              key={chave}
+              type="button"
+              className="alternador__opcao"
+              aria-pressed={forma === chave}
+              onClick={() => setForma(chave)}
+            >
+              {rotulo}
+            </button>
+          ),
+        )}
+      </div>
       {mensagens.length === 0 ? (
         <Vazio titulo="Nenhuma mensagem">
           A conversa existe mas ninguém falou ainda.
         </Vazio>
+      ) : forma === "transcricao" ? (
+        <div className="transcricao" data-testid="transcricao">
+          {mensagens.map((m) => (
+            <div
+              key={m.id}
+              // O AUTOR na classe, e não "lead ou não-lead". Distinguir `sistema`
+              // de `agente` é o ponto do admin: na conversa do lead os dois são
+              // idênticos de propósito, e aqui a diferença é auditoria. Achatar os
+              // dois em "nós" perdia isso — um teste pegou.
+              className={`transcricao__linha transcricao__linha--${m.autor}`}
+              data-testid={`bolha-${m.id}`}
+            >
+              <div className="transcricao__balao">
+                {m.tipo !== "text" ? (
+                  <span className="transcricao__anexo">
+                    {m.tipo === "image"
+                      ? "imagem anexada"
+                      : m.tipo === "audio"
+                        ? "áudio anexado"
+                        : "documento anexado"}
+                  </span>
+                ) : null}
+                <span className="transcricao__texto">{m.conteudo}</span>
+                {suspeita(m) ? (
+                  <span className="marca-bug" data-testid="marca-bug">
+                    valor sem cotação vinculada
+                  </span>
+                ) : null}
+                {/* O id e o status acompanham a bolha: sem eles a transcrição
+                    deixaria de responder pelo critério nº 4, e a alternância viraria
+                    "uma view bonita e uma view útil". */}
+                <span className="transcricao__meta rotulo">
+                  <span>{m.autor}</span>
+                  <span className="num">{m.id}</span>
+                  <span>{m.status}</span>
+                  <span>{hora(m.criado_em)}</span>
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div>
           {mensagens.map((m) => (

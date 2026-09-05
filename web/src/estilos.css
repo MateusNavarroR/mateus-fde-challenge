@@ -149,7 +149,12 @@ a {
 
 .chat {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  /* TRÊS linhas para três filhos: ações, conversa, compositor.
+     Eram quatro, de quando a casca antiga punha um `chat__topo` aqui dentro. Com um
+     filho a menos, o `1fr` caía no RODAPÉ e a conversa ficava com `auto` — numa
+     conversa nova o compositor subia para debaixo da primeira mensagem e sobrava um
+     vão morto no fim da moldura. */
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100dvh;
   max-width: 44rem;
   margin: 0 auto;
@@ -1922,14 +1927,20 @@ code {
    ele empurrava o cabeçalho — e o carimbo de "simulação" — para fora da viewport:
    quem abria a seção via a conversa e não via o aviso, que é justamente o que o
    aviso existe para impedir. */
+/* Altura FIXA, e não `auto` com teto.
+   Com `height: auto` a grade do chat encolhia até o conteúdo: numa conversa nova,
+   com uma mensagem só, a moldura comprimia e o compositor subia junto — encostado
+   na última bolha em vez de fixo na base. `min()` mantém a moldura cheia e o
+   compositor na extremidade desde o primeiro turno, sem estourar telas baixas. */
 .simulador .chat {
-  height: auto;
-  min-height: 26rem;
-  /* O que sobra da altura da janela depois do cabeçalho e do respiro da casca. */
-  max-height: calc(100dvh - 16rem);
+  height: min(calc(100dvh - 15rem), 42rem);
+  min-height: 28rem;
   max-width: none;
   border: 1px solid var(--filete);
-  border-radius: 2px;
+  /* `overflow: hidden` é o que faz o cabeçalho teal e o compositor respeitarem o
+     arredondamento — sem ele os cantos vazam por baixo da moldura. */
+  overflow: hidden;
+  border-radius: 12px;
 }
 
 .simulador {
@@ -2163,3 +2174,177 @@ code {
 }
 
 /* Movimento reduzido não muda nada aqui: não há animação nesta paleta. */
+
+/* ─── o indicador de digitando ───────────────────────────────────────────────
+   As bolinhas só aparecem no simulador. No console a régua do turno continua
+   sendo a régua; aqui a citação direta é o certo, porque a tela imita o
+   mensageiro de propósito. */
+.digitando__pontos {
+  display: none;
+}
+
+.simulador .digitando {
+  align-self: flex-start;
+  gap: 0;
+  padding: 0.7rem 0.9rem;
+  background: #ffffff;
+  border-top-left-radius: 0;
+  border-radius: 8px;
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
+}
+
+.simulador .digitando__risco,
+.simulador .digitando__texto {
+  /* O texto continua existindo para leitor de tela: bolinha não se lê. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.simulador .digitando__pontos {
+  display: flex;
+  gap: 0.28rem;
+  align-items: center;
+}
+
+.simulador .digitando__pontos i {
+  width: 0.5rem;
+  height: 0.5rem;
+  background: #9aa6ac;
+  border-radius: 50%;
+  animation: pulsar 1.3s ease-in-out infinite;
+}
+
+.simulador .digitando__pontos i:nth-child(2) { animation-delay: 0.18s; }
+.simulador .digitando__pontos i:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes pulsar {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30%           { opacity: 1;    transform: translateY(-0.18rem); }
+}
+
+/* A animação AQUI conta estado — "o turno não acabou" —, então não é decoração.
+   Sem ela o indicador vira um retângulo parado, que não diz que algo está vindo. */
+@media (prefers-reduced-motion: reduce) {
+  .simulador .digitando__pontos i {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/* ─── a transcrição do histórico ─────────────────────────────────────────────
+   A conversa como o lead a viu, dentro do console da operação. Não usa a paleta
+   do WhatsApp: aqui é o registro, não o mensageiro — e pintar o admin de verde
+   apagaria a fronteira que o simulador estabelece. A forma é de conversa; a tinta
+   é a do documento. */
+
+.alternador {
+  display: inline-flex;
+  gap: 0;
+  margin-bottom: 1rem;
+  border: 1px solid var(--filete-forte);
+  border-radius: 2px;
+}
+
+.alternador__opcao {
+  padding: 0.32rem 0.8rem;
+  font: inherit;
+  font-size: 0.84rem;
+  color: var(--tinta-fraca);
+  cursor: pointer;
+  background: var(--folha);
+  border: 0;
+}
+
+.alternador__opcao + .alternador__opcao {
+  border-left: 1px solid var(--filete);
+}
+
+.alternador__opcao[aria-pressed="true"] {
+  color: var(--folha);
+  background: var(--carimbo);
+}
+
+.transcricao {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  background: var(--linha-par);
+  border: 1px solid var(--filete);
+  border-radius: 2px;
+}
+
+.transcricao__linha {
+  display: flex;
+}
+
+.transcricao__linha--lead {
+  justify-content: flex-end;
+}
+
+.transcricao__balao {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: min(78%, 40rem);
+  padding: 0.55rem 0.75rem;
+  background: var(--folha);
+  border: 1px solid var(--filete);
+  border-radius: 8px;
+}
+
+/* O balão do lead herda a mesma tinta escura da bolha do chat: quem falou é
+   reconhecível pela posição E pela cor, não só pela posição. */
+.transcricao__linha--lead .transcricao__balao {
+  color: var(--folha);
+  background: var(--tinta);
+  border-color: var(--tinta);
+  border-top-right-radius: 0;
+}
+
+.transcricao__linha--agente .transcricao__balao,
+.transcricao__linha--sistema .transcricao__balao,
+.transcricao__linha--operador .transcricao__balao {
+  border-top-left-radius: 0;
+}
+
+/* `sistema` é texto de template — cotação, recusa, encaminhamento. Distinguir do
+   `agente` é o que o admin faz e o chat não: lá os dois são a mesma empresa
+   falando; aqui, saber qual dos dois escreveu É a auditoria. */
+.transcricao__linha--sistema .transcricao__balao {
+  background: var(--carimbo-lavado);
+  border-color: var(--carimbo);
+}
+
+.transcricao__linha--operador .transcricao__balao {
+  background: var(--vigencia-lavada);
+  border-color: var(--vigencia);
+}
+
+.transcricao__texto {
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.transcricao__anexo {
+  font-family: var(--mono, "Courier Prime", monospace);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.transcricao__meta {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding-top: 0.3rem;
+  font-size: 0.7rem;
+  border-top: 1px solid currentColor;
+  opacity: 0.55;
+}

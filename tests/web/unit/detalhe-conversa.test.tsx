@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 import { DetalheConversa } from "../../../web/src/admin/DetalheConversa";
 import { montarBackendFalso } from "../fakes/backend-falso";
@@ -18,10 +19,22 @@ it("toda mensagem mostra id, index, autor e status", async () => {
       ],
     },
   });
+  const usuario = userEvent.setup();
   render(<DetalheConversa id="c1" />);
+
+  // A TRANSCRIÇÃO é o padrão — e ela também responde pelo critério nº 4. Se o id e
+  // o status só existissem no razão, a alternância viraria "uma view bonita e uma
+  // view útil", e quem lesse a conversa perderia a rastreabilidade.
+  const balao = await screen.findByTestId("bolha-m1");
+  for (const esperado of ["m1", "received"]) {
+    expect(within(balao).getByText(esperado), esperado).toBeVisible();
+  }
+
+  // E o RAZÃO acrescenta o índice, que é a ordem canônica.
+  await usuario.click(screen.getByRole("button", { name: /razão/i }));
   const linha = await screen.findByTestId("msg-m1");
-  for (const t of ["m1", "0", "lead", "received"]) {
-    expect(within(linha).getByText(t), t).toBeVisible();
+  for (const esperado of ["m1", "0", "lead", "received"]) {
+    expect(within(linha).getByText(esperado), esperado).toBeVisible();
   }
 });
 
@@ -38,7 +51,19 @@ it("renderiza na ordem de index mesmo com a lista embaralhada e o timestamp fora
       perfil: {},
     },
   });
+  const usuario = userEvent.setup();
   render(<DetalheConversa id="c1" />);
+
+  // A ordem é por `index` NAS DUAS formas. O `data-index` só existe no razão, então
+  // na transcrição a ordem é conferida pela sequência dos ids — mesmo contrato,
+  // outro atributo.
+  expect(
+    (await screen.findAllByTestId(/^bolha-/)).map(
+      (e) => e.getAttribute("data-testid"),
+    ),
+  ).toEqual(["bolha-m1", "bolha-m2", "bolha-m3"]);
+
+  await usuario.click(screen.getByRole("button", { name: /razão/i }));
   expect((await screen.findAllByTestId(/^msg-/)).map((e) => e.dataset.index)).toEqual([
     "0",
     "1",
@@ -60,8 +85,17 @@ it("aqui `sistema` É distinguível de `agente` — no admin isso é informaçã
       perfil: {},
     },
   });
+  const usuario = userEvent.setup();
   render(<DetalheConversa id="c1" />);
-  await screen.findByTestId("msg-m1");
+
+  // Vale nas DUAS formas. A transcrição achatava os dois em "nós" e perdia a
+  // distinção — foi este teste que pegou.
+  await screen.findByTestId("bolha-m1");
+  expect(screen.getByTestId("bolha-m1").className).not.toBe(
+    screen.getByTestId("bolha-m2").className,
+  );
+
+  await usuario.click(screen.getByRole("button", { name: /razão/i }));
   expect(screen.getByTestId("msg-m1").className).not.toBe(
     screen.getByTestId("msg-m2").className,
   );
