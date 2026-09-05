@@ -40,7 +40,7 @@ app/
 │   └── renderer.py        # QuotePayload → texto do bloco de cotação (determinístico)
 │
 ├── handoff/
-│   └── gatilhos.py        # os 7 gatilhos como dados; REGRAS é a precedência
+│   └── gatilhos.py        # os 8 gatilhos como dados; REGRAS é a precedência
 │
 ├── channels/
 │   ├── console.py         # adaptador determinístico, CLI/CI
@@ -62,21 +62,22 @@ app/
 │   └── segredos.py         # varredura de segredo/chave (usada pelo passe de segurança)
 │
 └── api/
-    ├── consultas.py         # leituras agregadas para o admin
+    ├── consultas.py         # leituras agregadas para o admin (inclui traces_da_conversa)
     ├── montagem.py           # monta DetalheConversa, lista de handoffs
     └── schemas.py            # os response_model de docs/openapi.yaml
 
 web/src/
 ├── App.tsx                # roteador mínimo (sem lib), guarda de autenticação
-├── ui/Console.tsx         # a casca: barra lateral com 5 seções
+├── ui/Console.tsx         # a casca: barra lateral com as seções
 ├── api/cliente.ts         # ORIGEM ÚNICA de URL — nenhum componente escreve "/api/..."
 ├── api/ws.ts               # WebSocket do chat
-├── chat/                   # Simulador (III) — conversa com o agente
-└── admin/                  # Painel (I), Histórico (II), Handoffs (IV), Status (V)
+├── chat/                   # Simulador — conversa com o agente, pública, sem login
+└── admin/                  # Painel, Histórico (com aba Trace), Handoffs, Status,
+                             # Atendimento (operador responde depois do handoff)
 
 quote-service/              # o legado do desafio — não é nosso, não editamos
-qa/replay/                  # replay do dataset turno a turno (docs/EVALS.md)
-db/migrations/               # fonte do esquema — 0001 a 0005, aplicadas em ordem
+qa/replay/                  # replay do dataset turno a turno + evals.py (docs/EVALS.md)
+db/migrations/               # fonte do esquema — 0001 a 0006, aplicadas em ordem
 ```
 
 **O SQL é a fonte do esquema.** `app/persistence/models.py` não declara `CHECK` nem cria
@@ -134,7 +135,7 @@ sequenceDiagram
     end
 
     Agente-->>Turno: RunOutput (content descartado se ja_enviou=true)
-    Turno->>Turno: _encaminhar() avalia os 7 gatilhos
+    Turno->>Turno: _encaminhar() avalia os 8 gatilhos
     opt algum gatilho casou
         Turno->>Repo: registrar handoff + enviar(compor_handoff(...))
         Turno->>WS: publicar_evento("handoff.created") → /api/events
@@ -154,6 +155,12 @@ Pontos que o diagrama não pode omitir, porque são onde o comportamento não é
 - O aviso de espera (6 s) e o reforço (~20 s) saem **de dentro da tool**, nunca de um
   watchdog na camada de conversa — é esse desenho que impede o "só um instante"
   seguido da resposta 0,2 s depois.
+- **`encaminhado` é terminal só para este fluxo — não para a conversa.** Uma vez
+  encaminhada, `app/agent/turno.py:responder` devolve cedo sem chamar o agente
+  (`conv.state == "encaminhado"`, linha ~86); a próxima mensagem do lead fica
+  persistida sem resposta automática. Quem responde a partir daí é
+  `POST /api/conversations/{id}/mensagens` (autor `operador`, 409 fora de
+  `encaminhado`), fora deste diagrama — ver a seção 8 sobre o frontend.
 
 ---
 
@@ -273,25 +280,32 @@ flowchart TD
     R3 -->|sim| H3["handoff = lead_pediu_atendente"]
     R3 -->|não| R4{"cotacao_indisponivel?<br/>(job terminou failed neste turno)"}
     R4 -->|sim| H4["handoff = cotacao_indisponivel<br/>custo alto"]
-    R4 -->|não| R5{"extracao_falhou?<br/>(≥2 rejeições no MESMO campo)"}
-    R5 -->|sim| H5["handoff = extracao_falhou<br/>custo médio"]
-    R5 -->|não| R6{"objecao_fora_da_alcada?<br/>(≥2 objeções E regex casa agora)"}
-    R6 -->|sim| H6["handoff = objecao_fora_da_alcada<br/>custo baixo · 2ª vez"]
-    R6 -->|não| R7{"midia_sem_texto?<br/>(tipo≠text E ≥2 mídias pós-pedido)"}
-    R7 -->|sim| H7["handoff = midia_sem_texto<br/>custo baixo · 2ª vez"]
-    R7 -->|não| Segue(["agente continua a conversa"])
+    R4 -->|não| R5{"lead_aceitou_cotacao?<br/>(verbo de aceite E cotação ok já entregue)"}
+    R5 -->|sim| H5["handoff = lead_aceitou_cotacao<br/>única boa notícia · vai pra consultor"]
+    R5 -->|não| R6{"extracao_falhou?<br/>(≥2 rejeições no MESMO campo)"}
+    R6 -->|sim| H6["handoff = extracao_falhou<br/>custo médio"]
+    R6 -->|não| R7{"objecao_fora_da_alcada?<br/>(≥2 objeções E regex casa agora)"}
+    R7 -->|sim| H7["handoff = objecao_fora_da_alcada<br/>custo baixo · 2ª vez"]
+    R7 -->|não| R8{"midia_sem_texto?<br/>(tipo≠text E ≥2 mídias pós-pedido)"}
+    R8 -->|sim| H8["handoff = midia_sem_texto<br/>custo baixo · 2ª vez"]
+    R8 -->|não| Segue(["agente continua a conversa"])
 
-    H1 & H2 & H3 & H4 & H5 & H6 & H7 --> Reg["registrar():<br/>conversation.state = encaminhado (terminal)<br/>demais que casaram → gatilhos_secundarios"]
+    H1 & H2 & H3 & H4 & H5 & H6 & H7 & H8 --> Reg["registrar():<br/>conversation.state = encaminhado (terminal p/ o agente)<br/>demais que casaram → gatilhos_secundarios"]
     Reg --> Push["publicar_evento('handoff.created')<br/>→ WS /api/events → fila do admin"]
+    Reg -.->|"depois, sob ação humana"| Op["operador assume em /atendimento<br/>POST .../mensagens (autor=operador)"]
 ```
 
 Duas linhas do próprio código que o diagrama simplifica e vale citar:
 
 - **Só `assunto_sensivel` e `lead_pediu_atendente` podem vir do modelo** (via
-  `escalate_to_human`); os outros cinco são recusados pela tool com uma mensagem
-  explicando por quê — `_DO_MODELO` em `app/agent/tools.py:399-402`. Um handoff "do
-  modelo" entra no mesmo fluxo acima só quando `avaliado is None` e existe um sinal
-  write-back com `disparado_por == "modelo"` (`app/agent/turno.py:220-233`).
+  `escalate_to_human`); os outros seis (incluindo `lead_aceitou_cotacao`) são
+  recusados pela tool com uma mensagem explicando por quê — `_DO_MODELO` em
+  `app/agent/tools.py:399-402`. Um handoff "do modelo" entra no mesmo fluxo acima só
+  quando `avaliado is None` e existe um sinal write-back com
+  `disparado_por == "modelo"` (`app/agent/turno.py:220-233`).
+- **A seta pontilhada não é decisão de `_encaminhar` — é outro endpoint, em outro
+  momento.** O agente não sabe que um operador vai responder depois; o desenho existe
+  só para não deixar a impressão de que `encaminhado` é um beco sem saída.
 - **`COTACAO_RECUSADA` não existe como gatilho** — removido explicitamente
   (`app/contracts/conversa.py:170-174`, comentário no próprio enum). A recusa 422 é
   um desfecho do bot, não uma entrada nesta árvore.
@@ -300,7 +314,7 @@ Duas linhas do próprio código que o diagrama simplifica e vale citar:
 
 ## 6 · Modelo de dados
 
-Conferido contra `db/migrations/0001_inicial.sql` a `0005_turn_usage_sem_mensagem.sql`
+Conferido contra `db/migrations/0001_inicial.sql` a `0006_lead_aceitou_cotacao.sql`
 e `app/persistence/models.py`.
 
 ```mermaid
@@ -361,7 +375,7 @@ erDiagram
     HANDOFFS {
         text id PK
         text conversation_id FK
-        text trigger
+        text trigger "8 valores — CHECK fechado, migração 0006 acrescentou lead_aceitou_cotacao"
         text reason
         text disparado_por "regra|modelo"
         text quote_id FK "nullable"
@@ -395,7 +409,15 @@ no comentário do modelo:
   verificação byte a byte do guardrail.
 - O Agno mantém a sessão de histórico de conversa em tabelas **próprias**, no mesmo
   Postgres mas fora destas migrações (`app/agent/agente.py:50-59`) — não aparecem no
-  diagrama porque não são schema nosso.
+  diagrama pela mesma razão. Duas outras tabelas do Agno, também fora deste diagrama e
+  destas migrações, viraram fonte de leitura do admin: `ai.agno_runs` (lida por
+  `GET /api/conversations/{id}/traces`, tools + argumentos + duração por resposta —
+  **mascarada na leitura**, a única tabela do sistema que faz isso em vez de na
+  escrita) e `ai.eval_runs` (`ReliabilityEval`/`AgentAsJudgeEval`, `docs/EVALS.md`).
+- **`MESSAGES.autor = 'operador'`** não é mais só um valor teórico do enum: é gravado
+  por `POST /api/conversations/{id}/mensagens`, quando um humano responde depois do
+  handoff (`web/src/admin/Atendimento.tsx`). O 409 dessa rota é a regra, não uma
+  checagem defensiva — só existe fora de `conversations.state = 'encaminhado'`.
 
 ---
 
@@ -435,28 +457,33 @@ a tool grava intenção (perfil, handoff), quem executa é o backend.
 O frontend está sob mudança ativa numa frente paralela; o que segue são as partes que
 não mudam com uma tela nova.
 
-- **Roteador próprio, sem biblioteca** (`web/src/App.tsx`): cinco seções vivem atrás
-  de uma barra lateral (`web/src/ui/Console.tsx`) — Painel, Histórico, Simulador,
-  Handoffs, Status —, todas navegáveis entre si sem recarregar a página. Rotas antigas
-  (`/chat`, `/admin`, `/admin/conversas`, `/admin/status`, `/admin/handoffs`)
-  continuam resolvendo, redirecionadas por um mapa `LEGADO` — um link já compartilhado
-  não quebra.
+- **Roteador próprio, sem biblioteca** (`web/src/App.tsx`): as seções vivem atrás de
+  uma barra lateral (`web/src/ui/Console.tsx`) — Painel, Histórico (com aba Trace),
+  Simulador, Handoffs, Status, Atendimento —, navegáveis entre si sem recarregar a
+  página. Rotas antigas (`/chat`, `/admin`, `/admin/conversas`, `/admin/status`,
+  `/admin/handoffs`) continuam resolvendo, redirecionadas por um mapa `LEGADO` — um
+  link já compartilhado não quebra. `CLAUDE.md` já reflete essa estrutura de rotas;
+  esta seção só confirma contra o código.
 - **`web/src/api/cliente.ts` é a origem única de URL.** Nenhum componente escreve
   `"/api/..."` literal; `tests/web/unit/openapi-deriva.test.ts` garante que toda rota
   do inventário `ROTAS` existe no `docs/openapi.yaml` congelado.
 - **Autenticação de operação por cookie `httpOnly`**, nunca por `localStorage` — o
   cliente HTTP não tem como ler a sessão mesmo se quisesse. O `ADMIN_TOKEN` colado na
   tela de 401 é a exceção declarada: vai para `sessionStorage`, risco aceito e
-  documentado (`docs/SEGURANCA.md`).
+  documentado. A sessão agora sobrevive a um restart do processo (`app/auth.py`): a
+  chave que assina o cookie deriva de `usuario|senha`, não de um salt sorteado a cada
+  boot — só trocar a credencial invalida sessões vivas.
 - **O WebSocket do chat (`/api/chat/{id}`) não autentica** — é o desenho do produto
   (lead anônimo); quem tem o id da conversa lê o histórico inteiro. O id tem 64 bits
-  de aleatoriedade.
-
-> Nota de divergência: `CLAUDE.md` — "Decisões fechadas" — ainda lista as rotas antigas
-> (`/chat`, `/admin/conversas`, `/admin/status`, `/admin/handoffs`) como a estrutura do
-> frontend. O código hoje usa `/simulador`, `/historico`, `/status`, `/handoffs`,
-> `/painel`, com as antigas mantidas só como redirecionamento. Ver a seção "achados"
-> no relatório da fatia de documentação.
+  de aleatoriedade. `/simulador` (a tela que fala com esse WebSocket) é pública de
+  propósito: o backend nunca exigiu login nela, e o item corrigido foi só a navegação,
+  que escondia um link para uma URL que já respondia sem credencial.
+- **`/atendimento` (`Atendimento.tsx`) é a outra ponta do handoff.** Depois que o
+  agente encerra a participação (`encaminhado`), o operador assume ali e responde na
+  mesma conversa via `POST /api/conversations/{id}/mensagens` (autor `operador`, 409
+  fora de `encaminhado`) — o lead recebe pelo mesmo WebSocket que já usava, sem saber
+  que trocou de interlocutor do outro lado. Ver §2 e §5 sobre por que o campo do lead
+  deixou de travar ali.
 
 ---
 
@@ -464,8 +491,9 @@ não mudam com uma tela nova.
 
 | Camada | Diretório | O que prova |
 |---|---|---|
-| núcleo | `tests/nucleo/` | guardrail, gatilhos, cotação, resiliência, textos byte a byte, PII, auth, contrato OpenAPI |
+| núcleo | `tests/nucleo/` | guardrail, gatilhos (os 8), cotação, resiliência, textos byte a byte, PII, auth, contrato OpenAPI, varredura de PII do repositório público |
 | dados/replay | `tests/dados/` | conferência de preço contra os 72 prêmios, amostra estratificada do replay |
+| replay + evals | `qa/replay/` (não é `tests/`, roda sob demanda) | `evals.py` liga `ReliabilityEval`/`AgentAsJudgeEval` de verdade com `--evals`, gravando em `ai.eval_runs` — ver `docs/EVALS.md` |
 | web (unit) | `tests/web/unit/` | inventário de rotas contra `openapi.yaml`, componentes |
 | web (e2e) | `tests/web/e2e/` | Playwright, evidência de UI real |
 | contrato | `tests/test_contratos.py` | os contratos congelados de `app/contracts/` |

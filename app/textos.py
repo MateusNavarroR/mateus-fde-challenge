@@ -111,6 +111,7 @@ TODOS: dict[str, str] = {
     "RECUSA_IDADE_ACIMA": RECUSA_IDADE_ACIMA,
     "RECUSA_IDADE_ABAIXO": RECUSA_IDADE_ABAIXO,
     "RECUSA_VEICULO": RECUSA_VEICULO,
+    "ACEITE_DA_COTACAO": ACEITE_DA_COTACAO,
 }
 
 #: Motivo de recusa normalizado → texto. Só estes três viram mensagem de recusa; os

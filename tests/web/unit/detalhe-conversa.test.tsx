@@ -360,3 +360,44 @@ it('cache ausente vira "n/a" no trace, nunca "0"', async () => {
   expect(trace).toHaveTextContent(/cache n\/a/);
   expect(trace).not.toHaveTextContent(/0 do cache/);
 });
+
+/*
+ * A decisão §8 recusava a ponte `admin → chat` inteira, e ela FOI REVISTA — este
+ * teste travava a versão antiga e agora trava a nova.
+ *
+ * A razão original continua correta e continua valendo: "o operador assumiria o lugar
+ * do LEAD numa conversa que já tem handoff". Mas ela nomeia UM CASO, não a ponte
+ * toda. Retomar como cliente uma conversa que ninguém encaminhou é o uso legítimo de
+ * um simulador — seguir dali para ver o que o agente faz.
+ *
+ * O que o par de testes abaixo garante é justamente a distinção: conversa encaminhada
+ * abre na tela do ATENDENTE; qualquer outra, no simulador como CLIENTE. O caso que a
+ * decisão proibia é o que o primeiro teste impede.
+ */
+it("conversa ENCAMINHADA não oferece continuar como cliente — ela vai para o atendente", async () => {
+  montarBackendFalso({
+    conversa: { id: "conv_x", state: "encaminhado", perfil: {}, quotes: [],
+                handoffs: [], messages: [] },
+  });
+  const { container } = render(<DetalheConversa id="conv_x" />);
+
+  expect(await screen.findByTestId("ir-para-atendimento")).toHaveAttribute(
+    "href", "/handoffs/conv_x",
+  );
+  // E NENHUM link leva ao simulador com o id desta conversa: é exatamente o caso que
+  // a §8 recusava, e continua recusado.
+  const paraOSimulador = [...container.querySelectorAll('a[href*="/simulador"]')];
+  expect(paraOSimulador).toHaveLength(0);
+});
+
+it("conversa em andamento pode ser continuada como CLIENTE, no simulador", async () => {
+  montarBackendFalso({
+    conversa: { id: "conv_y", state: "qualificando", perfil: {}, quotes: [],
+                handoffs: [], messages: [] },
+  });
+  render(<DetalheConversa id="conv_y" />);
+
+  expect(await screen.findByTestId("continuar-como-cliente")).toHaveAttribute(
+    "href", "/simulador?conversa=conv_y",
+  );
+});

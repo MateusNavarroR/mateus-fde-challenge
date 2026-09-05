@@ -141,19 +141,6 @@ it("o simulador ANÔNIMO não abre o socket da operação", async () => {
   await waitFor(() => expect(srv.socketsAbertos).toBe(0));
 });
 
-it("NÃO existe deep link de uma conversa para o simulador (decisão fechada §8)", () => {
-  // Por ele o avaliador assumiria o lugar do lead numa conversa que já tem
-  // handoff. Este é o teste negativo que impede alguém de adicionar "por
-  // simetria" seis meses depois. O link simples da guia é outra coisa: leva à
-  // conversa do PRÓPRIO navegador, porque o simulador retoma a sessão.
-  montarBackendFalso({});
-  const { container } = render(<Console rota="/historico/conv_x" />);
-  const comId = [...container.querySelectorAll('a[href^="/simulador"]')].filter(
-    (a) => (a.getAttribute("href") ?? "").length > "/simulador".length,
-  );
-  expect(comId).toHaveLength(0);
-});
-
 /*
  * As rotas antigas COM id. O mapa de legado casa por igualdade, e por isso
  * `/admin/conversas` abria enquanto `/admin/conversas/conv_x` — a única forma que de

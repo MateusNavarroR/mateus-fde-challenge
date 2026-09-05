@@ -20,6 +20,15 @@ import { useRecurso } from "../ui/useRecurso";
  * cartões chegam da esquerda em sequência, como folhas sendo postas sobre a mesa.
  * Depois disso o painel fica quieto, que é o que um painel deve fazer.
  */
+/** "05/09 15:40" — curto, porque é um recorte e não um carimbo de auditoria. */
+function quando(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "data desconhecida";
+  return d.toLocaleString("pt-BR", {
+    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+}
+
 export function Painel() {
   const { dado, erro, carregando, recarregar } = useRecurso<Resumo>(
     () => api.resumo(), [],
@@ -127,9 +136,25 @@ export function Painel() {
           </span>
           <span className="prova__titulo">avaliações que passaram</span>
           <span className="prova__recorte">
-            {evals && evals.total > 0
-              ? "ReliabilityEval e AgentAsJudgeEval, gravados em ai.eval_runs pelo Agno"
-              : "nenhuma avaliação registrada ainda"}
+            {evals && evals.total > 0 ? (
+              <>
+                {/* O RECORTE por tipo, porque os dois medem coisas incomparáveis: um
+                    confere chamadas de tool por cálculo, o outro julga texto com um
+                    modelo. Um total só esconde essa diferença. */}
+                <strong>{evals.reliability}</strong> de tool call ·{" "}
+                <strong>{evals.juiz}</strong> de texto
+                {evals.ultimo !== null && evals.ultimo !== undefined
+                  ? ` · última em ${quando(evals.ultimo)}`
+                  : ""}
+              </>
+            ) : (
+              // Diz COMO produzir o número, em vez de só constatar a ausência: o
+              // traço aqui não é defeito, é uma avaliação que ninguém rodou ainda.
+              <>
+                nenhuma avaliação neste banco ainda — rode{" "}
+                <code>python -m qa.replay --rodar --evals</code>
+              </>
+            )}
           </span>
         </div>
       </div>

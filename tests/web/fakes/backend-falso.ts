@@ -15,6 +15,8 @@ type Config = {
   handoffs?: { items: unknown[]; pendentes?: number };
   conversas?: { items: unknown[]; next_cursor?: string | null };
   conversa?: Record<string, unknown>;
+  /** `/api/resumo`. Mesclado sobre um resumo mínimo — o teste declara só o que mede. */
+  resumo?: Record<string, unknown>;
   conversaErro?: number;
   /** 409 no POST do operador, para o caminho de conversa não encaminhada. */
   operadorErro?: number;
@@ -173,6 +175,17 @@ export function montarBackendFalso(config: Config = {}) {
     }
     // ANTES do detalhe: `/api/conversations/c1/traces` também casa o regex do
     // detalhe, e sem esta linha o trace receberia o corpo da conversa.
+    if (url.startsWith("/api/resumo")) {
+      return responder({
+        conversas: 0, conversas_encaminhadas: 0,
+        mensagens_enviadas: 0, mensagens_recebidas: 0,
+        cotacoes_ok: 0, cotacoes_recusadas: 0, cotacoes_falhas: 0,
+        handoffs_pendentes: 0, handoffs_total: 0,
+        cache: null,
+        evals: { total: 0, passaram: 0, reliability: 0, juiz: 0, ultimo: null },
+        ...(config.resumo ?? {}),
+      });
+    }
     if (/^\/api\/conversations\/[^/]+\/mensagens/.test(url) && init?.method === "POST") {
       const corpo = JSON.parse(String(init?.body ?? "{}"));
       postsDoOperador.push(corpo);

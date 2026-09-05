@@ -149,12 +149,23 @@ consideradas e ficam fora do escopo declarado.
 
 ### PII sintética no histórico do Git
 
-O histórico inteiro (34 commits) foi varrido por chave, token e PII. **Zero segredos.**
+O histórico inteiro (**50 commits**, re-varrido depois de uma avaliação externa
+apontar que o número publicado — 34 — tinha envelhecido) foi varrido por chave, token
+e PII. **Zero segredos, em nenhum commit.**
+
+Um número de segurança desatualizado é pior do que nenhum: quem o lê acredita que a
+varredura cobriu o que existe hoje. O achado era do avaliador, e ele estava certo.
 Há CEPs de exemplo e um CPF placeholder inválido em commits antigos — nenhum dado de
 pessoa real, em nenhum commit. O HEAD está limpo pela regra estrita.
 
 Reescrever o histórico para remover endereços públicos invalidaria todas as referências
 de commit da documentação, em troca de nenhum ganho de privacidade real.
+
+**A re-varredura de 50 commits confirmou o quadro**: 20 commits contêm algo que casa o
+regex de PII, e nenhum é dado de pessoa real. São CEPs de exemplo e um CPF placeholder
+inválido em commits antigos (antes do invariante 13b, que hoje exige o gerador semeado),
+mais falsos positivos do próprio regex — a seed do replay, que é uma data compacta de
+oito dígitos; um hash de URL do PyPI; e uma string de conexão de Postgres local.
 
 ---
 
@@ -205,7 +216,7 @@ o texto foi reescrito para descrever as formas em vez de reproduzi-las.
 
 | Item | Estado |
 |---|---|
-| Segredo ou token em **qualquer** commit do histórico | ✅ nenhum, 34 commits varridos |
+| Segredo ou token em **qualquer** commit do histórico | ✅ nenhum, 50 commits varridos |
 | Caminho absoluto de máquina | ✅ nenhum |
 | PII crua em código, fixture, log, captura ou artefato | ✅ nenhuma — varredura na suíte, sem lista de exceções |
 | PII nos `ai-logs` exportados | ✅ redação **na escrita**; o export aborta se um segredo sobreviver |

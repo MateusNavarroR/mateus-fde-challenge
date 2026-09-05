@@ -14,6 +14,41 @@ from __future__ import annotations
 import pytest
 
 
+def pytest_collection_modifyitems(config, items):  # noqa: ARG001
+    """Pula a suíte de dados INTEIRA quando o material do desafio não está ao lado.
+
+    O `plans.json` e o parquet vivem no repositório do desafio, como diretório irmão —
+    decisão consciente: copiá-los para cá poria material de terceiro num repositório
+    público, e um caminho absoluto no fonte violaria o invariante 13.
+
+    O que faltava era o COMPORTAMENTO quando eles não estão lá. A fixture de bronze já
+    pulava; quem depende do `plans.json` estourava `FileNotFoundError`. Numa avaliação
+    externa, quem clonou o repositório público e rodou o comando do README recebeu 34
+    tracebacks — e um traceback diz "está quebrado", enquanto um skip com motivo diz
+    "isto aqui precisa de um arquivo que você não tem, e eis como obtê-lo".
+
+    O `DATASET_PLANS_JSON` e o `DATASET_BRONZE_PARQUET` continuam sobrescrevendo, para
+    quem organiza as pastas de outro jeito.
+    """
+    from qa.dataset.caminhos import plans_json
+
+    caminho = plans_json()
+    if caminho.is_file():
+        return
+
+    motivo = pytest.mark.skip(
+        reason=(
+            f"o material do desafio não está em {caminho}. Ele é externo a este "
+            "repositório de propósito (é material de terceiro, e o repositório é "
+            "público). Clone o repositório do desafio como diretório IRMÃO deste, ou "
+            "aponte DATASET_PLANS_JSON e DATASET_BRONZE_PARQUET para onde ele estiver."
+        )
+    )
+    for item in items:
+        if "tests/dados" in str(getattr(item, "fspath", "")):
+            item.add_marker(motivo)
+
+
 @pytest.fixture(scope="session")
 def bronze_linhas():
     from qa.dataset import bronze

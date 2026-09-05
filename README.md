@@ -281,9 +281,9 @@ A tela de chat aceita anexo, e é preciso ser explícito sobre o que isso signif
 tipo (`image`, `audio`, `document`) na coluna `messages.tipo`. Nenhum conteúdo de mídia
 é lido, transmitido ou armazenado em lugar nenhum.
 
-Ele existe por um motivo só: `midia_sem_texto` é um dos sete gatilhos de handoff, e sem
+Ele existe por um motivo só: `midia_sem_texto` é um dos oito gatilhos de handoff, e sem
 uma forma de a mídia chegar o gatilho seria uma linha de tabela sem caminho de código —
-o tipo de promessa que este repositório não faz. A alternativa era cair para seis
+o tipo de promessa que este repositório não faz. A alternativa era cair para sete
 gatilhos e contradizer `docs/DECISOES-FECHADAS.md`.
 
 A escolha cria a superfície do **gatilho** sem criar a superfície de **dado sensível**
@@ -323,8 +323,23 @@ framework.
 O resultado é que **custo por conversa, taxa de acerto do cache de prompt, confiabilidade
 das chamadas de ferramenta e as notas do juiz aparecem no painel de administração** para
 qualquer pessoa que rode a aplicação, sem serviço externo. O painel é uma seção com
-título e âncora próprios dentro de `/admin/status` — não uma quinta tela, porque são seis
+título e âncora próprios dentro de `/status` — não uma quinta tela, porque são seis
 números e uma rota nova para seis números é escopo por escopo.
+
+Isso deixou de ser aspiracional: os módulos nativos do Agno (`ReliabilityEval`,
+`AgentAsJudgeEval`) rodam de verdade dentro do replay (`qa/replay/evals.py`, flag
+`--evals`, gravando em `ai.eval_runs`) — não são só código testável que nenhum caminho
+chama. Medido: os 30 casos de `ReliabilityEval` passaram, e o `AgentAsJudgeEval` avaliou
+os três textos de recusa (`docs/TEXTOS.md` ⑤⑥⑦) com **nota 9**. Detalhe de metodologia e
+o histórico do defeito (a tabela nunca existia e o painel mostrava um traço em silêncio)
+em `docs/EVALS.md`.
+
+A rastreabilidade também ganhou granularidade de **chamada**, não só de turno: a aba
+"Trace" do Histórico (`GET /api/conversations/{id}/traces`, lendo `ai.agno_runs`) mostra,
+por resposta do agente, quais tools rodaram, com quais argumentos, o resultado e a
+duração — além dos tokens daquele turno. É a única leitura que mascara PII **na leitura**
+em vez de na escrita, porque `ai.agno_runs` é tabela do próprio Agno, fora das migrações
+nossas.
 
 Um detalhe de honestidade do painel: o Ollama não reporta leitura e escrita de cache, e
 por isso as colunas são anuláveis e a tela mostra **"n/a"**, nunca "0 %". Um zero ali
@@ -457,11 +472,20 @@ vez e encaminha na segunda.
 | 2 | `guardrail` | injeção de prompt, abuso | alto | encerra e registra |
 | 3 | `lead_pediu` | o lead pede uma pessoa | — | encaminha |
 | 4 | `cotacao_indisponivel` | o job de cotação terminou `failed` | alto | encaminha |
-| 5 | `extracao_falhou` | 2ª falha de extração no mesmo campo | médio | encaminha |
-| 6 | `objecao_fora_da_alcada` | o lead **repete** a objeção de preço | baixo | encaminha na 2ª |
-| 7 | `midia_sem_texto` | o lead **insiste** em mídia depois de pedirmos texto | baixo | encaminha na 2ª |
+| 5 | `lead_aceitou_cotacao` | verbo de aceite **mais** cotação `ok` já entregue | — | encaminha para um consultor |
+| 6 | `extracao_falhou` | 2ª falha de extração no mesmo campo | médio | encaminha |
+| 7 | `objecao_fora_da_alcada` | o lead **repete** a objeção de preço | baixo | encaminha na 2ª |
+| 8 | `midia_sem_texto` | o lead **insiste** em mídia depois de pedirmos texto | baixo | encaminha na 2ª |
 
 Fila estimada: **~8 % dos leads**.
+
+**O 5 é o único handoff que é boa notícia** (migração `db/migrations/0006`). Antes, o
+lead que aceitava a cotação caía em `lead_pediu_atendente` — falso em duas direções: ele
+não pediu atendente, e a resposta ("já passei sua conversa pra um atendente") respondia a
+uma pergunta que não fez. A causa era o próprio template, que fechava com *"Quer que eu
+siga com a emissão?"* — e emissão não existe nesta API legada (só `/health`, `/planos`,
+`/quote`). O template passou a convidar para a **contratação**, e o gatilho passa o lead
+para um consultor, dizendo por quê.
 
 **Não são gatilhos:** a recusa por regra de negócio, a falha isolada da `/quote` que o
 retry resolveu, a primeira objeção de preço, a primeira mídia sem texto.
@@ -471,9 +495,14 @@ grava também os gatilhos secundários que casaram no mesmo turno — a fila mos
 gatilho, o que mantém a regra testável com um teste por linha, sem que o operador perca o
 quadro completo ao assumir.
 
-**Depois de encaminhar, o agente encerra a participação.** Avisa que um atendente vai
-assumir e para de responder. O estado `encaminhado` é terminal de verdade, o que remove
-qualquer ambiguidade sobre quem está falando.
+**Depois de encaminhar, o agente encerra a participação — a conversa não trava.** Ele
+avisa que vai passar para um humano e para de responder: `encaminhado` continua terminal
+**para o agente**. Mas a conversa em si não fica num beco: a tela `/atendimento` deixa o
+operador assumir o handoff e responder na conversa (`POST
+/api/conversations/{id}/mensagens`, autor `operador`), e o lead recebe a resposta pelo
+mesmo WebSocket, em tempo real. Antes de essa tela existir, travar a conversa inteira era
+inofensivo porque não havia quem respondesse do outro lado; com atendimento humano,
+travar teria transformado o handoff num beco.
 
 *Consequência assumida, e ela é real:* na segunda objeção de preço o bot encerra no meio
 de uma negociação. É defensável — a segunda objeção é sinal de que ele não vai fechar
@@ -675,11 +704,30 @@ sozinho custa a confiança em tudo o mais que o README afirma.
 |---|---|
 | **Providers além de Anthropic e Ollama** | funcionam pela mesma model-string do Agno, e **não foram testados**. Não digo "suporta X" sem um smoke test que prove. |
 | **Ollama** | validado por smoke test de uma conversa completa; **não** foi submetido ao replay do dataset nem à suíte `live` inteira. |
-| **O default é `claude-sonnet-5`; os números medidos são de `claude-opus-5`** | o agente conversacional passou a rodar em Sonnet 5, que é o porte certo para esta tarefa e custa 2,5× menos. As medições de cache, custo e avaliação publicadas aqui foram feitas **antes** dessa troca, com Opus 5, e **não foram refeitas** — elas continuam válidas como o que são: uma medição daquele modelo, com o modelo nomeado em cada tabela. Reescrevê-las com outro nome seria falsificar evidência. Para reproduzir com o default atual, rode o replay de novo: o relatório grava o campo `modelo`. |
+| **O default é `claude-sonnet-5`; a maioria dos números de cache e custo publicados aqui é de `claude-opus-5`** | o agente conversacional passou a rodar em Sonnet 5, que é o porte certo para esta tarefa e custa 2,5× menos. As medições de cache, custo e avaliação das seções acima foram feitas **antes** dessa troca, com Opus 5, e **não foram refeitas** — elas continuam válidas como o que são: uma medição daquele modelo, com o modelo nomeado em cada tabela. Reescrevê-las com outro nome seria falsificar evidência. O replay de desfecho **foi** refeito com o default atual — ver a comparação logo abaixo — porque essa execução é recente o bastante para caber na sessão que atualizou esta documentação. |
 | **Concorrência real de leads** | o semáforo de 8 e o teto de 40 chamadas lentas da `/quote` estão medidos, mas nunca houve mais de uma conversa simultânea de verdade. |
 | **Réplicas** | o rate limit é em memória, no processo. Com mais de uma réplica cada uma tem o seu contador, e o limite efetivo multiplica. |
 | **Navegadores** | Chromium, via Playwright. Firefox e Safari não foram abertos. |
 | **`OBJECAO_FORA_DA_ALCADA` contra o dataset** | o gatilho exige a **segunda** objeção na mesma conversa. Medido: 628 das 2.500 conversas têm exatamente uma objeção e **nenhuma tem duas** — o dataset não consegue exercitá-lo. Coberto por teste unitário; não por replay. |
+
+#### Sonnet 5 contra Opus 5, mesma amostra de 30 conversas
+
+Replay de desfecho, seed padrão do replay (`amostragem.SEED_PADRAO`), `--conversas 30`,
+com o modelo no relatório JSON:
+
+| | `claude-sonnet-5` (default atual) | `claude-opus-5` |
+|---|---|---|
+| desfecho correto | 30/30 (100 %) | 28/30 (93,3 %) |
+| preço exato (14 conversas com prêmio calculável) | 14/14 | não medido nesta bateria |
+| extração — idade / veículo / CEP | 30/30 · 30/30 · 30/30 | não medido nesta bateria |
+| mídia tratada | 16/18 | 14/18 |
+| tool proibida chamada | 0 | 0 |
+| turnos / tempo total | 213 / 698 s | 186 / 856 s |
+
+Ambos os relatórios estão em `qa/_saida/replay/` (`replay-sonnet.json` e
+`replay-desfecho.json`) — não versionados (ver `docs/EVALS.md`), reproduzíveis com o
+comando de `docs/EVALS.md` § Reprodutibilidade. Uma amostra de 30 não prova nada sobre a
+cauda; prova que a troca de modelo não regrediu o comportamento medido.
 
 ### Riscos aceitos, com o motivo
 
@@ -710,6 +758,24 @@ referências de commit deste README.
 **Sem antivírus de conteúdo no anexo.** O chat aceita anexo mas **não transporta bytes**
 — só nome e tipo. Não há upload, logo não há arquivo para varrer; a contrapartida é que
 também não há visualização de mídia.
+
+### Correções recentes que vale nomear
+
+Três, porque ficariam invisíveis atrás de "fix" no log do git e mudam o que este README
+promete:
+
+- **A sessão de login sobrevive a um restart do serviço** (`app/auth.py`). Antes, a chave
+  que assina o cookie vinha de um salt sorteado a cada boot, e todo `docker compose up`
+  derrubava sessões abertas como efeito colateral não intencional. Agora a chave deriva
+  de `usuario|senha` — **trocar a credencial** invalida sessões, reiniciar o processo
+  não.
+- **Uma corrida na criação de conversa deixou de devolver 500** (`app/persistence/repo.py`).
+  Duas requisições de criação quase simultâneas para o mesmo `(channel, external_ref)`
+  colidiam na `UNIQUE`; a segunda agora lê a linha que a primeira gravou, em vez de
+  propagar o erro do banco para o lead.
+- **`/simulador` saiu de trás do login.** O backend já servia essa rota sem exigir
+  autenticação (é o chat anônimo, por desenho — ver a seção 5); a proteção estava só na
+  navegação do front, que escondia um link para uma URL que sempre respondeu.
 
 ---
 

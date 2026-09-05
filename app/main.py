@@ -351,22 +351,42 @@ _DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 if _DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
 
-    @app.get("/{caminho:path}", include_in_schema=False)
-    def spa(caminho: str) -> Response:
-        # `/api` NUNCA cai no SPA. Sem esta guarda, um endpoint inexistente
-        # devolveria `index.html` com 200 — e o cliente receberia HTML onde espera
-        # JSON, com o erro aparecendo como "unexpected token <" três camadas adiante.
-        # O mesmo vale para as rotas de documentação, que ficam desligadas fora de
-        # dev e não podem voltar a existir por acidente de roteamento.
-        if caminho.startswith("api/") or caminho in {"docs", "redoc", "openapi.json"}:
-            return JSONResponse(status_code=404,
-                                content={"error": "nao_encontrado", "message": caminho})
-        arquivo = _DIST / caminho
-        if caminho and arquivo.is_file() and _DIST in arquivo.resolve().parents:
-            return FileResponse(arquivo)
-        return FileResponse(_DIST / "index.html")
 
-else:  # pragma: no cover - só em desenvolvimento, com o Vite em outra porta
-    @app.get("/", include_in_schema=False)
-    def raiz() -> Response:
-        return Response(status_code=204)
+# A ROTA É SEMPRE A MESMA, com ou sem `web/dist`, e essa é a correção de um defeito
+# de auto-consistência que uma avaliação externa encontrou.
+#
+# Antes, `dist` ausente trocava o catch-all por um `@app.get("/")` diferente — ou
+# seja, **a superfície da API mudava conforme o frontend estivesse buildado ou não**.
+# O efeito era o pior possível: o teste de contrato congelado, que existe para acusar
+# deriva de superfície, ACUSAVA DERIVA quando alguém seguia o README ao pé da letra
+# (`git clone` e `uv run pytest`, sem `npm run build`). A ferramenta anti-deriva
+# apontando para si mesma.
+#
+# Uma rota, dois comportamentos: com `dist`, serve o SPA; sem, devolve 204 na raiz e
+# 404 no resto — que é o que o desenvolvimento com Vite em outra porta precisa. O
+# contrato não depende mais de um diretório existir.
+@app.get("/{caminho:path}", include_in_schema=False)
+def spa(caminho: str) -> Response:
+    if not _DIST.is_dir():
+        # Desenvolvimento: o Vite serve a interface noutra porta, e a raiz só precisa
+        # responder que o backend está de pé.
+        if caminho == "":
+            return Response(status_code=204)
+        return JSONResponse(status_code=404,
+                            content={"error": "nao_encontrado", "message": caminho})
+    return _servir_spa(caminho)
+
+
+def _servir_spa(caminho: str) -> Response:
+    # `/api` NUNCA cai no SPA. Sem esta guarda, um endpoint inexistente
+    # devolveria `index.html` com 200 — e o cliente receberia HTML onde espera
+    # JSON, com o erro aparecendo como "unexpected token <" três camadas adiante.
+    # O mesmo vale para as rotas de documentação, que ficam desligadas fora de
+    # dev e não podem voltar a existir por acidente de roteamento.
+    if caminho.startswith("api/") or caminho in {"docs", "redoc", "openapi.json"}:
+        return JSONResponse(status_code=404,
+                            content={"error": "nao_encontrado", "message": caminho})
+    arquivo = _DIST / caminho
+    if caminho and arquivo.is_file() and _DIST in arquivo.resolve().parents:
+        return FileResponse(arquivo)
+    return FileResponse(_DIST / "index.html")

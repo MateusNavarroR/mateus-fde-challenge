@@ -157,6 +157,9 @@ Paralelismo quebra o determinismo.
 22. **Handoff graduado por custo do erro**, precedência por lista fixa (primeiro que
     casa vence, secundários gravados junto), e **depois de encaminhar o agente encerra
     a participação**. Oito gatilhos, um teste cada — a tabela está no contrato.
+    `encaminhado` é terminal **para o agente**, não para a conversa: desde a tela
+    `/atendimento`, um operador humano pode assumir o handoff e responder na mesma
+    conversa. Ver invariante 29.
 23. **Cotação: bloco compacto, uma mensagem, todo o texto de template.** Preço na
     primeira linha, carência com marcador próprio, franquia sempre, agravo de CEP
     nunca, e no dia 1 dizer que o primeiro mês já é integral.
@@ -183,6 +186,34 @@ Paralelismo quebra o determinismo.
     `db=PostgresDb(..., eval_table="eval_runs")` no mesmo Postgres da aplicação.
     Harness próprio só para o que é **cálculo**: a conferência de preço, contra o
     conjunto fechado de 72 prêmios possíveis — nunca por juiz de modelo.
+    **Isto agora roda de verdade** (`qa/replay/evals.py`, flags `--evals`/`--evals-db`
+    do `qa.replay`) — não é mais só código testável que nenhum caminho de produto
+    chamava. Medido: 30/30 `ReliabilityEval` passaram; o `AgentAsJudgeEval` avaliou os
+    três textos de recusa e aprovou com nota 9. `_evals()` em `app/api/consultas.py`
+    lê `ai.eval_runs` para o painel — antes da fatia que ligou isto, a tabela nunca
+    existia e o painel mostrava um traço, indistinguível de "avaliou e reprovou".
+28. **O modelo padrão é `anthropic:claude-sonnet-5`**, não Opus. Armadilha para quem
+    reler números antigos deste repositório: a maioria das medições publicadas de
+    cache, custo e avaliação (README §§6–7, `docs/EVALS.md`) foi feita **com Opus**,
+    antes da troca, e **não foi refeita** — elas nomeiam o modelo em cada tabela de
+    propósito. Nunca reescreva um número antigo como se fosse do Sonnet, e nunca some
+    um número de Opus com um de Sonnet no mesmo agregado. Há um replay de desfecho
+    (30 conversas) já rodado com Sonnet — `qa/_saida/replay/replay-sonnet.json` — que
+    é comparável ao de Opus (`replay-desfecho.json`) porque os dois gravam o campo
+    `modelo`; a comparação está no README, seção de limitações.
+29. **Atendimento humano existe de verdade** (`web/src/admin/Atendimento.tsx` +
+    `POST /api/conversations/{id}/mensagens`, 409 se a conversa não estiver
+    `encaminhado`). Isso muda a decisão fechada "`admin → chat` não"
+    (`docs/DECISOES-FECHADAS.md` §8): aquela decisão proibia o operador **assumir o
+    lugar do lead** numa conversa em andamento — continua proibindo. Escrever pelo
+    **próprio lado da empresa**, depois que o agente já encerrou a participação, é
+    outra coisa, e é o que esta tela faz. Autor da mensagem é `operador`, nunca
+    `sistema` — a distinção é auditoria (template determinístico vs. pessoa
+    escrevendo), não estética.
+30. **Trace por resposta**: `GET /api/conversations/{id}/traces` lê `ai.agno_runs`
+    (tabela do próprio Agno, fora das nossas migrações) e mostra, por turno, as tools
+    executadas com argumentos, resultado e duração. É a **única leitura que mascara
+    PII na leitura**, não na escrita — todo o resto do sistema mascara ao gravar.
 
 ---
 

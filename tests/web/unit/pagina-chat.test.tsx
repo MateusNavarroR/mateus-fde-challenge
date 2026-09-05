@@ -80,14 +80,20 @@ it("marca visivelmente a mensagem com preço sem quote_id", async () => {
   expect(within(screen.getByTestId("bolha-m0")).getByTestId("marca-bug")).toBeVisible();
 });
 
-it("o link para o admin leva à conversa corrente — e não existe o inverso", () => {
+it("o link para o admin leva à conversa corrente, numa rota VIVA", () => {
+  // `/admin/conversas/{id}` era a rota antiga: ela só resolvia por redirecionamento,
+  // e o mapa de legado casava por igualdade — a forma COM id caía no Painel. Aponta
+  // direto para a rota atual.
+  //
+  // O trecho "e não existe o inverso" saiu do nome: a ponte `admin → chat` passou a
+  // existir, com a distinção que a decisão §8 de fato protegia — ver
+  // `detalhe-conversa.test.tsx`.
   montarServidorFalso();
-  const { container } = render(<PaginaChat conversationId="c1" />);
+  render(<PaginaChat conversationId="c1" />);
   expect(screen.getByRole("link", { name: /ver esta conversa no admin/i })).toHaveAttribute(
     "href",
-    "/admin/conversas/c1",
+    "/historico/c1",
   );
-  expect(container.querySelectorAll('a[href^="/admin"]').length).toBeGreaterThan(0);
 });
 
 it("o input não some enquanto o turno roda — a mensagem entra na fila", async () => {

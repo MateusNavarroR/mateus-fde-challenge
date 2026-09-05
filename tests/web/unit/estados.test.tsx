@@ -105,3 +105,39 @@ it("401 SEM login configurado continua pedindo o token — a outra causa é real
 
   expect(await screen.findByLabelText(/ADMIN_TOKEN/)).toBeVisible();
 });
+
+it("o painel separa avaliação de TOOL CALL de avaliação de TEXTO", async () => {
+  /*
+   * Os dois avaliadores medem coisas incomparáveis: um confere por cálculo que as
+   * tools esperadas foram chamadas, o outro julga a nossa redação com um modelo. Um
+   * total só esconderia justamente a diferença — e é a mesma regra que vale para todo
+   * número deste painel: o recorte é que carrega a informação.
+   */
+  montarBackendFalso({
+    resumo: {
+      evals: { total: 33, passaram: 33, reliability: 30, juiz: 3,
+               ultimo: "2026-09-05T18:40:00Z" },
+    },
+  });
+  render(<Operacao rota="/painel" />);
+
+  const prova = await screen.findByTestId("prova-evals");
+  expect(prova).toHaveTextContent("33/33");
+  expect(prova).toHaveTextContent(/30 de tool call/);
+  expect(prova).toHaveTextContent(/3 de texto/);
+  expect(prova).toHaveTextContent(/última em/);
+});
+
+it("sem avaliação NESTE banco, o painel diz como produzi-la", async () => {
+  // Um traço sem explicação é indistinguível de "avaliou e reprovou". A tela diz que
+  // ninguém rodou ainda, e diz o comando.
+  montarBackendFalso({
+    resumo: { evals: { total: 0, passaram: 0, reliability: 0, juiz: 0, ultimo: null } },
+  });
+  render(<Operacao rota="/painel" />);
+
+  const prova = await screen.findByTestId("prova-evals");
+  expect(prova).toHaveTextContent("—");
+  expect(prova).toHaveTextContent(/nenhuma avaliação neste banco ainda/);
+  expect(prova).toHaveTextContent(/qa\.replay --rodar --evals/);
+});

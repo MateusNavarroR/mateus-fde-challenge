@@ -120,6 +120,17 @@ def _derivar(senha: str, salt: bytes) -> bytes:
     return hashlib.scrypt(senha.encode("utf-8"), salt=salt, **_SCRYPT)
 
 
+#: Salt do `scrypt` que produz a chave de SESSÃO. Derivado do usuário, não sorteado.
+#:
+#: Um salt aleatório por boot dá uma chave nova a cada reinício — que era o defeito
+#: que derrubava a sessão de quem estava trabalhando a cada `docker compose up`. Aqui
+#: ele precisa ser estável, e derivá-lo do usuário mantém a propriedade que o salt de
+#: fato entrega quando não há banco de hashes: duas instalações com a mesma senha e
+#: usuários diferentes não compartilham chave.
+def _salt_de_sessao(usuario: str) -> bytes:
+    return hashlib.sha256(b"autoseguro/salt-sessao/v1|" + usuario.encode("utf-8")).digest()[:16]
+
+
 def _chave_de_sessao(usuario: str, senha: str) -> bytes:
     """A chave que assina o cookie: **estável entre reinícios, presa à credencial.**
 
@@ -129,8 +140,19 @@ def _chave_de_sessao(usuario: str, senha: str) -> bytes:
     as sessões, não que reiniciar o serviço derrube. As duas propriedades pareciam a
     mesma porque a chave dependia do salt; separá-las custa esta função.
 
-    Deriva de `usuario|senha` com um rótulo de domínio próprio, o que preserva tudo
-    que importava:
+    **Passa pelo `scrypt`, e essa linha é o conserto de um achado de auditoria.** A
+    primeira versão era `SHA-256(usuario|senha)` — determinística e BARATA. Quem
+    obtivesse um cookie por qualquer via (captura de tela, log, acesso à máquina;
+    XSS não, porque ele é `httpOnly`) teria um oráculo offline: para cada senha
+    candidata, computar o SHA-256 e conferir o HMAC, a milhões de tentativas por
+    segundo. Era exatamente a proteção que o `scrypt` do login existe para dar, e eu
+    a tinha jogado fora ao trocar a origem da chave para consertar o reinício.
+
+    Com o `scrypt` no caminho, cada tentativa custa dezenas de milissegundos e ~16 MiB
+    — a mesma barreira do login. O salt é derivado do usuário (`_salt_de_sessao`), e
+    não sorteado, que é o que mantém a chave estável entre reinícios.
+
+    Preserva tudo que importava:
 
     - **trocar usuário ou senha muda a chave**, e toda sessão viva morre, sem lista de
       revogação — a propriedade que de fato se queria;
@@ -144,10 +166,7 @@ def _chave_de_sessao(usuario: str, senha: str) -> bytes:
     tem relação com a assinatura do cookie.
     """
     return hashlib.sha256(
-        b"autoseguro/sessao/v2|"
-        + usuario.encode("utf-8")
-        + b"|"
-        + senha.encode("utf-8")
+        b"autoseguro/sessao/v3|" + _derivar(senha, _salt_de_sessao(usuario))
     ).digest()
 
 
@@ -260,6 +279,32 @@ def _gravar_cookie(resposta: Response, token: str) -> None:
 # ─── a porta ─────────────────────────────────────────────────────────────────
 
 
+def autorizado_para_operacao(*, sessao: str | None, token: str | None) -> bool:
+    """A REGRA, num lugar só — porque duas cópias de uma regra de autorização divergem.
+
+    Elas divergiram: o WebSocket `/api/events` reimplementava a checagem e só sabia
+    olhar `ADMIN_TOKEN`. Como `admin_exigido` é `admin_token is not None`, a
+    configuração recomendada para navegador (`ADMIN_USER`/`ADMIN_PASSWORD`, sem token)
+    deixava aquele socket **aberto para anônimos** — e por ele saíam os
+    `conversation_id` dos handoffs, que `docs/SEGURANCA.md` trata como capacidade.
+
+    `exigir_admin` (HTTP) e o WebSocket agora chamam esta função. O transporte muda
+    de onde vêm os dois valores; a decisão não muda com o transporte.
+    """
+    from app.config import get_settings
+
+    cfg = get_settings()
+    token_ok = cfg.admin_exigido and hmac.compare_digest(
+        (token or "").encode("utf-8"), (cfg.admin_token or "").encode("utf-8")
+    )
+    if login_configurado():
+        return sessao_valida(sessao) or token_ok
+    if cfg.admin_exigido:
+        return token_ok
+    # Nenhum dos dois configurados: instalação aberta, e o boot avisa no log.
+    return True
+
+
 def exigir_admin(
     autoseguro_sessao: str | None = Cookie(default=None),
     x_admin_token: str | None = Header(default=None),
@@ -275,20 +320,16 @@ def exigir_admin(
     `curl`: tirá-lo quebraria automação para não ganhar nada — quem tem o token já
     teria acesso pelos dois caminhos de qualquer forma.
     """
-    from app.config import get_settings
-
-    cfg = get_settings()
-    token_ok = cfg.admin_exigido and hmac.compare_digest(
-        (x_admin_token or "").encode("utf-8"), (cfg.admin_token or "").encode("utf-8")
+    if autorizado_para_operacao(sessao=autoseguro_sessao, token=x_admin_token):
+        return
+    # A mensagem distingue os dois modos porque o operador precisa saber o que fazer:
+    # entrar de novo é uma ação, conferir um token é outra.
+    detalhe = (
+        "sessão de operação ausente ou expirada"
+        if login_configurado()
+        else "token de admin inválido ou ausente"
     )
-
-    if login_configurado():
-        if sessao_valida(autoseguro_sessao) or token_ok:
-            return
-        raise HTTPException(status_code=401, detail="sessão de operação ausente ou expirada")
-
-    if cfg.admin_exigido and not token_ok:
-        raise HTTPException(status_code=401, detail="token de admin inválido ou ausente")
+    raise HTTPException(status_code=401, detail=detalhe)
 
 
 # ─── as rotas ────────────────────────────────────────────────────────────────

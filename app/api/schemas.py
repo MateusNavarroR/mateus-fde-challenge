@@ -191,8 +191,21 @@ class CacheDoPrompt(BaseModel):
 
 
 class EvalsResumo(BaseModel):
+    """O que os módulos NATIVOS do Agno gravaram em `ai.eval_runs`.
+
+    O recorte por tipo não é enfeite: os dois avaliadores medem coisas incomparáveis.
+    `reliability` confere por CÁLCULO que as tools esperadas foram chamadas com os
+    argumentos esperados; `juiz` é um modelo julgando a nossa redação de recusa. Somar
+    os dois num total só produziria um número que não responde a pergunta nenhuma.
+    """
+
     total: int
     passaram: int
+    reliability: int = 0
+    juiz: int = 0
+    #: Quando a última avaliação rodou. `None` = nenhuma até agora — e o painel diz
+    #: isso com palavras, porque um zero aqui é indistinguível de "avaliou e reprovou".
+    ultimo: str | None = None
 
 
 class Resumo(BaseModel):

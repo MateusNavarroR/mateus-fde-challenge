@@ -192,19 +192,51 @@ def _evals(s: Session) -> dict:
 
     Ausente a tabela, devolve zeros em silêncio: o painel não pode quebrar porque
     ninguém rodou avaliação ainda.
+
+    **As duas classes reportam aprovação de formas diferentes**, e a consulta trata as
+    duas: `ReliabilityResult` grava `eval_status`; `AgentAsJudgeResult` grava
+    `pass_rate`. Contar só a primeira faria todo julgamento de texto aparecer como
+    reprovado — o mesmo erro que o contador do replay cometeu, e que só apareceu
+    quando alguém abriu o `eval_data` no banco.
     """
     from sqlalchemy import text as _sql
 
     try:
         linha = s.execute(_sql("""
-            select count(*) as total,
-                   count(*) filter (where eval_data->>'eval_status' = 'PASSED') as passaram
+            select
+              count(*) as total,
+              count(*) filter (
+                where eval_data->>'eval_status' = 'PASSED'
+                   or (eval_data->>'pass_rate')::numeric >= 100
+              ) as passaram,
+              count(*) filter (where eval_type = 'reliability') as reliability,
+              count(*) filter (where eval_type = 'agent_as_judge') as juiz,
+              max(created_at) as ultimo
             from ai.eval_runs
         """)).one()
     except Exception:  # noqa: BLE001 — tabela ainda não existe
         s.rollback()
-        return {"total": 0, "passaram": 0}
-    return {"total": int(linha.total), "passaram": int(linha.passaram)}
+        return {"total": 0, "passaram": 0, "reliability": 0, "juiz": 0, "ultimo": None}
+
+    # `created_at` é epoch em segundos no schema do Agno — não um timestamp. Converter
+    # aqui, e não na tela: a tela não tem por que conhecer o formato de uma dependência.
+    ultimo = linha.ultimo
+    quando = None
+    if ultimo is not None:
+        import datetime as _dt
+
+        quando = _dt.datetime.fromtimestamp(int(ultimo), _dt.UTC).isoformat()
+
+    return {
+        "total": int(linha.total),
+        "passaram": int(linha.passaram),
+        # O RECORTE, como em todo número deste painel: "12 avaliações" não diz nada
+        # sobre um sistema cujos dois avaliadores medem coisas incomparáveis — um
+        # confere chamadas de tool por cálculo, o outro julga texto com um modelo.
+        "reliability": int(linha.reliability),
+        "juiz": int(linha.juiz),
+        "ultimo": quando,
+    }
 
 
 def traces_da_conversa(s: Session, conversation_id: str) -> list[dict]:

@@ -75,6 +75,33 @@ export function DetalheConversa({ id }: { id: string }) {
             Está em <strong>{dado.state}</strong>, aberta pelo canal {dado.channel}.
           </p>
         </div>
+
+        {/*
+          CONTINUAR A CONVERSA, e o destino depende de QUEM você é nela.
+
+          Esta é a ponte que faltava: do Histórico dava para ler uma conversa e não
+          dava para retomá-la. A decisão fechada §8 recusava `admin → chat` porque
+          "o operador assumiria o lugar do LEAD numa conversa que já tem handoff" — e
+          essa razão continua de pé, mas ela nomeia um caso, não a ponte inteira.
+
+          Conversa ENCAMINHADA vai para a tela do atendente, onde ele escreve pelo
+          lado da empresa. Qualquer outra abre no simulador, como CLIENTE, que é o
+          uso legítimo: seguir a conversa a partir dali para ver o que o agente faz.
+          O caso que a decisão proibia é justamente o que este `if` impede.
+        */}
+        {dado.state === "encaminhado" ? (
+          <a className="botao" href={`/handoffs/${dado.id}`} data-testid="ir-para-atendimento">
+            Assumir como atendente
+          </a>
+        ) : (
+          <a
+            className="botao botao--discreto"
+            href={`/simulador?conversa=${dado.id}`}
+            data-testid="continuar-como-cliente"
+          >
+            Continuar como cliente
+          </a>
+        )}
       </div>
 
       <div className="grade">

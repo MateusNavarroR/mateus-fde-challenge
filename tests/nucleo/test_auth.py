@@ -701,3 +701,77 @@ def test_a_chave_de_sessao_NAO_serve_para_conferir_a_senha():
     chave = auth._chave_de_sessao(usuario, senha)
     assert chave != auth._derivar(senha, b"0" * 16)
     assert chave != __import__("hashlib").sha256(senha.encode()).digest()
+
+
+def test_o_WEBSOCKET_de_eventos_usa_a_MESMA_regra_do_REST(monkeypatch):
+    """Achado de auditoria, severidade alta: ele ficava ABERTO para anônimos.
+
+    `/api/events` reimplementava a checagem em vez de reusar a do REST, e só sabia
+    olhar `ADMIN_TOKEN`. Como `admin_exigido` é `admin_token is not None`, a
+    configuração que o README recomenda para navegador — `ADMIN_USER` e
+    `ADMIN_PASSWORD`, sem token — caía no `if` falso e aceitava qualquer conexão.
+
+    O que saía por ali não era pouco: os frames de `handoff.created` carregam o
+    `conversation_id`, que `docs/SEGURANCA.md` trata como CAPACIDADE — quem o tem lê
+    a conversa inteira pelo WebSocket do chat, que é anônimo por desenho. Escutar
+    aqui, colher ids, ler conversas de leads: a cadeia fechava.
+
+    O teste é sobre a REGRA, não sobre o socket: duas cópias de uma regra de
+    autorização divergem, e foi o que aconteceu.
+    """
+    usuario, senha = _credencial_efemera()
+    monkeypatch.setenv("ADMIN_USER", usuario)
+    monkeypatch.setenv("ADMIN_PASSWORD", senha)
+    monkeypatch.delenv("ADMIN_TOKEN", raising=False)
+    auth.redefinir_credenciais()
+    from app.config import get_settings
+
+    get_settings.cache_clear() if hasattr(get_settings, "cache_clear") else None
+    import app.config as _cfg
+
+    _cfg._settings = None
+
+    # Anônimo: sem cookie e sem token. É a configuração do README para navegador.
+    assert not auth.autorizado_para_operacao(sessao=None, token=None), (
+        "sem sessão e sem token, a operação foi autorizada — é o buraco pelo qual o "
+        "WebSocket de eventos aceitava anônimos"
+    )
+
+    # Com sessão válida, entra.
+    cred = auth.credencial()
+    assert cred is not None
+    assert auth.autorizado_para_operacao(sessao=auth.emitir_sessao(cred), token=None)
+
+
+def test_a_chave_de_sessao_passa_pelo_SCRYPT_e_nao_por_um_hash_barato():
+    """Achado de auditoria, severidade alta — e a regressão foi minha.
+
+    A versão anterior era `SHA-256(usuario|senha)`: determinística e BARATA. Quem
+    obtivesse um cookie por qualquer via teria um oráculo offline — para cada senha
+    candidata, computar o SHA-256 e conferir o HMAC, a milhões por segundo. Era
+    exatamente a proteção que o `scrypt` do login dá, jogada fora ao trocar a origem
+    da chave para a sessão sobreviver a reinícios.
+
+    O teste mede o que importa: a chave tem que ser o `scrypt` com o salt estável, e
+    NÃO o SHA-256 direto da senha.
+    """
+    import hashlib
+
+    usuario, senha = _credencial_efemera()
+    chave = auth._chave_de_sessao(usuario, senha)
+
+    barata = hashlib.sha256(
+        b"autoseguro/sessao/v2|" + usuario.encode() + b"|" + senha.encode()
+    ).digest()
+    assert chave != barata, "a chave voltou a ser um hash barato da senha"
+
+    esperada = hashlib.sha256(
+        b"autoseguro/sessao/v3|" + auth._derivar(senha, auth._salt_de_sessao(usuario))
+    ).digest()
+    assert chave == esperada
+
+    # E continua ESTÁVEL: a mesma credencial dá a mesma chave em processos diferentes.
+    assert auth._chave_de_sessao(usuario, senha) == chave
+    # ...enquanto trocar a senha continua derrubando toda sessão viva.
+    _, outra = _credencial_efemera()
+    assert auth._chave_de_sessao(usuario, outra) != chave

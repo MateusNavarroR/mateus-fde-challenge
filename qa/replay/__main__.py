@@ -81,6 +81,13 @@ def montar_parser() -> argparse.ArgumentParser:
              "por motivo, não por conversa); o ReliabilityEval não chama modelo nenhum.",
     )
     p.add_argument(
+        "--evals-db", default=None, metavar="URL",
+        help="onde GRAVAR os evals. Default: o mesmo banco do replay. Aponte para o "
+             "banco da aplicação quando o replay rodar isolado no replay-db — os "
+             "evals medem o AGENTE, não as conversas sintéticas, e é no banco da "
+             "aplicação que o painel os lê.",
+    )
+    p.add_argument(
         "--continuar-no-402", action="store_true",
         help="não para no primeiro 402. O free tier do Ollama Cloud devolve 402 em três "
              "dos quatro modelos, e insistir só produz mais 402 — use com motivo.",
@@ -119,12 +126,21 @@ def main(argv: list[str] | None = None) -> int:
     import asyncio
 
     db_evals = None
+    url_dos_evals = None
     if args.evals:
         from app.config import get_settings
         from qa.replay.evals import db_de_evals
 
-        db_evals = db_de_evals(get_settings().database_url)
-        print("\nevals .......... ligados; gravam em ai.eval_runs (tabela criada pelo Agno)")
+        # O banco dos evals é SEPARÁVEL do banco do replay, e essa distinção importa.
+        #
+        # O `replay-db` isola as conversas sintéticas das reais — razão que não se
+        # aplica aos evals: eles medem o agente, não uma conversa. Guardá-los junto do
+        # replay significa que o painel, que lê o banco da aplicação, mostra um traço
+        # mesmo depois de uma avaliação inteira ter rodado.
+        url_dos_evals = args.evals_db or get_settings().database_url
+        db_evals = db_de_evals(url_dos_evals)
+        alvo = "o mesmo banco do replay" if args.evals_db is None else args.evals_db
+        print(f"\nevals .......... ligados; gravam em ai.eval_runs de {alvo}")
 
     executor = Executor(
         modo=Modo(args.modo),
@@ -132,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         ano_corrente=args.ano_corrente,
         parar_no_402=not args.continuar_no_402,
         db_evals=db_evals,
+        url_dos_evals=url_dos_evals,
     )
     rel = asyncio.run(executor.executar(estratificacao))
 

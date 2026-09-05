@@ -305,7 +305,16 @@ export type Resumo = {
     fracao_do_cache: number | null;
     turnos_sem_cache: number;
   };
-  evals: { total: number; passaram: number };
+  evals: {
+    total: number;
+    passaram: number;
+    /** Conferência por CÁLCULO de que as tools esperadas foram chamadas. */
+    reliability: number;
+    /** Julgamento da nossa redação de recusa, por modelo. Incomparável com o acima. */
+    juiz: number;
+    /** ISO da última avaliação, ou `null` quando nenhuma rodou neste banco. */
+    ultimo: string | null;
+  };
 };
 
 export type Saude = {

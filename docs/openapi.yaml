@@ -460,6 +460,22 @@ components:
             manter em sincronia com uma dependência.
           required: [total, passaram]
           properties:
+            reliability:
+              type: integer
+              description: |
+                Conferência por CÁLCULO de que as tools esperadas foram chamadas com
+                os argumentos esperados. Incomparável com `juiz`, e por isso separado:
+                somar os dois num total só produz um número que não responde nada.
+            juiz:
+              type: integer
+              description: julgamento da nossa redação de recusa, por modelo.
+            ultimo:
+              type: string
+              nullable: true
+              description: |
+                ISO da última avaliação, ou `null` quando nenhuma rodou NESTE banco —
+                que é diferente de "rodou e reprovou", e a tela diz as duas coisas com
+                palavras diferentes.
             total: { type: integer }
             passaram: { type: integer }
 

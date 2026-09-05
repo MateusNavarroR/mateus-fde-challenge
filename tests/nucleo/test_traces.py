@@ -24,6 +24,33 @@ from tests.fixtures.pii import cep_de
 pytestmark = pytest.mark.db
 
 
+@pytest.fixture(autouse=True)
+def _exige_tabela_do_agno(sessao):
+    """Pula com MOTIVO quando `ai.agno_runs` não existe.
+
+    A tabela é criada pelo Agno em tempo de execução, na primeira conversa real
+    contra aquele banco — não por nenhuma migração nossa. Num banco que a aplicação
+    nunca tocou (um `db-debug` recém-criado, por exemplo), ela simplesmente não está
+    lá, e estes testes falhavam com `relation "ai.agno_runs" does not exist`.
+
+    Uma avaliação externa tropeçou exatamente nisso seguindo o README: três
+    tracebacks que não dizem nada sobre o código e tudo sobre o estado do banco.
+    Recriar a tabela aqui seria pior — duplicaríamos o schema de uma dependência,
+    inclusive a FK para `agno_sessions`, e o teste passaria a medir a nossa cópia.
+    """
+    from sqlalchemy import text as _sql
+
+    existe = sessao.execute(
+        _sql("select to_regclass('ai.agno_runs') is not null")
+    ).scalar_one()
+    if not existe:
+        pytest.skip(
+            "ai.agno_runs ainda não existe neste banco: ela é criada pelo Agno na "
+            "primeira conversa real. Rode uma conversa contra este banco (ou aponte "
+            "APP_DATABASE_URL para o banco da aplicação) para exercitar estes testes."
+        )
+
+
 def _plantar_run(sessao, *, conversation_id: str, tool_args: dict, indice: int = 0):
     """Escreve um `agno_runs` à mão, com a forma que o Agno 3.0.6 grava.
 

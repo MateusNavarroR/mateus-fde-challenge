@@ -218,6 +218,14 @@ class Executor:
     #: `db` obrigatório aqui a obrigaria a subir Postgres para testar amostragem.
     #: Quem quer o número no painel liga com `--evals`; quem quer só o replay, não.
     db_evals: Any = None
+    #: URL onde os evals gravam, para a conferência final ler o banco CERTO.
+    #: `None` = o mesmo banco do replay.
+    url_dos_evals: str | None = None
+    #: Identificador desta execução, no `external_ref` das conversas criadas.
+    #: Default: o instante do início, que basta para não colidir e ainda ordena.
+    execucao: str = field(
+        default_factory=lambda: __import__("datetime").datetime.now().strftime("%m%d%H%M%S")
+    )
     registro_evals: Any = None
 
     def __post_init__(self) -> None:
@@ -229,12 +237,16 @@ class Executor:
             self.registro_evals = Registro()
 
     def _engine_de_evals(self):
-        """A engine para conferir o que foi gravado. Do mesmo banco do `db_evals`."""
+        """A engine para conferir o que foi gravado — do banco onde eles FORAM gravados.
+
+        Quando o replay roda isolado e os evals vão para o banco da aplicação, conferir
+        no banco do replay contaria zero linhas e acusaria uma perda que não houve.
+        """
         from sqlalchemy import create_engine
 
         from app.config import get_settings
 
-        return create_engine(get_settings().database_url)
+        return create_engine(self.url_dos_evals or get_settings().database_url)
 
     def _fabrica(self):
         if self.sessao_factory is not None:
@@ -326,8 +338,20 @@ class Executor:
         t0 = time.monotonic()
         sessao = self._fabrica()
         try:
+            # O `external_ref` carrega a EXECUÇÃO, e não só a conversa do dataset.
+            #
+            # `replay:conv_01164` colide na segunda rodada sobre o mesmo banco — mesma
+            # seed, mesma amostra, mesmo id — e a execução inteira morre na primeira
+            # conversa com `UNIQUE violation`. O sintoma era ilegível: um traceback de
+            # SQLAlchemy no meio de um replay que já tinha custado dinheiro em modelo.
+            #
+            # Com a execução no prefixo, rodar de novo é seguro e as duas rodadas
+            # continuam distinguíveis no banco — que é o que se quer de uma bancada de
+            # avaliação: comparar duas execuções, não sobrescrever uma com a outra.
             conv = repo.criar_conversa(
-                sessao, channel="replay", external_ref=f"replay:{caso.conversation_id}"
+                sessao,
+                channel="replay",
+                external_ref=f"replay:{self.execucao}:{caso.conversation_id}",
             )
             sessao.commit()
             conversation_id = conv.id

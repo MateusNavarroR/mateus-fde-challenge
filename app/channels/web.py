@@ -271,15 +271,31 @@ def registrar_websockets(app: FastAPI) -> None:
 
     @app.websocket("/api/events")
     async def eventos(ws: WebSocket) -> None:
-        cfg = get_settings()
-        # O navegador não põe cabeçalho no handshake do WebSocket: quando
-        # ADMIN_TOKEN está definido, o token vem por query string.
-        # A MESMA comparação que `exigir_admin` faz no REST: ausente coage para `""`
-        # e o confronto é em tempo constante. Antes, o REST coagia e o WS não, então
-        # a mesma requisição sem token era aceita numa porta e recusada na outra.
-        apresentado = ws.query_params.get("token") or ""
-        if cfg.admin_exigido and not hmac.compare_digest(
-            apresentado.encode("utf-8"), (cfg.admin_token or "").encode("utf-8")
+        """O canal de eventos da OPERAÇÃO. Autenticado pela mesma regra do REST.
+
+        ⚠️ **Este socket já esteve aberto para anônimos**, e a falha era estrutural:
+        ele reimplementava a checagem em vez de reusar a do REST, e só sabia olhar
+        `ADMIN_TOKEN`. Como `admin_exigido` é `admin_token is not None`, a
+        configuração que o próprio README recomenda para navegador — `ADMIN_USER` e
+        `ADMIN_PASSWORD`, sem token — caía no `if` falso e aceitava qualquer conexão.
+
+        O que vazava não era pouco: os frames de `handoff.created` carregam o
+        `conversation_id`, e `docs/SEGURANCA.md` trata esse id como **capacidade** —
+        quem o tem lê a conversa inteira pelo WebSocket do chat, que é anônimo por
+        desenho. A cadeia fechava: escutar aqui, colher ids, ler conversas de leads.
+
+        A regra agora é UMA só, em `auth.autorizado_para_operacao`, usada pelo REST e
+        por aqui. Duas cópias de uma regra de autorização divergem — foi o que
+        aconteceu.
+        """
+        from app.auth import COOKIE_SESSAO, autorizado_para_operacao
+
+        # O cookie de sessão VIAJA no handshake do WebSocket, como em qualquer
+        # requisição de mesma origem; o token, que é caminho de máquina, vem por query
+        # string porque o navegador não deixa pôr cabeçalho aqui.
+        if not autorizado_para_operacao(
+            sessao=ws.cookies.get(COOKIE_SESSAO),
+            token=ws.query_params.get("token"),
         ):
             await ws.close(code=4401)
             return

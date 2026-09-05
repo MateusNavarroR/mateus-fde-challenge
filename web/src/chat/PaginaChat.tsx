@@ -45,6 +45,27 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
   useEffect(() => {
     if (conversationId !== undefined) return;
     let vivo = true;
+
+    /*
+     * `?conversa=<id>` — a ponte que vem do Histórico.
+     *
+     * O avaliador acha uma conversa no admin e quer continuá-la **como o cliente**,
+     * para ver o que acontece a partir dali. Antes isso não existia: o simulador só
+     * conhecia a conversa deste navegador, e a única forma de chegar a outra era ter
+     * sido quem a abriu.
+     *
+     * Trazer a conversa para cá a torna "deste navegador" — ela entra no histórico
+     * local e passa a aparecer no seletor. O parâmetro sai da URL depois de aplicado:
+     * um F5 não deve reabrir a mesma conversa por causa de um link antigo, e a barra
+     * de endereços deixa de carregar um id que já foi consumido.
+     */
+    const alvo = new URLSearchParams(location.search).get("conversa");
+    if (alvo !== null && alvo.length > 0) {
+      history.replaceState(null, "", location.pathname);
+      setId(retomarConversa(alvo));
+      return;
+    }
+
     void abrirSessao()
       .then(({ id: aberta, detalhe }: { id: string; detalhe: ConversationDetail | null }) => {
         if (!vivo) return;
@@ -189,10 +210,14 @@ export function PaginaChat({ conversationId }: { conversationId?: string }) {
         ) : null}
         {/*
           A navegação é assimétrica de propósito: `chat → admin` existe e é a
-          demonstração inteira da rastreabilidade. O inverso não existe.
+          demonstração inteira da rastreabilidade. **E agora o inverso também
+          existe** — ver `DetalheConversa`. A recusa original (§8) dizia que o
+          operador não podia assumir o lugar do LEAD numa conversa com handoff, e
+          ela continua valendo onde importa: conversa encaminhada abre na tela do
+          ATENDENTE, não aqui.
         */}
         {id !== null ? (
-          <a className="elo-admin" href={`/admin/conversas/${id}`}>
+          <a className="elo-admin" href={`/historico/${id}`}>
             Ver esta conversa no admin
           </a>
         ) : null}

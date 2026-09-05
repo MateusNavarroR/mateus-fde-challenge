@@ -121,7 +121,8 @@ it("a primeira fala do lead vira o nome da conversa", async () => {
   lembrarConversa("conv_x");
   lembrarConversa("conv_x", "tenho 30 anos, carro 2012");
 
-  const [c] = historicoLocal();
+  const c = historicoLocal()[0];
+  if (c === undefined) throw new Error("o histórico deveria ter a conversa lembrada");
   expect(c.id).toBe("conv_x");
   expect(rotuloDaConversa(c)).toMatch(/tenho 30 anos, carro 2012/);
   // Sem resumo, cai no id curto — nunca num rótulo relativo que muda de dono.

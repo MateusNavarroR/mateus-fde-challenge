@@ -91,11 +91,12 @@ só descobre o denominador se for procurar.
 
 ---
 
-## ⚠️ Nenhuma taxa de acerto publicada ainda — e o motivo
+## O incidente que atrasou a primeira taxa publicada
 
-**Este documento não traz taxa de acerto do replay**, de propósito.
+Esta seção fica como está — histórico, não estado atual. **A seção seguinte tem os
+números válidos.**
 
-A última execução completa reportou **36,7% (11/30)**, com `cotavel` em **0 de 14**:
+A primeira execução completa reportou **36,7% (11/30)**, com `cotavel` em **0 de 14**:
 `tools_chamadas: []`, `perguntas_do_agente: 0`, `falha: None`. Investigado com a
 conversa inteira à vista, o padrão tinha uma fronteira de relógio exata — as 12
 primeiras conversas rodaram limpas até 07:05:07, e as 18 seguintes, a partir de
@@ -112,21 +113,57 @@ está distribuída na amostra, então correlaciona com posição.
 
 Dois defeitos foram corrigidos a partir disso — o produto entregava o erro do provider
 ao lead, e o harness contava falha de infraestrutura como erro do agente (o Agno devolve
-`RunOutput` com `status=ERROR` em vez de levantar). **A taxa entra aqui quando houver
-uma execução válida**, e não antes: um número que mede um harness quebrado é pior que
-número nenhum, porque parece informação.
+`RunOutput` com `status=ERROR` em vez de levantar).
+
+---
+
+## As taxas válidas
+
+Duas execuções completas, mesma amostra estratificada de 30 conversas (a seed padrão do
+replay, `amostragem.SEED_PADRAO`),
+uma por modelo — o relatório grava o campo `modelo` em cada uma. Nenhuma reprova o
+harness: `nao_entendi` ficou em 2%, dentro do limiar de 20% que reprovaria o casador de
+falas, não o agente.
+
+| | `anthropic:claude-sonnet-5` (default atual) | `anthropic:claude-opus-5` |
+|---|---|---|
+| relatório | `qa/_saida/replay/replay-sonnet.json` | `qa/_saida/replay/replay-desfecho.json` |
+| desfecho correto | **30/30 (100%)** | 28/30 (93,3%) |
+| preço exato (das 14 conversas com prêmio calculável) | **14/14** | não medido nesta bateria |
+| extração — idade / veículo / CEP | **30/30 · 30/30 · 30/30** | não medido nesta bateria |
+| mídia tratada (de 18 com anexo) | 16/18 | 14/18 |
+| tool proibida chamada | 0 | 0 |
+| turnos somados / tempo de parede somado | 213 / 698 s | 186 / 856 s |
+
+Os dois relatórios ficam em `qa/_saida/replay/`, que **não é versionado** (ver
+"Onde a evidência fica" abaixo) — reproduzível pelo comando desta seção, não pelo
+commit do JSON.
+
+**Os módulos nativos do Agno também rodaram, de verdade, nesta bateria** —
+`qa/replay/evals.py`, ligado pelo executor com a flag `--evals` (e `--evals-db` para
+outra URL de Postgres). Antes desta fatia, os dois módulos existiam como código
+testável que nenhum caminho de produto chamava: a tabela `ai.eval_runs` nunca existia,
+`_evals()` (`app/api/consultas.py`) caía no `except` e devolvia zeros, e o painel
+mostrava um traço — indistinguível, para quem opera, de "avaliou e nada passou".
+Medido: os **30 casos de `ReliabilityEval` passaram**; o `AgentAsJudgeEval` avaliou os
+três textos de recusa (`docs/TEXTOS.md` ⑤⑥⑦) — uma vez por motivo, não por conversa,
+porque o texto é sempre o mesmo mapa fixo — e **aprovou com nota 9**. O relatório conta
+o que está de fato gravado no banco (`conferir_gravacao()`), não o que a chamada
+afirmou ter gravado, porque o Agno engole falha de escrita em silêncio internamente.
 
 ## Qual modelo produziu qual número
 
-**Todos os números de avaliação deste repositório são de `anthropic:claude-opus-5`**, e
-o relatório JSON grava o campo `modelo` em cada execução — a comparação entre providers
-só é honesta assim.
+O relatório JSON grava o campo `modelo` em cada execução — a comparação entre providers
+só é honesta assim. **As taxas de acerto do replay** (seção acima) foram medidas com os
+dois modelos que este repositório valida, `anthropic:claude-sonnet-5` (default atual) e
+`anthropic:claude-opus-5`.
 
-⚠️ **O default da aplicação mudou para `anthropic:claude-sonnet-5` depois destas
-medições, e elas não foram refeitas.** Ficam como estão, com o modelo nomeado: um
-número medido com um modelo não vira número de outro por edição de texto. Quem quiser
-os valores do default atual roda o replay de novo — é uma linha, e o campo `modelo` do
-relatório dirá qual foi.
+⚠️ **Nem todo número deste repositório foi remedido.** O default da aplicação mudou
+para Sonnet depois de várias medições — em especial as de **cache de prompt e custo**
+(README §§6–7), que continuam nomeando `claude-opus-5` porque não foram refeitas. Um
+número medido com um modelo não vira número de outro por edição de texto: quem quiser
+os valores de cache/custo do default atual roda o replay de novo — é uma linha, e o
+campo `modelo` do relatório dirá qual foi.
 
 O Ollama (`ollama:qwen2.5:7b`) foi validado por **smoke test de uma conversa completa**,
 e **não** foi submetido ao replay nem à suíte `live` inteira. Onde este repositório diz
@@ -155,8 +192,14 @@ docker compose --profile avaliacao up -d replay-db
 
 APP_DATABASE_URL=postgresql+psycopg://<usuario>:<senha>@127.0.0.1:55433/autoseguro_replay \
 APP_QUOTE_API_URL=http://localhost:8004 \
-  python -m qa.replay --modo desfecho --conversas 30 --ano-corrente 2026 --rodar
+  python -m qa.replay --modo desfecho --conversas 30 --ano-corrente 2026 --rodar \
+  --evals --evals-db postgresql+psycopg://<usuario>:<senha>@127.0.0.1:55433/autoseguro_replay
 ```
+
+`--evals` liga `ReliabilityEval`/`AgentAsJudgeEval` de verdade (seção "As taxas
+válidas"); sem a flag, o replay mede só desfecho/preço/extração e não grava em
+`ai.eval_runs`. `--evals-db` aceita outra URL quando a avaliação deve gravar num banco
+diferente do da execução — por padrão usa o mesmo `APP_DATABASE_URL`.
 
 ### Onde a evidência fica
 

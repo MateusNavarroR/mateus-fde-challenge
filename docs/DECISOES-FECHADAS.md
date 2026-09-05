@@ -241,8 +241,15 @@ completo ao assumir.
 ### Depois de encaminhar, o agente encerra a participação
 
 Avisa que um atendente vai assumir e para de responder. O estado `encaminhado` é
-terminal de verdade, o que remove qualquer ambiguidade sobre quem está falando e é o
-mais simples de testar.
+terminal para o **agente**, o que remove qualquer ambiguidade sobre quem está falando e
+é o mais simples de testar.
+
+**Não é terminal para a conversa.** `encaminhado` já existia antes de haver quem
+respondesse do outro lado do handoff; travar o campo do lead ali era inofensivo por
+falta de consequência. Com a tela `/atendimento`, um operador humano assume o handoff e
+responde na mesma conversa (`POST /api/conversations/{id}/mensagens`, 409 se o estado
+não for `encaminhado`, autor `operador`) — travar o lead nesse ponto teria transformado
+o handoff num beco sem saída assim que passou a existir alguém para atender. Ver §8.
 
 **Consequência assumida, e ela é real:** na segunda objeção de preço o bot encerra no
 meio de uma negociação. É defensável — a 2ª objeção é sinal de que ele não vai fechar
@@ -378,6 +385,29 @@ verificação de preço, que é **cálculo**, não julgamento. Preço se confere
 conjunto fechado de 72 prêmios possíveis e contra a própria `/quote` — nunca por juiz
 de modelo, e nunca contra as falas do vendedor no dataset, que são 100 % inválidas.
 
+### A integração ficou de pé — e por um bom tempo era só código testável
+
+Os dois módulos e o parâmetro `db` existiam desde o começo, e nenhum caminho de produto
+chamava `.run()` fora dos testes unitários. Consequência silenciosa: a tabela
+`ai.eval_runs` nunca chegava a existir, `_evals()` (`app/api/consultas.py`) caía no
+`except` e devolvia zeros, e o painel mostrava um traço — indistinguível, para quem
+opera, de "avaliou e nada passou".
+
+`qa/replay/evals.py` fecha essa distância, ligado pelo executor com `--evals` (e
+`--evals-db` para apontar outra URL). Três detalhes do Agno 3.0.6 instalado que
+quebrariam a integração em silêncio, e por isso valem registro aqui: `eval_table` não é
+o default do `PostgresDb` e precisa ser `"eval_runs"` literal; `ReliabilityEval.run()` e
+`AgentAsJudgeEval.run()` têm assinaturas diferentes (a segunda recebe `input`/`output`
+como strings, não `agent_response`); e a gravação é síncrona dentro do `.run()` — um
+`db=None` esquecido é um eval que roda, imprime resultado correto e não deixa rastro.
+
+**Medido, com o replay de 30 conversas:** os 30 casos de `ReliabilityEval` passaram; o
+`AgentAsJudgeEval` avaliou os três textos de recusa (`docs/TEXTOS.md` ⑤⑥⑦) — uma vez
+por motivo, não por conversa, porque o texto é sempre o mesmo mapa fixo — e aprovou com
+**nota 9**. O relatório publica o número **do banco** (`conferir_gravacao()`), não o que
+a execução afirma ter gravado: o Agno engole falha de escrita internamente, e um
+contador que confiasse só no retorno poderia mostrar "20 gravados" sobre zero linhas.
+
 ---
 
 ## 7 · O recorte das frentes
@@ -440,11 +470,21 @@ independente de autenticação. Sobre ele, um token exigido quando definido e au
 padrão. Não é uma coisa ou outra: o bind é a segurança, o token é a resposta pronta ao
 achado do passe de segurança da fatia 10.
 
-**Navegação assimétrica: `chat → admin` sim, `admin → chat` não.** O link de "ver esta
-conversa no admin" é a demonstração inteira da rastreabilidade, e chegar lá no segundo
-seguinte, enquanto o avaliador ainda lembra o que digitou, é o que a torna vívida. O
-inverso não existe: por ele o avaliador assumiria o lugar do lead numa conversa que já
-tem handoff, e isso não tem resposta boa.
+**Navegação assimétrica: `chat → admin` sim, `admin → chat` não** — para o lado do
+**lead**. O link de "ver esta conversa no admin" é a demonstração inteira da
+rastreabilidade, e chegar lá no segundo seguinte, enquanto o avaliador ainda lembra o
+que digitou, é o que a torna vívida. O inverso continua sem existir para o lado do lead:
+não há um caminho pelo qual o operador escreveria *como se fosse* o lead numa conversa
+que já tem handoff.
+
+**Isso não é a mesma coisa que o operador nunca escrever na conversa.** A tela
+`/atendimento` (`web/src/admin/Atendimento.tsx`) existe justamente para isso, do
+**outro** lado: depois que o agente encerra a participação (`encaminhado`), um operador
+assume o handoff e responde ali, com autor `operador` — a mesma voz da empresa que o
+lead já via como `agente`/`sistema`, mas auditável como pessoa. A decisão original
+proibia trocar de lugar com o lead; não previa, porque ainda não existia, que alguém
+respondesse pelo lado da empresa depois do handoff. As duas coisas convivem: o
+avaliador não vira o lead, e o operador não fica mudo depois que o bot para de falar.
 
 **`/chat` retoma a sessão corrente ao carregar.** Sessão em cookie ou `localStorage`,
 mais um botão explícito de **nova conversa**. Sempre-nova é o comportamento certo do

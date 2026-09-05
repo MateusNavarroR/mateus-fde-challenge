@@ -1,7 +1,8 @@
 # Os textos determinísticos
 
-Dez frases. São elas que o lead lê nos momentos em que o agente **não** pode improvisar:
-espera, falha, recusa e encaminhamento.
+Doze frases (a migração 0006 acrescentou a ⑫, do oitavo gatilho — `lead_aceitou_cotacao`).
+São elas que o lead lê nos momentos em que o agente **não** pode improvisar: espera,
+falha, recusa e encaminhamento.
 
 **Esta é a origem única.** A implementação copia daqui literalmente, e a terceira
 verificação do guardrail — comparação byte a byte entre a mensagem persistida e o render
