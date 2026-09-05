@@ -15,6 +15,21 @@ preferência noturna — não algo que trave a entrega no meio da tarde. E não 
 nada: inferência local não paraleliza sem GPU sobrando, e a `/quote` tem teto de 40
 chamadas lentas simultâneas (API-COTACAO §3.3).
 
+**Onde a execução grava, e por que num banco separado.** O replay usa
+`APP_DATABASE_URL`, e o recomendado é apontá-lo para o `replay-db` do compose
+(`docker compose --profile avaliacao up -d replay-db`, porta 55433). São duas razões,
+as duas medidas:
+
+1. a suíte roda `TRUNCATE ... CASCADE` nas fixtures — rodar testes durante um replay
+   deu `DeadlockDetected` e matou a execução no meio;
+2. a evidência de uma avaliação não pode viver num banco que alguém derruba. O
+   `replay-db` tem volume nomeado próprio, e `docker compose down` não o leva junto.
+
+Além disso, **os transcripts são exportados ao lado do relatório** (`qa/replay/
+evidencia.py`): o JSON carrega o veredito, os `.md` carregam as mensagens. Foi só
+olhando as mensagens que se descobriu que uma execução de 36,7% media uma conta sem
+crédito, e não o agente.
+
 O comando **não executa nada** sem `--rodar`. Sem a flag ele imprime a amostra, a
 estratificação e a estimativa de parede — que é o que alguém quer ver antes de gastar
 dez minutos, e o único jeito de conferir a amostra sem pagar por ela.
@@ -107,9 +122,25 @@ def main(argv: list[str] | None = None) -> int:
 
     destino = args.saida or (destino_padrao() / f"replay-{args.modo}-{args.seed}.json")
     rel.escrever(destino)
+
+    # A evidência viaja COM o relatório, e não no banco.
+    #
+    # O JSON carrega o veredito por conversa; as mensagens ficavam no contêiner. Uma
+    # execução de avaliação cuja evidência some ao parar o contêiner não é evidência
+    # reproduzível — e foi só olhando as mensagens gravadas que deu para ver que os
+    # 36,7% de uma execução mediam uma conta sem crédito, e não o agente.
+    from app.persistence.db import sessao_factory
+
+    from qa.replay import evidencia
+
+    fabrica = sessao_factory()
+    n = evidencia.escrever_transcripts(
+        fabrica, executor.conversas_criadas, destino.parent, modelo=rel.modelo,
+    )
     print()
     print(rel_mod.render(rel))
     print(f"relatório ....... {destino}")
+    print(f"evidência ....... {n} transcripts em {destino.parent / 'transcripts'}")
     return 0 if rel.aprovado else 1
 
 

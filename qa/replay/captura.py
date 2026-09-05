@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
-from qa.replay.falhas import Falha, de_excecao
+from qa.replay.falhas import Falha, de_excecao, de_run_com_erro
 
 
 @dataclass
@@ -158,6 +158,18 @@ def instrumentar(agente: Any, coletor: Coletor) -> Any:
             )
             raise
         coletor.runs.append(saida)
+
+        # ⚠️ A falha que NÃO vem como exceção. Ver `falhas.de_run_com_erro`: o Agno
+        # devolve `RunOutput` com `status=ERROR` em vez de levantar, e sem esta linha
+        # o run entra como resposta normal — com o texto do erro do provedor no lugar
+        # da fala do agente.
+        falha = de_run_com_erro(
+            saida,
+            conversation_id=coletor.conversation_id,
+            message_index=coletor.message_index,
+        )
+        if falha is not None:
+            coletor.falhas.append(falha)
         return saida
 
     try:

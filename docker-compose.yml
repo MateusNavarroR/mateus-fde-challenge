@@ -99,5 +99,36 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
+  # ─── o banco da AVALIAÇÃO, separado do banco da aplicação ──────────────────
+  #
+  # Duas coisas quebraram por não existir, e as duas custaram uma execução inteira:
+  #
+  # 1. a suíte roda `TRUNCATE ... CASCADE` nas fixtures. Rodar testes durante um
+  #    replay deu `DeadlockDetected` e matou a execução no meio;
+  # 2. a evidência de uma avaliação não pode viver num banco que alguém derruba. Aqui
+  #    ela tem volume PRÓPRIO e nomeado: `docker compose down` não leva junto, e só
+  #    `down -v` apaga.
+  #
+  # Fica no profile `avaliacao` porque `docker compose up` continua sendo um comando
+  # só para quem quer o produto — quem vai rodar replay pede explicitamente.
+  replay-db:
+    image: postgres:16-alpine
+    profiles: ["avaliacao"]
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: autoseguro_replay
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+      - replaydata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d autoseguro_replay"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   pgdata:
+  #: A evidência do replay. Nomeado de propósito: `docker compose down` preserva.
+  replaydata:

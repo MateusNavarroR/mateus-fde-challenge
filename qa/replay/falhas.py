@@ -156,6 +156,39 @@ def de_excecao(
     )
 
 
+def de_run_com_erro(
+    run: object,
+    *,
+    conversation_id: str | None = None,
+    message_index: int | None = None,
+    limite: int = 300,
+) -> Falha | None:
+    """A falha que **não vem como exceção**, e por isso passava batida.
+
+    O Agno não levanta quando a chamada ao provider falha: devolve um `RunOutput` com
+    `status=ERROR` e o texto do erro em `content`. O `instrumentar` só classificava
+    exceção, então esse run entrava na lista como resposta normal do agente — com
+    `content` sendo a mensagem de erro do provedor.
+
+    O estrago medido: a conta ficou sem crédito no meio de uma execução e **18 das 30
+    conversas viraram "o agente não perguntou nada e não chamou tool nenhuma"**. O
+    relatório publicou 36,7% de acerto. Não era o agente: era uma fatura.
+
+    A classificação reusa `classificar`, então `credit balance` cai em `PAGAMENTO`,
+    que é `fatal` — a execução aborta na primeira em vez de gastar vinte minutos
+    produzindo linhas que não medem nada.
+    """
+    if not str(getattr(run, "status", "") or "").upper().endswith("ERROR"):
+        return None
+    texto = str(getattr(run, "content", "") or "")[:limite]
+    return Falha(
+        classe=classificar(RuntimeError(texto)),
+        mensagem=f"RunStatus.ERROR: {texto}",
+        conversation_id=conversation_id,
+        message_index=message_index,
+    )
+
+
 @dataclass
 class Backoff:
     """Exponencial com jitter, semeado.

@@ -456,3 +456,81 @@ def test_o_tipo_da_fala_atravessa_o_replay_ate_o_agente(monkeypatch):
         "o gatilho de mídia não tem como disparar"
     )
     assert tipos.get("[audio] 0:12") == "audio"
+
+
+# ─── a falha que não vem como exceção ───────────────────────────────────────
+
+
+def test_run_com_status_de_erro_vira_falha_classificada():
+    """**O defeito que publicou um número falso.**
+
+    O Agno não levanta quando a chamada ao provider falha: devolve um `RunOutput` com
+    `status=ERROR` e o texto do erro em `content`. O `instrumentar` só classificava
+    exceção, então o run entrava na lista como resposta normal do agente.
+
+    Medido: a conta ficou sem crédito no meio de uma execução às 07:05:40, e as 18
+    conversas seguintes viraram «o agente não perguntou nada e não chamou tool
+    nenhuma» — `tools_chamadas: []`, `perguntas_do_agente: 0`, `falha: None`. O
+    relatório publicou 36,7% de acerto sobre isso. Não era o agente: era uma fatura.
+
+    `credit balance` cai em `PAGAMENTO`, que é `fatal` — a execução aborta na primeira
+    em vez de produzir dezoito linhas que não medem nada.
+    """
+    from qa.replay.falhas import ClasseDeFalha, de_run_com_erro
+
+    class RunComErro:
+        status = "ERROR"
+        content = (
+            "Error code: 400 - {'type': 'error', 'error': {'type': "
+            "'invalid_request_error', 'message': 'Your credit balance is too low to "
+            "access the Anthropic API. Please go to Plans & Billing to upgrade or "
+            "purchase credits.'}}"
+        )
+
+    falha = de_run_com_erro(RunComErro(), conversation_id="c1", message_index=3)
+    assert falha is not None
+    assert falha.classe is ClasseDeFalha.PAGAMENTO
+    assert falha.fatal, "sem `fatal` a execução segue gastando relógio por nada"
+    assert falha.conversation_id == "c1" and falha.message_index == 3
+
+
+def test_run_bem_sucedido_nao_vira_falha():
+    """O negativo: classificar run bom como falha zeraria toda a avaliação."""
+    from qa.replay.falhas import de_run_com_erro
+
+    class RunOk:
+        status = "COMPLETED"
+        content = "Boa, me passa o ano do carro?"
+
+    assert de_run_com_erro(RunOk()) is None
+    assert de_run_com_erro(type("Sem", (), {"content": "x"})()) is None
+
+
+def test_a_costura_registra_o_run_com_erro_no_coletor(monkeypatch):
+    """Ponta a ponta na costura: o `instrumentar` precisa VER o status.
+
+    Um teste só sobre `de_run_com_erro` provaria a função e deixaria a fiação de
+    fora — que foi exatamente como o defeito sobreviveu.
+    """
+    from qa.replay.captura import Coletor, instrumentar
+    from qa.replay.falhas import ClasseDeFalha
+
+    class RunComErro:
+        status = "ERROR"
+        content = "Error code: 429 - rate limit exceeded"
+
+    class AgenteQueFalhaSemLevantar:
+        def run(self, _texto):
+            return RunComErro()
+
+    coletor = Coletor()
+    coletor.conversation_id = "c9"
+    agente = instrumentar(AgenteQueFalhaSemLevantar(), coletor)
+
+    agente.run("oi")
+
+    assert len(coletor.falhas) == 1, (
+        "o run com status de erro não chegou ao coletor — o executor continuaria "
+        "tratando a resposta do provedor como fala do agente"
+    )
+    assert coletor.falhas[0].classe is ClasseDeFalha.RATE_LIMIT

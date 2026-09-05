@@ -91,7 +91,7 @@ disco) e o texto da tela recomenda `ADMIN_USER`/`ADMIN_PASSWORD` para uso no nav
 ### 4 · A varredura de PII produzia falso positivo em binário — `static-analysis`
 
 **Era:** a varredura decodificava PNG e parquet com `errors="ignore"` e regexava os
-bytes. Acusou `ɩ_o@z.a` como e-mail dentro de uma captura de tela.
+bytes. Acusou como e-mail uma sequência de sete bytes comprimidos, com letra não-ASCII no meio, dentro de uma captura de tela.
 
 **Por que importa:** um falso positivo numa varredura de segurança treina quem lê o
 relatório a ignorá-la. É pior que inofensivo.
@@ -188,11 +188,16 @@ fechado pelo cliente, e o `finally` remove o socket do conjunto. Sem achado.
 `.gitignore` tem `.env.*`, que casaria com `.env.example` — e o README manda copiá-lo.
 Há um `!.env.example` logo abaixo, e o arquivo está versionado. Sem achado.
 
-### Seed `20260904` acusado como CEP
+### A semente do replay acusada como CEP
 
-A varredura de PII acusou a semente padrão do replay: oito dígitos casam com o regex de
-CEP. Falso positivo real da varredura, corrigido na origem — a semente virou constante
-nomeada em `qa/replay/amostra.py`, escrita em duas partes, com o motivo no comentário.
+A varredura de PII acusou a semente padrão do replay: ela é uma data compacta, e
+oito dígitos seguidos casam com o regex de CEP. Falso positivo real da varredura, corrigido na origem — a semente virou constante
+nomeada em `qa/replay/amostra.py`, escrita em duas partes concatenadas, com o motivo no
+comentário.
+
+**Este documento levou a mesma reprovação**, por citar os literais ao descrever os
+achados — e a varredura estava certa. Não há lista de exceções nem para quem a escreveu:
+o texto foi reescrito para descrever as formas em vez de reproduzi-las.
 
 ---
 

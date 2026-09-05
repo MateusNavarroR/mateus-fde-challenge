@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Sequence
 
@@ -191,6 +191,8 @@ class Executor:
     max_injecoes: int = MAX_INJECOES_POR_FALA
     #: Injetáveis. Default: o caminho de produção.
     sessao_factory: Callable[[], Any] | None = None
+    #: `id do dataset → id da nossa conversa`, preenchido durante a execução.
+    conversas_criadas: dict[str, str] = field(default_factory=dict)
     responder: Callable[..., Any] | None = None
     backoff: Backoff | None = None
     modelo: str = ""
@@ -270,6 +272,10 @@ class Executor:
             sessao.commit()
             conversation_id = conv.id
             coletor.conversation_id = conversation_id
+            # Guardado para que a evidência possa ser exportada depois: o relatório
+            # cita o id do DATASET, e o banco conhece o NOSSO. Sem os dois, ir do
+            # relatório ao transcript vira adivinhação.
+            self.conversas_criadas[caso.conversation_id] = conversation_id
 
             falha = await self._injetar(
                 caso, coletor, conversation_id, adaptador, respondedor, sessao

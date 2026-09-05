@@ -91,6 +91,31 @@ só descobre o denominador se for procurar.
 
 ---
 
+## ⚠️ Nenhuma taxa de acerto publicada ainda — e o motivo
+
+**Este documento não traz taxa de acerto do replay**, de propósito.
+
+A última execução completa reportou **36,7% (11/30)**, com `cotavel` em **0 de 14**:
+`tools_chamadas: []`, `perguntas_do_agente: 0`, `falha: None`. Investigado com a
+conversa inteira à vista, o padrão tinha uma fronteira de relógio exata — as 12
+primeiras conversas rodaram limpas até 07:05:07, e as 18 seguintes, a partir de
+07:05:40, gravaram **«Error code: 400 … Your credit balance is too low …» no lugar da
+fala do agente**, a 2–3 s cada, sem latência de inferência.
+
+A conta da Anthropic ficou sem crédito no meio da execução. O número media uma fatura.
+
+**A hipótese concorrente foi descartada com dado**, e ela era plausível: o replay é
+literal, então as falas do lead poderiam descarrilar a conversa. Mas desalinhamento
+degrada gradualmente e espalhado pela amostra — não vira num instante de relógio, e não
+produz zero pergunta com zero tool. A correlação com mídia também é acidental: mídia
+está distribuída na amostra, então correlaciona com posição.
+
+Dois defeitos foram corrigidos a partir disso — o produto entregava o erro do provider
+ao lead, e o harness contava falha de infraestrutura como erro do agente (o Agno devolve
+`RunOutput` com `status=ERROR` em vez de levantar). **A taxa entra aqui quando houver
+uma execução válida**, e não antes: um número que mede um harness quebrado é pior que
+número nenhum, porque parece informação.
+
 ## Qual modelo produziu qual número
 
 **Todos os números de avaliação deste repositório são de `anthropic:claude-opus-5`**, e
@@ -118,8 +143,31 @@ falha de infraestrutura é classificada à parte (`indisponivel`) e **não conta
 agente**: somá-la produziria uma taxa de acerto que cai quando o legado piora.
 
 ```bash
-python -m qa.replay --modo desfecho --conversas 30 --ano-corrente 2026 --rodar
+# banco PRÓPRIO da avaliação, com volume nomeado: `down` não leva a evidência junto,
+# e a suíte (que dá TRUNCATE nas fixtures) não pode matar a execução no meio.
+docker compose --profile avaliacao up -d replay-db
+
+APP_DATABASE_URL=postgresql+psycopg://<usuario>:<senha>@127.0.0.1:55433/autoseguro_replay \
+APP_QUOTE_API_URL=http://localhost:8004 \
+  python -m qa.replay --modo desfecho --conversas 30 --ano-corrente 2026 --rodar
 ```
+
+### Onde a evidência fica
+
+| Artefato | Onde | Sobrevive a `docker compose down`? |
+|---|---|---|
+| relatório JSON (veredito por conversa) | `qa/_saida/replay/*.json` | é arquivo — sim |
+| **transcripts** (as mensagens) | `qa/_saida/replay/transcripts/*.md` | é arquivo — sim |
+| linhas do banco | `replay-db`, volume `replaydata` | sim, só `down -v` apaga |
+
+Os transcripts existem porque o JSON carrega o **veredito** e não o **porquê**. Antes
+deles, as mensagens ficavam só no contêiner: uma execução de avaliação cuja evidência
+desaparece ao parar o contêiner não é evidência reproduzível — e foi olhando as
+mensagens que se descobriu que os 36,7% mediam uma conta sem crédito.
+
+`qa/_saida/` não é versionado: é derivado do dataset, e o dataset não é nosso para
+redistribuir, nem mascarado. O que torna a execução reproduzível é o comando com a
+seed, não o commit do resultado.
 
 Sem `--rodar`, o comando imprime a amostra, a estratificação e a estimativa de parede —
 que é o que alguém quer ver antes de gastar os minutos.
