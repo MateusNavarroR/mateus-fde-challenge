@@ -65,7 +65,7 @@ a API — se algo aqui divergir dele, ele vence.
 13a. **A varredura de PII é automatizada e roda na suíte**
     (`tests/nucleo/test_repo_publico.py`): os mesmos regexes de
     `app/privacy/mascarar.py` apontados para **tudo que é versionado e não é código** —
-    `ai-logs/`, `artifacts/`, `docs/evidencia-ui/`, artefatos do dataset. É a superfície
+    `ai-logs/`, `artifacts/`, `docs/`, artefatos do dataset. É a superfície
     de maior volume e era a única sem teste; o scrub manual do checklist da fatia 10
     deixa de ser a única defesa, porque procedimento manual na véspera é onde vaza.
     **Sem lista de exceções:** documento que precisa de CEP de exemplo usa a forma

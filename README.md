@@ -54,7 +54,7 @@ de terceiro e por isso não está versionado aqui.
 A suíte do frontend é separada e não precisa de banco nenhum:
 
 ```bash
-cd web && npm ci && npm test        # 189 passando, 4 pulando
+cd web && npm ci && npm test        # 193 passando
 ```
 
 Rode-a por `npm test`, não por `npx vitest` dentro de `web/`: o script faz `cd ..`
@@ -737,7 +737,7 @@ sozinho custa a confiança em tudo o mais que o README afirma.
 | **O default é `claude-sonnet-5`; a maioria dos números de cache e custo publicados aqui é de `claude-opus-5`** | o agente conversacional passou a rodar em Sonnet 5, que é o porte certo para esta tarefa e custa 2,5× menos. As medições de cache, custo e avaliação das seções acima foram feitas **antes** dessa troca, com Opus 5, e **não foram refeitas** — elas continuam válidas como o que são: uma medição daquele modelo, com o modelo nomeado em cada tabela. Reescrevê-las com outro nome seria falsificar evidência. O replay de desfecho **foi** refeito com o default atual — ver a comparação logo abaixo — porque essa execução é recente o bastante para caber na sessão que atualizou esta documentação. |
 | **Concorrência real de leads** | o semáforo de 8 e o teto de 40 chamadas lentas da `/quote` estão medidos, mas nunca houve mais de uma conversa simultânea de verdade. |
 | **Réplicas** | o rate limit é em memória, no processo. Com mais de uma réplica cada uma tem o seu contador, e o limite efetivo multiplica. |
-| **Navegadores** | Chromium, via Playwright. Firefox e Safari não foram abertos. |
+| **Navegadores** | a interface foi exercitada só em Chromium. Firefox e Safari não foram abertos, e não há suíte de navegador no repositório — a cobertura de frontend é de unidade (`vitest`, 189 testes). |
 | **`OBJECAO_FORA_DA_ALCADA` contra o dataset** | o gatilho exige a **segunda** objeção na mesma conversa. Medido: 628 das 2.500 conversas têm exatamente uma objeção e **nenhuma tem duas** — o dataset não consegue exercitá-lo. Coberto por teste unitário; não por replay. |
 
 #### Sonnet 5 contra Opus 5, mesma amostra de 30 conversas

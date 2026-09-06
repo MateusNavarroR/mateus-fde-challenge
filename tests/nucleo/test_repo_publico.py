@@ -6,7 +6,7 @@ tela. Ele **não** cobre o que chega ao repositório por outro caminho:
 
 - `ai-logs/sessions/*.jsonl` — megabytes de texto cru das sessões de construção;
 - artefatos derivados do dataset (camada silver);
-- capturas do Playwright em `docs/evidencia-ui/`;
+- documentação e artefatos de avaliação em `docs/`;
 - transcripts em `artifacts/`.
 
 Essa é a superfície de maior volume e a única sem teste. O scrub dela estava no
@@ -123,7 +123,7 @@ def test_nenhum_arquivo_versionado_sem_ser_codigo_contem_pii():
 
 @pytest.mark.parametrize(
     "diretorio",
-    ["ai-logs", "artifacts", "docs/evidencia-ui", "data"],
+    ["ai-logs", "artifacts", "docs", "data"],
 )
 def test_diretorios_de_alto_volume_varridos_quando_existirem(diretorio):
     """As quatro superfícies que nascem em massa. O teste não exige que existam —

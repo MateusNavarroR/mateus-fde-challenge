@@ -540,7 +540,6 @@ não mudam com uma tela nova.
 | dados/replay | `tests/dados/` | conferência de preço contra os 72 prêmios, amostra estratificada do replay |
 | replay + evals | `qa/replay/` (não é `tests/`, roda sob demanda) | `evals.py` liga `ReliabilityEval`/`AgentAsJudgeEval` de verdade com `--evals`, gravando em `ai.eval_runs` — ver `docs/EVALS.md` |
 | web (unit) | `tests/web/unit/` | inventário de rotas contra `openapi.yaml`, componentes |
-| web (e2e) | `tests/web/e2e/` | Playwright, evidência de UI real |
 | contrato | `tests/test_contratos.py` | os contratos congelados de `app/contracts/` |
 
 Reproduzir um cenário de falha da `/quote` sem depender de sorteio: subir com

@@ -9,7 +9,6 @@
     "preview": "vite preview",
     "test": "cd .. && vitest run --config web/vitest.config.ts",
     "test:watch": "cd .. && vitest --config web/vitest.config.ts",
-    "e2e": "NODE_PATH=./node_modules playwright test --config playwright.config.ts",
     "lint": "tsc --noEmit -p tsconfig.json",
     "openapi:baixar": "node scripts/baixar-openapi.mjs"
   },
@@ -20,7 +19,6 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.50.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
