@@ -55,7 +55,21 @@ A porta é **55432**, não a 5432: é o default de `tests/conftest.py`, e deixa 
 Rodando num clone limpo, sem `ANTHROPIC_API_KEY` e sem o repositório do desafio ao
 lado, o resultado esperado é **408 passando, 214 pulando** — cada `skip` declara o
 motivo (`-rs` mostra). Os ~200 de `tests/dados/` exigem o material do desafio, que é
-de terceiro e por isso não está versionado aqui. Esquecer de subir o banco também
+de terceiro e por isso não está versionado aqui.
+
+**Para rodar esses ~200 também**, o repositório do desafio precisa estar como
+diretório **irmão** deste, com o nome `namastex-fde-challenge`:
+
+```
+alguma-pasta/
+├── namastex-fde-challenge/     <- o material do desafio (plans.json, dataset bronze)
+└── mateus-fde-challenge/       <- este repositório
+```
+
+Se ele estiver em outro lugar, aponte `DATASET_PLANS_JSON` e `DATASET_BRONZE_PARQUET`
+para os arquivos. Com o material ao lado, a mesma suíte vai a **618 passando, 5
+pulando**. Ele não é vendorizado aqui de propósito: é material de terceiro e este
+repositório é público. Esquecer de subir o banco também
 não produz vermelho: vira **345 passando, 277 pulando**, e o motivo do `skip` diz
 qual porta não respondeu.
 
