@@ -34,6 +34,7 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
+from sqlalchemy.exc import OperationalError
 from fastapi.testclient import TestClient
 
 from app import auth
@@ -483,7 +484,19 @@ def test_rest_e_websocket_concordam_sobre_o_mesmo_token(cliente, monkeypatch):
     for token, esperado_aberto in (("", True), (secrets.token_hex(8), False)):
         monkeypatch.setattr(cfg, "admin_token", token)
 
-        rest = cliente.get("/api/handoffs")
+        # `GET /api/handoffs` é a rota comparável nas duas superfícies, mas ela LÊ
+        # o banco — e quando a autorização deixa passar, a leitura acontece. Sem
+        # Postgres isso subia uma `OperationalError` crua e o teste ficava VERMELHO
+        # num clone limpo: um erro de ambiente vestido de falha de autorização, que
+        # é o pior tipo de vermelho porque manda procurar no lugar errado. Medido
+        # rodando a suíte num clone recém-baixado, sem banco de pé.
+        #
+        # O `skip` é estreito de propósito: só o erro de CONEXÃO. Qualquer outra
+        # exceção continua derrubando o teste, porque aí seria defeito nosso.
+        try:
+            rest = cliente.get("/api/handoffs")
+        except OperationalError as e:  # noqa: PERF203
+            pytest.skip(f"Postgres indisponível — esta rota lê o banco: {e}")
         rest_aberto = rest.status_code != 401
 
         try:

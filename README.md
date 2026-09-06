@@ -39,17 +39,25 @@ local. Para depurar com as portas expostas: `docker compose --profile debug up`.
 ```bash
 uv sync
 docker compose --profile teste up -d --wait db-testes   # o Postgres na 55432
-uv run pytest -q -m "not live"                          # sem rede e sem modelo
+uv run pytest -q -m "not live and not integracao"        # sem rede e sem modelo
 ```
+
+`not integracao` importa: um teste marcado assim **constrói a imagem Docker e sobe
+uma cópia da pilha inteira**, o que precisa da `ANTHROPIC_API_KEY` e leva minutos —
+nada disso cabe em "sem rede e sem modelo". Ele existe e vale; só não é o portão do
+dia a dia. Para rodá-lo, exporte a chave, derrube a sua pilha (`docker compose down`,
+ele precisa da 8080 livre) e chame `-m integracao`.
 
 A porta é **55432**, não a 5432: é o default de `tests/conftest.py`, e deixa livre a
 5432 de quem tem Postgres instalado. O banco tem volume próprio — a suíte roda
 `TRUNCATE ... CASCADE` nas fixtures e não pode encostar no banco da aplicação.
 
 Rodando num clone limpo, sem `ANTHROPIC_API_KEY` e sem o repositório do desafio ao
-lado, o resultado esperado é **406 passando, 217 pulando** — cada `skip` declara o
+lado, o resultado esperado é **408 passando, 214 pulando** — cada `skip` declara o
 motivo (`-rs` mostra). Os ~200 de `tests/dados/` exigem o material do desafio, que é
-de terceiro e por isso não está versionado aqui.
+de terceiro e por isso não está versionado aqui. Esquecer de subir o banco também
+não produz vermelho: vira **345 passando, 277 pulando**, e o motivo do `skip` diz
+qual porta não respondeu.
 
 A suíte do frontend é separada e não precisa de banco nenhum:
 
