@@ -165,3 +165,35 @@ def test_sobe_com_5432_e_8000_ocupadas_no_host():
                        cwd=RAIZ, capture_output=True)
         for s in bloqueios:
             s.close()
+
+
+def test_env_example_declara_toda_variavel_que_o_compose_le(compose):
+    """Paridade entre `docker-compose.yml` e `.env.example`, verificada — porque a
+    conferência manual falhou.
+
+    ⚠️ Achado real: `APP_LLM_MODEL` e `QUOTE_SLOW_SECONDS` eram lidas pelo compose e
+    **não apareciam** no `.env.example`. As duas importam para quem chega de fora: a
+    primeira é o único jeito de rodar sem chave da Anthropic (`ollama:qwen2.5:7b`), e
+    a segunda completa o trio de instabilidade cujos outros dois membros estavam lá —
+    a ausência sugeria que ela não existia.
+
+    `.env.example` é a documentação executável do ambiente. Uma variável que o
+    compose lê e ele não declara é uma alavanca invisível: só acha quem for ler o
+    YAML, que é exatamente quem não precisava do arquivo de exemplo.
+    """
+    import re
+
+    yaml_bruto = (RAIZ / "docker-compose.yml").read_text()
+    do_compose = set(re.findall(r"\$\{([A-Z_]+)", yaml_bruto))
+
+    declaradas = {
+        linha.split("=", 1)[0].strip()
+        for linha in (RAIZ / ".env.example").read_text().splitlines()
+        if "=" in linha and not linha.strip().startswith("#")
+    }
+
+    faltando = do_compose - declaradas
+    assert not faltando, (
+        "o compose lê estas variáveis e o `.env.example` não as declara: "
+        f"{sorted(faltando)}"
+    )
