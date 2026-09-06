@@ -21,6 +21,7 @@ congelado manda**, e mudá-lo é decisão escrita, não conserto de teste.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,20 @@ def _operacoes(spec: dict) -> set[tuple[str, str]]:
 #: Eles estão no congelado como `get` com resposta 101, que é a convenção usada para
 #: documentá-los. Ficam fora da comparação e têm teste próprio abaixo.
 WEBSOCKETS = {("/api/chat/{conversation_id}", "get"), ("/api/events", "get")}
+
+
+def _credencial_de_boot(monkeypatch) -> None:
+    """Estes quatro testes são de ROTEAMENTO — não falam com o modelo. Mas entrar no
+    `TestClient` como contexto executa o lifespan, e o lifespan valida a credencial.
+
+    Num clone limpo, sem `ANTHROPIC_API_KEY` exportada, isso os derrubava com
+    `CredencialAusente`: quatro vermelhos que não dizem nada sobre o código — medido
+    rodando a suíte num clone recém-baixado do repositório público.
+
+    Marcar presença é o suficiente: o boot confere se a variável EXISTE, e nenhuma
+    chamada ao provider acontece aqui. Uma chave real no ambiente continua vencendo.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY") or "presente")
 
 
 def test_toda_rota_do_congelado_existe_no_gerado(congelado, gerado):
@@ -171,6 +186,7 @@ def test_api_desconhecida_devolve_json_nao_html(monkeypatch, tmp_path):
     aparecendo como "unexpected token <" três camadas adiante da causa."""
     from fastapi.testclient import TestClient
 
+    _credencial_de_boot(monkeypatch)
     from app.main import app
 
     with TestClient(app) as c:
@@ -180,11 +196,12 @@ def test_api_desconhecida_devolve_json_nao_html(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("rota", ["docs", "redoc", "openapi.json"])
-def test_documentacao_nao_volta_pelo_catch_all(rota):
+def test_documentacao_nao_volta_pelo_catch_all(rota, monkeypatch):
     """Elas ficam desligadas fora de dev; o roteamento do SPA não pode ressuscitá-las
     por acidente, servindo o `index.html` com 200 no lugar delas."""
     from fastapi.testclient import TestClient
 
+    _credencial_de_boot(monkeypatch)
     from app.main import app
 
     with TestClient(app) as c:

@@ -38,9 +38,27 @@ local. Para depurar com as portas expostas: `docker compose --profile debug up`.
 
 ```bash
 uv sync
-docker compose --profile debug up -d db-debug        # o Postgres na 5432
-uv run pytest -q -m "not live"                       # sem rede e sem modelo
+docker compose --profile teste up -d --wait db-testes   # o Postgres na 55432
+uv run pytest -q -m "not live"                          # sem rede e sem modelo
 ```
+
+A porta é **55432**, não a 5432: é o default de `tests/conftest.py`, e deixa livre a
+5432 de quem tem Postgres instalado. O banco tem volume próprio — a suíte roda
+`TRUNCATE ... CASCADE` nas fixtures e não pode encostar no banco da aplicação.
+
+Rodando num clone limpo, sem `ANTHROPIC_API_KEY` e sem o repositório do desafio ao
+lado, o resultado esperado é **406 passando, 217 pulando** — cada `skip` declara o
+motivo (`-rs` mostra). Os ~200 de `tests/dados/` exigem o material do desafio, que é
+de terceiro e por isso não está versionado aqui.
+
+A suíte do frontend é separada e não precisa de banco nenhum:
+
+```bash
+cd web && npm ci && npm test        # 189 passando, 4 pulando
+```
+
+Rode-a por `npm test`, não por `npx vitest` dentro de `web/`: o script faz `cd ..`
+antes, porque alguns testes leem arquivos de fonte por caminho a partir da raiz.
 
 Os marcados `live` falam com a `/quote` de verdade e com o modelo; `serial` dependem da
 seed da `/quote` e **não podem** rodar em paralelo (ver *Reprodutibilidade*).

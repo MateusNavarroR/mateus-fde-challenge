@@ -115,6 +115,39 @@ services:
     ports:
       - "127.0.0.1:15432:5432"
 
+  # ─── o banco dos TESTES, na porta que a suíte procura ──────────────────────
+  #
+  # ⚠️ Ele existe porque o README mentia. A instrução era `--profile debug up -d
+  # db-debug`, que publica a **5432** — e o default de `tests/conftest.py` é a
+  # **55432**. Seguindo o README ao pé da letra, o Postgres subia, o pytest olhava
+  # para a porta errada, não achava ninguém e **skipava graciosamente** os testes de
+  # banco. Verde na tela, cobertura zero. Medido rodando a suíte num clone limpo do
+  # repositório público.
+  #
+  # Nesta máquina o banco de testes era um contêiner criado à mão, fora do compose —
+  # ou seja, o caminho que funcionava não estava versionado, que é a forma mais
+  # eficiente de entregar uma promessa que só roda no computador de quem escreveu.
+  #
+  # 55432 e não 5432 de propósito: quem tem Postgres instalado tem a 5432 ocupada.
+  # Volume próprio, separado do `pgdata`: a suíte roda `TRUNCATE ... CASCADE` nas
+  # fixtures e não pode encostar no banco da aplicação.
+  db-testes:
+    image: postgres:16-alpine
+    profiles: ["teste"]
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: autoseguro
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+      - testedata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d autoseguro"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   quote-api-debug:
     extends:
       service: quote-api
@@ -153,5 +186,7 @@ services:
 
 volumes:
   pgdata:
+  #: O banco dos testes. Descartável: `down -v` recria do zero pelas migrações.
+  testedata:
   #: A evidência do replay. Nomeado de propósito: `docker compose down` preserva.
   replaydata:
