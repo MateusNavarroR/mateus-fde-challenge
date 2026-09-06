@@ -2,6 +2,11 @@
 
 > Gerado por `scripts/transcript.py`. **Entregável nº 4** do enunciado: log de uma
 > execução completa, do início ao fim.
+>
+> **Modelo:** `anthropic:claude-sonnet-5`. O nome fica no artefato porque a conversa é produto DELE:
+> um transcript sem o modelo nomeado convida a ser comparado com outro gerado por um
+> modelo diferente, que é exatamente o erro que este repositório se obriga a não
+> cometer com as medições de cache e custo.
 
 ## Como reproduzir
 
@@ -22,8 +27,8 @@ sequência exata de requisições)* — a seed sozinha não basta.
 
 A `/quote` responde na primeira tentativa. É o cenário que prova o critério nº 1: o agente atende de ponta a ponta e entrega o preço.
 
-- Conversa: `conv_5d29395798b64a6f`
-- Gerado em: 2026-09-05T05:33:38+00:00
+- Conversa: `conv_91079b4c026c462f`
+- Gerado em: 2026-09-06T05:11:57+00:00
 - `[+Xs]` é o tempo desde o início da conversa; `Δ` é o tempo desde a mensagem do
   lead naquele turno — é a coluna que a política de espera governa.
 
@@ -31,43 +36,19 @@ A `/quote` responde na primeira tentativa. É o cenário que prova o critério n
 
 ```
 [  +0.0s]           lead     Oi, queria fazer um seguro pro meu carro
-[  +3.0s]  Δ +3.0s  agente   Oi! Bora resolver isso rapidinho.
-                             
-                             Me passa duas coisas pra começar: sua idade (ou do condutor principal) e o ano do carro?
-[  +3.0s]           lead     e um Onix 2019
-[  +6.5s]  Δ +3.5s  agente   Boa, Onix 2019 anotado.
-                             
-                             Falta a sua idade (ou do condutor principal) e o CEP de onde o carro dorme.
-[  +6.5s]           lead     tenho 28 anos, cep [CEP]
-[ +12.1s]  Δ +5.6s  agente   Show, tudo anotado.
-                             
-                             Agora só faltam duas coisas:
-                             
-                             1. **Quando você quer que a cobertura comece?** (pode ser já, ou uma data específica)
-                             2. **Qual plano te interessa?**
-                                - **Essencial**: colisão, roubo e furto
-                                - **Completo**: tudo do Essencial + terceiros e vidros
-                                - **Premium**: tudo do Completo + carro reserva e assistência 24h (é o de menor franquia)
+[  +5.5s]  Δ +5.5s  agente   Oi! Bora te ajudar. Me passa dois dados pra começar: a idade de quem dirige o carro na maior parte do tempo, e o ano do veículo?
+[  +5.6s]           lead     e um Onix 2019
+[  +8.7s]  Δ +3.1s  agente   Beleza, Onix 2019 anotado. E a idade de quem dirige mais o carro?
+[  +8.7s]           lead     tenho 28 anos, cep [CEP]
+[ +12.1s]  Δ +3.4s  agente   Show, já tenho idade, ano do carro e CEP. Só falta: quando você quer que a cobertura comece, e qual plano prefere — Essencial, Completo ou Premium?
 [ +12.1s]           lead     qual a diferença dos planos?
-[ +18.6s]  Δ +6.5s  agente   Diferença é o quanto cada um cobre:
+[ +14.6s]  Δ +2.5s  agente   O Essencial cobre colisão, roubo e furto. O Completo tem tudo isso mais terceiros e vidros. O Premium cobre tudo do Completo, mais carro reserva e assistência 24h — e é o que tem a menor franquia entre os três (o Essencial tem a maior).
                              
-                             **Essencial** — o básico: colisão, roubo e furto. Protege o seu carro, e só ele.
-                             
-                             **Completo** — tudo isso + **terceiros** (se você bater em alguém, cobre o prejuízo do outro) e **vidros** (para-brisa, vidros laterais, retrovisores).
-                             
-                             **Premium** — tudo do Completo + **carro reserva** (você não fica a pé enquanto o seu tá na oficina) e **assistência 24h** (guincho, pane, chave trancada).
-                             
-                             Sobre franquia: é o valor que fica por sua conta quando o carro vai pra oficina num sinistro. O Premium tem a menor franquia e o Essencial a maior — mas os valores exatos só saem na cotação.
-                             
-                             Na prática: o **Completo** é o que a maioria escolhe, porque bater em terceiro é o que dá mais dor de cabeça. O **Premium** vale se você usa o carro todo dia e não pode ficar sem.
-                             
-                             Qual faz mais sentido pra você? E quando quer começar?
-[ +18.6s]           lead     quero o completo mesmo
-[ +22.6s]  Δ +4.0s  agente   Fechou, Completo anotado.
-                             
-                             Só falta uma coisa: quando você quer que a cobertura comece? Pode ser já a partir de hoje, ou me diz a data que preferir.
-[ +22.6s]           lead     pode começar dia 17 de outubro
-[ +29.5s]  Δ +6.8s  sistema  Fechei sua cotação 👇
+                             Qual faz mais sentido pra você? E já aproveito e pergunto: quando quer que a cobertura comece?
+[ +14.7s]           lead     quero o completo mesmo
+[ +17.5s]  Δ +2.9s  agente   Fechado, Completo anotado. Só falta uma coisa: quando você quer que a cobertura comece?
+[ +17.6s]           lead     pode começar dia 17 de outubro
+[ +20.0s]  Δ +2.5s  sistema  Fechei sua cotação 👇
                              
                              *Completo — R$ 392,25/mês*
                              Cobre colisão, roubo, furto, terceiros e vidros.
@@ -78,7 +59,7 @@ A `/quote` responde na primeira tentativa. É o cenário que prova o critério n
                              
                              ⚠️ Roubo e furto começam a valer 30 dias depois do início da vigência.
                              
-                             Quer que eu siga com a emissão?
+                             Quer seguir com a contratação?
 ```
 
 ## O que ficou gravado
@@ -100,19 +81,19 @@ A `/quote` responde na primeira tentativa. É o cenário que prova o critério n
 | 8 | `lead` | `text` | `received` | — |
 | 9 | `agente` | `text` | `sent` | — |
 | 10 | `lead` | `text` | `received` | — |
-| 11 | `sistema` | `text` | `sent` | `q_90c4c570bf2645eb` |
+| 11 | `sistema` | `text` | `sent` | `q_cdb9585b44734317` |
 
 ### Cotações
 
 | quote_id | status | prêmio | outcome | latência |
 |---|---|---|---|---|
-| `q_90c4c570bf2645eb` | `ok` | R$ 392.25 | `—` | 11 ms |
+| `q_cdb9585b44734317` | `ok` | R$ 392.25 | `—` | 10 ms |
 
-#### Tentativas de `q_90c4c570bf2645eb`
+#### Tentativas de `q_cdb9585b44734317`
 
 | # | HTTP | outcome | latência |
 |---|---|---|---|
-| 1 | 200 | `ok` | 11 ms |
+| 1 | 200 | `ok` | 10 ms |
 
 ### Handoff
 

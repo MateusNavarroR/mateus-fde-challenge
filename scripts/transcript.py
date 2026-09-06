@@ -111,10 +111,18 @@ CENARIOS = {
 
 def cabecalho(cenario: str, conversation_id: str) -> str:
     c = CENARIOS[cenario]
+    from app.config import get_settings
+
+    modelo = get_settings().llm_model
     return f"""# {c['titulo']}
 
 > Gerado por `scripts/transcript.py`. **Entregável nº 4** do enunciado: log de uma
 > execução completa, do início ao fim.
+>
+> **Modelo:** `{modelo}`. O nome fica no artefato porque a conversa é produto DELE:
+> um transcript sem o modelo nomeado convida a ser comparado com outro gerado por um
+> modelo diferente, que é exatamente o erro que este repositório se obriga a não
+> cometer com as medições de cache e custo.
 
 ## Como reproduzir
 
